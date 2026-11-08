@@ -10,8 +10,7 @@ namespace PdfPecker.Ocr.Inference;
 /// </summary>
 internal sealed unsafe class InferenceContext : IDisposable
 {
-    private readonly ParallelOptions _options;
-    private readonly Action<int> _worker;
+    private readonly WorkerTeam? _team;
     private readonly Dictionary<OcrModel, ExecutionPlan> _plans = [];
     private readonly Dictionary<OcrModel, float[]> _outputs = [];
     private float[]? _arena;
@@ -19,20 +18,13 @@ internal sealed unsafe class InferenceContext : IDisposable
     private float[]? _shared;
     private bool _disposed;
 
-    // The job that the parallel workers run; set by For for the duration of one parallel loop.
-    private object? _jobState;
-    private delegate*<object, int, int, void> _jobBody;
-    private int _jobCount;
-    private int _jobChunk;
-    private int _jobNext;
 
     /// <summary>Creates a context that uses at most the given number of threads for one run.</summary>
     public InferenceContext(int maxDegreeOfParallelism)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxDegreeOfParallelism, 1);
         MaxDegreeOfParallelism = maxDegreeOfParallelism;
-        _options = new ParallelOptions { MaxDegreeOfParallelism = maxDegreeOfParallelism };
-        _worker = WorkerLoop;
+        _team = maxDegreeOfParallelism > 1 ? new WorkerTeam(maxDegreeOfParallelism) : null;
         _scratch = new float[maxDegreeOfParallelism][];
     }
 
@@ -45,10 +37,11 @@ internal sealed unsafe class InferenceContext : IDisposable
     /// <summary>The size of the activation arena, in bytes, for memory measurements.</summary>
     public long ArenaBytes => (_arena?.LongLength ?? 0) * sizeof(float);
 
-    /// <summary>Releases the buffers. The context cannot run models afterwards.</summary>
+    /// <summary>Releases the buffers and stops the context's threads. The context cannot run models afterwards.</summary>
     public void Dispose()
     {
         _disposed = true;
+        _team?.Dispose();
         _arena = null;
         _shared = null;
         _scratch = [];
@@ -108,41 +101,12 @@ internal sealed unsafe class InferenceContext : IDisposable
     internal void For(int count, object state, delegate*<object, int, int, void> body)
     {
         if (count <= 0) return;
-        int workers = Math.Min(MaxDegreeOfParallelism, count);
-        if (workers == 1)
+        if (_team is null || count == 1)
         {
             for (int i = 0; i < count; i++) body(state, i, 0);
             return;
         }
-        _jobState = state;
-        _jobBody = body;
-        _jobCount = count;
-        // Workers take runs of consecutive items, so thousands of tiny items (the planes of a depthwise convolution,
-        // the rows of a softmax) do not all contend for the counter; about eight runs per worker still balance the load.
-        _jobChunk = Math.Max(1, count / (workers * 8));
-        _jobNext = 0;
-        try
-        {
-            Parallel.For(0, workers, _options, _worker);
-        }
-        catch (AggregateException e) when (e.InnerExceptions.Count == 1)
-        {
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerExceptions[0]).Throw();
-        }
-        finally
-        {
-            _jobState = null;
-        }
-    }
-
-    private void WorkerLoop(int worker)
-    {
-        var body = _jobBody;
-        object state = _jobState!;
-        int count = _jobCount, chunk = _jobChunk;
-        int start;
-        while ((start = Interlocked.Add(ref _jobNext, chunk) - chunk) < count)
-            for (int i = start, end = Math.Min(count, start + chunk); i < end; i++) body(state, i, worker);
+        _team.For(count, state, body);
     }
 
     private static float* Pointer(ref float[]? buffer, long floats)
