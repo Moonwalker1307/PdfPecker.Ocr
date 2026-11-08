@@ -1,1 +1,138 @@
 # PdfPecker.Ocr
+
+Text recognition (OCR) for .NET with no native dependencies: reads printed text from images and scanned PDFs, and
+makes scanned PDFs searchable by adding an invisible text layer.
+
+PdfPecker.Ocr runs PaddleOCR's PP-OCRv6 small models on a neural network runtime of its own, written in C#. It does not
+ship native binaries, call ONNX Runtime or Tesseract, or need a GPU or a network connection. Its only dependency is the
+[PdfPecker](https://www.nuget.org/packages/PdfPecker) package, which it uses to decode images, render PDF pages and
+write the text layer.
+
+> PdfPecker.Ocr is being built towards its first release, 0.1.0. The API below is the one planned for that release;
+> until it is on nuget.org, the package and this page may change.
+
+```csharp
+using PdfPecker.Ocr;
+
+OcrPage page = ImageOcr.Recognize(File.ReadAllBytes("receipt.png"));
+Console.WriteLine(page.Text);
+```
+
+## Install
+
+```
+dotnet add package PdfPecker.Ocr
+```
+
+The package targets `net8.0`, `net9.0` and `net10.0`, so it works on .NET 8 and later, on Windows, Linux and macOS,
+on x64 and Arm64. It is trimmable and works in Native AOT applications.
+
+## Quick start
+
+```csharp
+using PdfPecker.Ocr;
+
+// An image file: PNG, JPEG, TIFF, WebP, BMP or GIF
+OcrPage page = ImageOcr.Recognize(File.ReadAllBytes("scan.jpg"));
+Console.WriteLine(page.Text);
+
+// Lines and words with their positions in page pixels (origin top left) and a confidence from 0 to 1
+foreach (OcrLine line in page.Lines)
+{
+    Console.WriteLine($"{line.Box.X:0},{line.Box.Y:0} {line.Confidence:P0} {line.Text}");
+    foreach (OcrWord word in line.Words)
+        Console.WriteLine($"  {word.Text} at {word.Quad.TopLeft}");
+}
+
+// Pixels you already have, such as a camera frame or a bitmap from another library
+OcrPage frame = ImageOcr.RecognizeRgba(rgba, width, height);
+OcrPage gray = ImageOcr.RecognizeGray(luminance, width, height);
+
+// A scanned PDF: the text of every page, and hOCR for tools that read it
+OcrDocument document = PdfOcr.Recognize(File.ReadAllBytes("scanned.pdf"));
+Console.WriteLine(document.Text);
+File.WriteAllText("scanned.hocr", document.ToHocr());
+
+// Make a scanned PDF searchable: the pages look the same, and their text can be selected, searched and copied.
+// Pages that already have text are left as they are unless PageMode is Force.
+byte[] searchable = PdfOcr.MakeSearchable(File.ReadAllBytes("scanned.pdf"));
+
+// Images straight to one searchable PDF, a page per image
+byte[] pdf = ImageOcr.ToSearchablePdf(Directory.GetFiles("scans", "*.png").Select(File.ReadAllBytes));
+
+// Options: render PDF pages at 200 dpi, drop lines below 60% confidence, use two threads
+var options = new OcrOptions { Dpi = 200, MinConfidence = 0.6f, MaxDegreeOfParallelism = 2 };
+OcrDocument report = PdfOcr.Recognize(File.ReadAllBytes("report.pdf"), options);
+```
+
+The methods are static and thread-safe, so documents can be recognised in parallel. The models are loaded once, on
+first use, and shared.
+
+## How it works
+
+1. **Input.** Images are decoded and PDF pages rendered (at `OcrOptions.Dpi`, 300 by default) by PdfPecker.
+2. **Detection.** The PP-OCRv6 small detection model marks where text is; the probability map it returns is turned
+   into one quadrilateral per text line, so slanted lines keep their angle.
+3. **Orientation.** Each line is cut out and straightened, and a small classifier turns lines that are upside down
+   (`OcrOptions.DetectRotation`).
+4. **Recognition.** The PP-OCRv6 small recognition model reads each line, and its output is decoded into characters
+   with a confidence and a position along the line, from which the words and their boxes come.
+5. **Layout.** Lines are put into reading order, top to bottom and left to right, column by column.
+6. **Searchable PDF.** The text is written as invisible text over each word, scaled to the word's width, and stamped
+   onto the original pages, so the scan itself is not changed.
+
+The runtime that executes the models is the package's own: a graph executor with SIMD kernels (AVX2, FMA, AVX-512
+where present, and Arm64 Advanced SIMD) for convolutions, matrix products and the other operations these models use,
+with buffers planned when the model loads, so a steady stream of pages allocates little. Results are the same whatever
+`MaxDegreeOfParallelism` is. The model weights are embedded in the assembly as 16-bit floats, generated from the
+published ONNX files by `tools/ModelBuilder`.
+
+## Languages
+
+The recognition model reads Latin script, including the accented letters of Western, Central and Northern European
+languages (`æ ø å ä ö ü ß é ç ñ ł ő č ž` and others), Greek, Chinese (simplified and traditional) and Japanese
+(kana and kanji), as well as digits, punctuation and common symbols. Its character list has no Cyrillic, Korean,
+Arabic, Hebrew, Devanagari or Thai letters, so text in those scripts is not recognised.
+
+## Limitations
+
+- **Printed text only.** The models are trained on printed and screen text. Handwriting is not supported.
+- **Accuracy depends on the scan.** Blurred, very low resolution (below about 150 dpi for body text), heavily
+  compressed or noisy scans read worse, as do decorative fonts, text on busy backgrounds and very small print. The
+  confidence of each line and word says how sure the model was.
+- **Rotation.** Lines that are slanted or upside down are handled; pages rotated by 90 degrees, or vertical writing, are
+  not turned upright on their own.
+- **Layout.** Reading order is worked out from the positions of lines. Tables come out as lines of text, not as cells,
+  and complex magazine layouts can come out in a different order than a person would read them.
+- **No language model.** Each line is read on its own, without a dictionary, so a misread character is not corrected
+  from the words around it.
+- **Size.** Pages are limited to `OcrOptions.MaxPixels` (100 million pixels by default), so that a hostile file cannot
+  exhaust memory; a larger page is refused with an exception.
+
+## Performance
+
+Measured with `bench/PdfPecker.Ocr.Benchmarks` against ONNX Runtime (running the same models through RapidOCR) and
+Tesseract 5.5.1, on the corpus and machine named below. Times are per page, after a warm-up.
+
+| Case | PdfPecker.Ocr | RapidOCR + ONNX Runtime | Tesseract 5.5.1 |
+| --- | --- | --- | --- |
+| A4 page at 150 dpi, 32 lines | to be measured | to be measured | to be measured |
+| A4 page at 300 dpi, 32 lines | to be measured | to be measured | to be measured |
+| Peak memory, 300 dpi page | to be measured | to be measured | to be measured |
+| Character accuracy on the synthetic corpus | to be measured | to be measured | to be measured |
+
+The figures will be filled in from measured runs before the first release. Cloud machines differ too much in processor
+to compare a run with this table; to compare two versions, run `bench/compare-versions.sh` on one machine.
+
+## Licence
+
+PdfPecker.Ocr's code is licensed under the [MIT license](LICENSE). The model weights embedded in the package are
+derived from PaddleOCR's models, converted to ONNX by the RapidOCR authors, and are licensed under the Apache License,
+Version 2.0; [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) has the attribution, the notice of the changes made to
+them and the licence text. Both licences allow commercial use. The package's licence expression is
+`MIT AND Apache-2.0`.
+
+## Contributing
+
+Bug reports with a sample image or PDF are the most useful thing; see [CONTRIBUTING.md](CONTRIBUTING.md). Security
+problems go through the [security policy](SECURITY.md).
