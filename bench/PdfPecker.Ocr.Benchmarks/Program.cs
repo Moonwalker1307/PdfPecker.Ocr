@@ -15,6 +15,8 @@ using OcrBench;
 //                                                   an A4 invoice page at 300 dpi end to end, cold and warm, and its time
 //                                                   by stage (or, with --memory, the resident peak of OCR alone); run it
 //                                                   in a fresh process per thread count
+//        dotnet run -c Release -p:OcrInternals=true -- profile [--corpus dir] [--only id,=id] [--threads n] [--runs n]
+//                                                   corpus pages with every network layer timed (Profile.cs)
 //        the API cases are on by default (-p:OcrApi=false turns them off); -p:OcrInternals=true adds the stage cases.
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
@@ -23,6 +25,19 @@ if (args.Length > 1 && args[0] == "versions")
 {
     Versions.Compare(Path.GetFullPath(args[1]), args.Length > 2 ? int.Parse(args[2], CultureInfo.InvariantCulture) : 3);
     return 0;
+}
+
+if (args.Length > 0 && args[0] == "profile")
+{
+#if OCR_INTERNALS
+    int pt = int.TryParse(ArgValue("--threads"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var t2) ? t2 : Environment.ProcessorCount;
+    int pr = int.TryParse(ArgValue("--runs"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var r2) ? r2 : 3;
+    Profile.Run(ArgValue("--corpus") ?? "bench/TesseractComparison/corpus", ArgValue("--only")?.Split(','), pt, pr);
+    return 0;
+#else
+    Console.Error.WriteLine("The profile command needs a build with -p:OcrInternals=true.");
+    return 2;
+#endif
 }
 
 if (args.Length > 0 && args[0] == "stages")
