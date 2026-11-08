@@ -1,0 +1,135 @@
+using System.Numerics;
+using PdfPecker.Ocr.Inference.Kernels;
+using PdfPecker.Ocr.Models;
+
+namespace PdfPecker.Ocr.Inference.Layers;
+
+/// <summary>Max or average pooling over NCHW planes; padding never wins a maximum.</summary>
+internal sealed unsafe class PoolLayer : Layer
+{
+    private readonly bool _max;
+    private readonly int _kh, _kw, _sh, _sw, _pt, _pl, _pb, _pr;
+    private readonly bool _countIncludePad;
+
+    public PoolLayer(NodeDefinition node, bool max)
+        : base(node)
+    {
+        _max = max;
+        _kh = Int(node, 0);
+        _kw = Int(node, 1);
+        _sh = Int(node, 2);
+        _sw = Int(node, 3);
+        _pt = Int(node, 4);
+        _pl = Int(node, 5);
+        _pb = Int(node, 6);
+        _pr = Int(node, 7);
+        _countIncludePad = !max && Int(node, 8) != 0;
+        if (_kh < 1 || _kw < 1 || _sh < 1 || _sw < 1 || _pt < 0 || _pl < 0 || _pb < 0 || _pr < 0 || _pt >= _kh || _pl >= _kw || _pb >= _kh || _pr >= _kw)
+            throw new InvalidDataException("Bad pooling attributes.");
+    }
+
+    public override int[] OutputShape(int[][] inputs)
+    {
+        var x = inputs[0];
+        RequireRank(x, 4, "Pooling");
+        int oh = (x[2] + _pt + _pb - _kh) / _sh + 1;
+        int ow = (x[3] + _pl + _pr - _kw) / _sw + 1;
+        if (oh < 1 || ow < 1) throw Unsupported("The input is smaller than the pooling window.");
+        return [x[0], x[1], oh, ow];
+    }
+
+    public override void Execute(Step step, InferenceContext context) =>
+        context.For(step.OutputShape[0] * step.OutputShape[1], step, &Plane);
+
+    private static void Plane(object state, int plane, int worker)
+    {
+        var step = (Step)state;
+        var layer = (PoolLayer)step.Layer;
+        int[] x = step.InputShapes[0];
+        int[] o = step.OutputShape;
+        float* input = step.Input(0) + (long)plane * x[2] * x[3];
+        float* output = step.Output + (long)plane * o[2] * o[3];
+        if (layer._max && layer._kh == 2 && layer._kw == 2 && layer._sh == 1 && layer._sw == 1 && layer._pt == 0 && layer._pl == 0)
+            MaxPool2x2Stride1(input, x[2], x[3], output, o[2], o[3]);
+        else
+            layer.Generic(input, x[2], x[3], output, o[2], o[3]);
+    }
+
+    /// <summary>The stem's 2x2, stride 1 maximum with padding only at the bottom and right (SAME_UPPER).</summary>
+    private static void MaxPool2x2Stride1(float* input, int h, int w, float* output, int oh, int ow)
+    {
+        int width = Vector<float>.Count;
+        for (int y = 0; y < oh; y++)
+        {
+            float* r0 = input + (long)y * w;
+            float* r1 = y + 1 < h ? r0 + w : r0;
+            float* dst = output + (long)y * ow;
+            int x = 0;
+            // Vectors cover the pixels whose right neighbour is inside the row.
+            for (; x + width < w && x + width <= ow; x += width)
+            {
+                var a = Vector.Max(VectorMath.Load(r0 + x), VectorMath.Load(r1 + x));
+                var b = Vector.Max(VectorMath.Load(r0 + x + 1), VectorMath.Load(r1 + x + 1));
+                VectorMath.Store(Vector.Max(a, b), dst + x);
+            }
+            for (; x < ow; x++)
+            {
+                float m = Math.Max(r0[x], r1[x]);
+                if (x + 1 < w) m = Math.Max(m, Math.Max(r0[x + 1], r1[x + 1]));
+                dst[x] = m;
+            }
+        }
+    }
+
+    private void Generic(float* input, int h, int w, float* output, int oh, int ow)
+    {
+        for (int y = 0; y < oh; y++)
+        {
+            for (int x = 0; x < ow; x++)
+            {
+                int y0 = y * _sh - _pt, x0 = x * _sw - _pl;
+                float acc = _max ? float.NegativeInfinity : 0f;
+                int count = 0;
+                for (int ky = 0; ky < _kh; ky++)
+                {
+                    int iy = y0 + ky;
+                    if ((uint)iy >= (uint)h) continue;
+                    for (int kx = 0; kx < _kw; kx++)
+                    {
+                        int ix = x0 + kx;
+                        if ((uint)ix >= (uint)w) continue;
+                        float v = input[(long)iy * w + ix];
+                        acc = _max ? Math.Max(acc, v) : acc + v;
+                        count++;
+                    }
+                }
+                if (!_max)
+                {
+                    int divisor = _countIncludePad
+                        ? (Math.Min(y0 + _kh, h + _pb) - Math.Max(y0, -_pt)) * (Math.Min(x0 + _kw, w + _pr) - Math.Max(x0, -_pl))
+                        : count;
+                    acc = divisor > 0 ? acc / divisor : 0f;
+                }
+                output[(long)y * ow + x] = acc;
+            }
+        }
+    }
+}
+
+/// <summary>The mean of each channel plane.</summary>
+internal sealed unsafe class GlobalAveragePoolLayer(NodeDefinition node) : Layer(node)
+{
+    public override int[] OutputShape(int[][] inputs)
+    {
+        RequireRank(inputs[0], 4, "Global average pooling");
+        return [inputs[0][0], inputs[0][1], 1, 1];
+    }
+
+    public override void Execute(Step step, InferenceContext context)
+    {
+        int[] x = step.InputShapes[0];
+        int planes = x[0] * x[1], size = x[2] * x[3];
+        float* input = step.Input(0), output = step.Output;
+        for (int p = 0; p < planes; p++) output[p] = VectorMath.Sum(input + (long)p * size, size) / size;
+    }
+}
