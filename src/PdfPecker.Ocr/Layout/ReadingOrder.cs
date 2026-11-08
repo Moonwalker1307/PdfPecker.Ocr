@@ -13,7 +13,7 @@ namespace PdfPecker.Ocr.Layout;
 /// The page is first turned so its dominant text direction (the length-weighted direction of the lines, to the
 /// nearest quarter turn) reads left to right; an upside-down scan is then read from its real top. In that frame, the
 /// lines are split recursively at the white space between them (an XY cut): bands of rows where a horizontal gap
-/// crosses the whole block, columns where a vertical gap runs through it.
+/// crosses the whole block, columns where a vertical gap runs through it, the widest gaps first.
 /// </para>
 /// <para>
 /// When a block can be cut both ways, the choice decides between columns of prose and the rows of a table or form,
@@ -157,7 +157,9 @@ internal static class ReadingOrder
     }
 
     /// <summary>
-    /// Splits items at the gaps of their projection onto one axis: rows (by y) or columns (by x). A line's vertical
+    /// Splits items at the widest gaps of their projection onto one axis: rows (by y) or columns (by x). Only gaps of
+    /// at least 80% of the widest one cut, as in the classic recursive XY cut, so a heading or a footer is cut off
+    /// before the evenly spaced rows of two columns would be, and the columns get their own turn. A line's vertical
     /// extent is taken without the top and bottom quarter of its height, because detected boxes are grown around the
     /// text and boxes of tightly set lines overlap.
     /// </summary>
@@ -173,20 +175,28 @@ internal static class ReadingOrder
             sorted.Sort(static (a, b) => Start(a, false).CompareTo(Start(b, false)) is var c && c != 0 ? c : a.Index.CompareTo(b.Index));
         }
 
+        // The gap before each item (0 where it overlaps what came before), and the widest one.
+        var gaps = new float[sorted.Count];
+        float end = float.NegativeInfinity, widest = 0;
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            float s = Start(sorted[i], horizontal);
+            gaps[i] = i > 0 && s > end ? s - end : 0;
+            widest = MathF.Max(widest, gaps[i]);
+            end = MathF.Max(end, End(sorted[i], horizontal));
+        }
+
         var parts = new List<List<Item>>();
         var current = new List<Item>();
-        float end = float.NegativeInfinity;
-        foreach (Item item in sorted)
+        for (int i = 0; i < sorted.Count; i++)
         {
-            float s = Start(item, horizontal), e = End(item, horizontal);
-            if (current.Count > 0 && s > end)
+            if (current.Count > 0 && gaps[i] > 0 && gaps[i] >= 0.8f * widest)
             {
                 parts.Add(current);
                 current = [];
             }
 
-            current.Add(item);
-            end = MathF.Max(end, e);
+            current.Add(sorted[i]);
         }
 
         parts.Add(current);
