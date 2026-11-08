@@ -426,3 +426,9 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# Tesseract comparison tooling output (native build, clones, generated corpus and results)
+tools/Tesseract/src/
+tools/Tesseract/out/
+bench/TesseractComparison/corpus/
+bench/TesseractComparison/results/

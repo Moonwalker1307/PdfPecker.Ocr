@@ -1,0 +1,65 @@
+# Tesseract for comparison
+
+PdfPecker.Ocr is MIT licensed. This folder builds [Tesseract](https://github.com/tesseract-ocr/tesseract) (Apache-2.0) and
+[Leptonica](https://github.com/DanBloomberg/leptonica) (BSD-2-Clause) from source, and fetches Tesseract's `tessdata_fast`
+language models (Apache-2.0), for one purpose: `bench/TesseractComparison` calls the library to compare recognition
+accuracy, speed and memory with PdfPecker.Ocr. **Nothing built or downloaded here is part of the PdfPecker.Ocr package or ships
+with it**, and no project in the repository references it at build time. Output goes to `tools/Tesseract/out/`, which is
+git-ignored.
+
+```
+tools/Tesseract/build.sh            # about 10 minutes on 2 cores
+tools/Tesseract/build.sh --jobs 4   # or TESSERACT_BUILD_JOBS=4
+```
+
+Needs `git`, `cmake`, `ninja`, a C and C++ compiler with OpenMP (`libgomp`), and `curl`. It builds on Linux (x64, arm64) and
+macOS; the comparison app is only run on Linux so far.
+
+## What the script does
+
+1. Clones Leptonica `1.85.0` and Tesseract `5.5.1` with `git clone --depth 1 --branch <tag>`, then **checks the commit** each tag
+   resolves to against the pins at the top of the script and refuses to build on a mismatch.
+2. Builds Leptonica as a static, position independent library, Release `-O3`, **without any image codec** (no libpng, libjpeg,
+   libtiff, zlib, giflib, webp or openjpeg): the comparison passes raw pixels to `TessBaseAPISetImage`, so Leptonica never reads
+   a file. This keeps the result self-contained.
+3. Builds Tesseract as a shared library, Release `-O3`, with the training tools, curl and libarchive off, and links the static
+   Leptonica **into** `libtesseract` (the script fails if `ldd` shows a separate Leptonica). The result is
+   `out/<rid>/libtesseract.so`, plus the `tesseract` command line program next to it.
+4. Downloads `eng`, `dan`, `deu`, `fra` and `osd` from `tessdata_fast` at a pinned commit, and `eng` from `tessdata_best`, into
+   `out/tessdata` and `out/tessdata-best`, and **verifies the SHA-256 of every file**.
+
+| Pin | Value |
+| --- | --- |
+| Leptonica | tag `1.85.0`, commit `63aef18d98432b8582a1565e241f7bd2ee9cc8d9` |
+| Tesseract | tag `5.5.1`, commit `0995615022dc368f65c6b88f31784d8bc384f855` |
+| tessdata_fast | commit `87416418657359cb625c412a48b6e1d6d41c29bd` |
+| tessdata_best | commit `e12c65a915945e4c28e237a9b52bc4a8f39a0cec` (`eng` only) |
+
+The SHA-256 of each model is in the script (`FAST_FILES`, `BEST_ENG_SHA256`).
+
+## OpenMP and threads
+
+Tesseract's own CMake build has OpenMP on by default, and so does this one (`-DOPENMP_BUILD=ON`), because that is what a
+user of the stock build gets: the LSTM engine then uses up to four OpenMP threads per recognition. The thread count is not an
+API setting. **Set `OMP_THREAD_LIMIT` (and `OMP_NUM_THREADS`) in the environment of the process that loads the library**, before
+it starts: the OpenMP runtime reads it once. `bench/TesseractComparison` does this by starting a fresh child process per engine
+and thread count, which is also what makes each engine's peak memory its own. Tesseract's own advice for servers that run many
+recognitions at once is `OMP_THREAD_LIMIT=1`.
+
+The library is built without `-march=native`: Tesseract picks its AVX2/FMA/SSE dot-product code at run time.
+
+## Verifying a build by hand
+
+```
+tools/Tesseract/out/linux-x64/tesseract --version
+tools/Tesseract/out/linux-x64/tesseract page.png - --tessdata-dir tools/Tesseract/out/tessdata -l eng
+```
+
+(Run the program with `LD_LIBRARY_PATH=tools/Tesseract/out/linux-x64` if it does not find `libtesseract.so`; the build sets an
+`$ORIGIN` run path, which normally makes that unnecessary.)
+
+## Licences
+
+Tesseract and the tessdata models are Apache-2.0 (Copyright the Tesseract authors, and Google for the models); Leptonica is
+BSD-2-Clause (Copyright Daniel Bloomberg and contributors). They are developer tooling here, not dependencies, and not
+redistributed, so `THIRD-PARTY-NOTICES.md` does not list them.
