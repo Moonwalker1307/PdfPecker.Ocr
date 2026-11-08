@@ -436,3 +436,9 @@ aot/
 aot-*/
 coverage/
 perf*.json
+
+# Tesseract comparison tooling output (native build, clones, generated corpus and results)
+tools/Tesseract/src/
+tools/Tesseract/out/
+bench/TesseractComparison/corpus/
+bench/TesseractComparison/results/

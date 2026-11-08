@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Compares PdfPecker.Ocr with Tesseract (called in-process through its C API) and with rapidocr (a Python reference)
+       on the synthetic corpus of tools/Corpus. Published with Native AOT so that the measurements of a .NET engine are
+       those of the shipped kind of build. Dev tooling only: nothing here is packed. See README.md.
+
+       PdfPecker.Ocr is plugged in with -p:WithPdfPeckerOcr=true, which references src/PdfPecker.Ocr and compiles the real
+       adapter; without it the adapter is a stub, so the app builds before the package has its API. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishAot>true</PublishAot>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <StripSymbols>true</StripSymbols>
+    <RootNamespace>TesseractComparison</RootNamespace>
+    <AssemblyName>TesseractComparison</AssemblyName>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(WithPdfPeckerOcr)' == 'true'">
+    <DefineConstants>$(DefineConstants);PDFPECKER_OCR</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(WithPdfPeckerOcr)' == 'true'">
+    <ProjectReference Include="../../src/PdfPecker.Ocr/PdfPecker.Ocr.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="rapidocr_server.py" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Remove="corpus/**" />
+  </ItemGroup>
+
+</Project>
