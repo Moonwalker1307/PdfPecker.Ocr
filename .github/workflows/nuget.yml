@@ -214,10 +214,14 @@ jobs:
       - name: Publish the sample with native AOT
         run: dotnet publish samples/PdfPecker.Ocr.Sample -c Release -p:PublishAot=true -p:TreatWarningsAsErrors=true -o aot
 
-      # Until the recognition API is in, the sample prints the package version. Once it reads images, this step runs it
-      # on a fixture image and checks the text it prints.
+      # The sample reads a page PdfPecker rendered at 300 dpi; the text must come out exactly, Nordic and German letters
+      # included, which shows the models are embedded and run in the native executable.
       - name: Run the sample
-        run: ./aot/PdfPecker.Ocr.Sample README.md | grep -q '^PdfPecker.Ocr '
+        run: |
+          ./aot/PdfPecker.Ocr.Sample samples/PdfPecker.Ocr.Sample/sample.png > text.txt
+          cat text.txt
+          grep -qx 'PdfPecker.Ocr reads printed text from images and scanned PDFs.' text.txt
+          grep -qx 'Rødgrød med fløde, Größe 42, total EUR 1,234.56.' text.txt
 
   release:
     if: github.event_name == 'release'
