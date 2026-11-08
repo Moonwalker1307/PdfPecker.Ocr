@@ -3,10 +3,11 @@ using System.Runtime.CompilerServices;
 namespace PdfPecker.Ocr.Inference;
 
 /// <summary>
-/// The working memory and the degree of parallelism of one inference worker. A context runs one model at a time: it
-/// owns the activation arena, per-worker scratch buffers, the execution plans and the output buffers, and reuses them
-/// across runs, so a steady stream of runs of similar sizes allocates no tensors. It is not thread-safe; give each
-/// concurrent worker its own context. Models are shared.
+/// The working memory and the threads of one inference worker. A context runs one model at a time: it owns the
+/// activation arena, per-worker scratch buffers, the execution plans, the output buffers and, for a degree of
+/// parallelism above one, that many threads less one (the caller's thread is the first worker), and reuses them across
+/// runs, so a steady stream of runs of similar sizes allocates nothing. It is not thread-safe; give each concurrent
+/// worker its own context, and dispose it to stop its threads. Models are shared.
 /// </summary>
 internal sealed unsafe class InferenceContext : IDisposable
 {
@@ -17,7 +18,6 @@ internal sealed unsafe class InferenceContext : IDisposable
     private float[]?[] _scratch;
     private float[]? _shared;
     private bool _disposed;
-
 
     /// <summary>Creates a context that uses at most the given number of threads for one run.</summary>
     public InferenceContext(int maxDegreeOfParallelism)

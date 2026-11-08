@@ -35,6 +35,29 @@ public sealed class RuntimeTests
         }
     }
 
+    [Theory]
+    [InlineData("det", "det_96x128")]
+    [InlineData("rec", "rec_2x48x160")]
+    public void EveryMatrixKernelGivesTheSameBits(string name, string fixture)
+    {
+        // Each kernel sums a value's products in the same order with fused multiply-adds, whatever its block size, so
+        // the AVX-512, AVX2 and portable kernels agree to the bit where the processor runs them all.
+        using var stream = typeof(ModelStore).Assembly.GetManifestResourceStream($"PdfPecker.Ocr.Models.{name}.bin.br")!;
+        using var brotli = new System.IO.Compression.BrotliStream(stream, System.IO.Compression.CompressionMode.Decompress);
+        using var buffer = new MemoryStream();
+        brotli.CopyTo(buffer);
+        byte[] data = buffer.ToArray();
+        var input = ReferenceFixture.Load(fixture).Input();
+        float[]? first = null;
+        foreach (var kernel in GemmKernel.Supported)
+        {
+            using var context = new InferenceContext(2);
+            float[] result = OcrModel.Load(data, kernel).Run(input, context).Span.ToArray();
+            if (first is null) first = result;
+            else Assert.True(first.AsSpan().SequenceEqual(result), $"{kernel.Name} differs");
+        }
+    }
+
     [Fact]
     public void LayersAreDeterministicAcrossDegrees()
     {
