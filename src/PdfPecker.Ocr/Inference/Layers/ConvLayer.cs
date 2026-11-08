@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -234,6 +235,9 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
 internal sealed unsafe class DepthwiseConvLayer : ConvLayer
 {
     private static readonly int Width = Vector<float>.Count;
+
+    // The slack after each padded row, enough for a 512-bit read that starts at the last pixel.
+    private const int Slack = 16;
     private readonly float[] _weights;
     private readonly float[] _bias;
 
@@ -253,13 +257,13 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
     }
 
     /// <summary>The length of one padded input row in scratch, including vector slack.</summary>
-    private int RowLength(int ow) => Sw == 1 ? ow + Kw - 1 + Width : 2 * (ow + (Kw + 1) / 2 + Width);
+    private int RowLength(int ow) => Sw == 1 ? ow + Kw - 1 + Slack : 2 * (ow + (Kw + 1) / 2 + Slack);
 
     public override long ScratchPerWorker(Step step, InferenceContext context)
     {
         int band = BandRows(step.OutputShape);
         int rows = (band - 1) * Sh + Kh;
-        return (long)rows * RowLength(step.OutputShape[3]) + Width;
+        return (long)rows * RowLength(step.OutputShape[3]) + Slack;
     }
 
     public override void Execute(Step step, InferenceContext context)
@@ -327,7 +331,7 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
         {
             float* outRow = output + (long)y * ow;
             float* rows = scratch + (long)(y * Sh - Pt - iyStart) * rowLength;
-            int ox = 0;
+            int ox = VectorMath.Wide ? ComputeWide(rows, rowLength, half, taps, _bias[c], outRow, ow) : 0;
             // Four vectors of pixels at a time: four independent sums hide the latency of the additions, and each tap is
             // broadcast once for all four. Every pixel still sums its taps in the same order as in the loop below.
             for (; ox + 4 * Width <= ow; ox += 4 * Width)
@@ -385,6 +389,57 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
             }
             if (HasResidual) VectorMath.AddInPlace(outRow, step.Input(1) + outOffset + (long)y * ow, ow);
         }
+    }
+
+    /// <summary>
+    /// The leading whole 512-bit vectors of one output row, for processors with AVX-512, where Vector&lt;T&gt; stays 256
+    /// bits wide; returns how many pixels it did. Each pixel sums its taps in the same order, with the same separate
+    /// products and sums, as the loops of <see cref="Compute"/>, and the wide activation matches the narrow one lane
+    /// for lane, so the results do not depend on which loop a pixel lands in.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private int ComputeWide(float* rows, int rowLength, int half, float* taps, float biasValue, float* outRow, int ow)
+    {
+        var bias = Vector512.Create(biasValue);
+        int ox = 0;
+        for (; ox + 64 <= ow; ox += 64)
+        {
+            Vector512<float> a0 = bias, a1 = bias, a2 = bias, a3 = bias;
+            for (int ky = 0; ky < Kh; ky++)
+            {
+                float* row = rows + (long)ky * rowLength;
+                float* tap = taps + ky * Kw;
+                for (int kx = 0; kx < Kw; kx++)
+                {
+                    float* src = Sw == 1 ? row + ox + kx : row + ((kx & 1) == 0 ? 0 : half) + ox + (kx >> 1);
+                    var t = Vector512.Create(tap[kx]);
+                    a0 += t * Vector512.Load(src);
+                    a1 += t * Vector512.Load(src + 16);
+                    a2 += t * Vector512.Load(src + 32);
+                    a3 += t * Vector512.Load(src + 48);
+                }
+            }
+            Vector512.Store(VectorMath.ActivateWide(a0, Activation, Alpha, Beta), outRow + ox);
+            Vector512.Store(VectorMath.ActivateWide(a1, Activation, Alpha, Beta), outRow + ox + 16);
+            Vector512.Store(VectorMath.ActivateWide(a2, Activation, Alpha, Beta), outRow + ox + 32);
+            Vector512.Store(VectorMath.ActivateWide(a3, Activation, Alpha, Beta), outRow + ox + 48);
+        }
+        for (; ox + 16 <= ow; ox += 16)
+        {
+            var acc = bias;
+            for (int ky = 0; ky < Kh; ky++)
+            {
+                float* row = rows + (long)ky * rowLength;
+                float* tap = taps + ky * Kw;
+                for (int kx = 0; kx < Kw; kx++)
+                {
+                    float* src = Sw == 1 ? row + ox + kx : row + ((kx & 1) == 0 ? 0 : half) + ox + (kx >> 1);
+                    acc += Vector512.Create(tap[kx]) * Vector512.Load(src);
+                }
+            }
+            Vector512.Store(VectorMath.ActivateWide(acc, Activation, Alpha, Beta), outRow + ox);
+        }
+        return ox;
     }
 }
 

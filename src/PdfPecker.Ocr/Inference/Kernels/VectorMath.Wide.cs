@@ -24,8 +24,9 @@ internal static unsafe partial class VectorMath
         return i;
     }
 
+    /// <summary>The activation of one 512-bit vector, lane for lane what the Vector&lt;T&gt; activation gives.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Vector512<float> ActivateWide(Vector512<float> x, ActivationKind kind, float alpha, float beta) => kind switch
+    internal static Vector512<float> ActivateWide(Vector512<float> x, ActivationKind kind, float alpha, float beta) => kind switch
     {
         ActivationKind.Relu => Vector512.Max(x, Vector512<float>.Zero),
         ActivationKind.Sigmoid => SigmoidWide(x),
