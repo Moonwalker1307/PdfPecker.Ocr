@@ -47,11 +47,22 @@ internal static class CtcDecoder
     /// <paramref name="classCount"/> class probabilities. With <paramref name="subset"/> (ascending class indices that
     /// include the blank), only those classes compete at each step, which also reads far less memory.
     /// </summary>
+    /// <remarks>
+    /// A row of two values instead of one per class is the most probable class and its probability, as
+    /// <see cref="Models.ModelStore.RecognitionArgMax"/> returns them; that decodes to the same line, but cannot be
+    /// limited to a subset.
+    /// </remarks>
     public static DecodedLine Decode(ReadOnlySpan<float> probabilities, int steps, int classCount, CharacterSet characters, int[]? subset = null)
     {
-        if (classCount != characters.Count)
+        bool argMax = classCount == 2 && characters.Count != 2;
+        if (classCount != characters.Count && !argMax)
         {
             throw new InvalidOperationException($"The recognition network has {classCount} classes, the character list {characters.Count}.");
+        }
+
+        if (argMax && subset is not null)
+        {
+            throw new InvalidOperationException("A subset of the classes needs the probabilities of every class, not only the most probable one.");
         }
 
         var text = new StringBuilder();
@@ -63,7 +74,7 @@ internal static class CtcDecoder
         for (int t = 0; t < steps; t++)
         {
             ReadOnlySpan<float> row = probabilities.Slice(t * classCount, classCount);
-            (int index, float p) = subset is null ? ArgMax(row) : ArgMax(row, subset);
+            (int index, float p) = argMax ? Best(row, characters.Count) : subset is null ? ArgMax(row) : ArgMax(row, subset);
             if (index != previous && index != 0)
             {
                 text.Append(characters[index]);
@@ -79,6 +90,18 @@ internal static class CtcDecoder
         // rapidocr averages [0] when nothing was kept, which gives an empty line a score of 0.
         float score = classes.Count == 0 ? 0 : (float)Math.Round(sum / classes.Count, 5, MidpointRounding.ToEven);
         return new DecodedLine(text.ToString(), score, [.. classes], [.. columns], [.. probs], steps);
+    }
+
+    /// <summary>The class and probability of a row of the argmax output, checked against the character list.</summary>
+    private static (int Index, float Value) Best(ReadOnlySpan<float> row, int classCount)
+    {
+        float index = row[0];
+        if (!(index >= 0 && index < classCount) || index != MathF.Floor(index))
+        {
+            throw new InvalidOperationException("The recognition network returned a class that is not in the character list.");
+        }
+
+        return ((int)index, row[1]);
     }
 
     /// <summary>The first index of the largest value, as numpy's argmax, and the value. NaN never wins.</summary>

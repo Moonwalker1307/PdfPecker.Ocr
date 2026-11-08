@@ -154,18 +154,87 @@ internal static unsafe partial class VectorMath
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void Softmax(float* row, int length)
     {
-        float max = Max(row, length);
-        // The exponentials are stored first, 512 bits at a time where AVX-512 is used, and then summed in Vector<T>
-        // lanes and tail order, so the sum does not depend on the vector width.
-        int i = Wide ? ExpShiftedWide(row, length, max) : 0;
-        var vmax = new Vector<float>(max);
-        for (; i <= length - Width; i += Width) Store(Exp(Load(row + i) - vmax), row + i);
-        for (; i < length; i++) row[i] = Exp(new Vector<float>(row[i] - max))[0];
-        var acc = Vector<float>.Zero;
-        for (i = 0; i <= length - Width; i += Width) acc += Load(row + i);
-        float sum = Vector.Sum(acc);
-        for (; i < length; i++) sum += row[i];
+        float sum = ExpShiftedSum(row, length, Max(row, length), out _);
         Scale(row, length, 1f / sum);
+    }
+
+    /// <summary>
+    /// The largest probability of a softmax over one row and the first index that has it, exactly as if the row had
+    /// gone through <see cref="Softmax"/> and then a search for the first largest value: the same exponentials, the same
+    /// sum and the same products. The row is overwritten with the exponentials, and the probabilities are never stored.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public static int SoftmaxArgMax(float* row, int length, out float probability)
+    {
+        float scale = 1f / ExpShiftedSum(row, length, Max(row, length), out float largest);
+
+        // Rounding a product to nearest never puts a smaller factor above a larger one, so the largest probability is
+        // the largest exponential times the scale. Two exponentials can still round to the same probability, so the
+        // index is the first one whose own product equals it.
+        probability = largest * scale;
+        int i = 0;
+        var target = new Vector<float>(probability);
+        var factor = new Vector<float>(scale);
+        for (; i <= length - Width; i += Width)
+        {
+            if (Vector.EqualsAny(Load(row + i) * factor, target)) break;
+        }
+
+        for (; i < length; i++)
+        {
+            if (row[i] * scale == probability) return i;
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Replaces a row with exp(x - max) and returns the sum of the exponentials and the largest of them. The sum is
+    /// taken in Vector&lt;T&gt; lanes in the order of the row and then over the tail, whether the exponentials come 512
+    /// bits at a time (where AVX-512 is used) or not, so it does not depend on the vector width.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static float ExpShiftedSum(float* row, int length, float max, out float largest)
+    {
+        var acc = Vector<float>.Zero;
+        var top = Vector<float>.Zero;
+        int i = 0;
+        if (Wide)
+        {
+            var wmax = Vector512.Create(max);
+            for (; i <= length - 16; i += 16)
+            {
+                Vector512.Store(ExpWide(Vector512.Load(row + i) - wmax), row + i);
+                for (int j = 0; j < 16; j += Width)
+                {
+                    var e = Load(row + i + j);
+                    acc += e;
+                    top = Vector.Max(top, e);
+                }
+            }
+        }
+
+        var vmax = new Vector<float>(max);
+        for (; i <= length - Width; i += Width)
+        {
+            var e = Exp(Load(row + i) - vmax);
+            Store(e, row + i);
+            acc += e;
+            top = Vector.Max(top, e);
+        }
+
+        float sum = Vector.Sum(acc);
+        largest = 0;
+        for (int j = 0; j < Width; j++) largest = Math.Max(largest, top[j]);
+        for (; i < length; i++)
+        {
+            float e = Exp(new Vector<float>(row[i] - max))[0];
+            row[i] = e;
+            sum += e;
+            largest = Math.Max(largest, e);
+        }
+
+        return sum;
     }
 
     /// <summary>Multiplies length values in place by a factor.</summary>

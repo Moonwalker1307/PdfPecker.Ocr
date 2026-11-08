@@ -59,6 +59,38 @@ public sealed class RecognitionTests(ITestOutputHelper output)
         }
     }
 
+    [Theory]
+    [InlineData("invoice")]
+    [InlineData("table")]
+    public void BestClassOutputDecodesTheSame(string name)
+    {
+        // The engine's recogniser returns the best class and its probability per time step instead of every class.
+        using PipelineFixture fx = PipelineFixture.Load(name);
+        foreach (RecordedLine line in RecordedLine.Read(fx))
+        {
+            float[] p = line.Probabilities(Characters.Count);
+            var best = new float[line.Steps * 2];
+            for (int t = 0; t < line.Steps; t++)
+            {
+                (int index, float value) = CtcDecoder.ArgMax(p.AsSpan(t * Characters.Count, Characters.Count));
+                best[2 * t] = index;
+                best[(2 * t) + 1] = value;
+            }
+
+            DecodedLine all = CtcDecoder.Decode(p, line.Steps, Characters.Count, Characters);
+            DecodedLine fromBest = CtcDecoder.Decode(best, line.Steps, 2, Characters);
+            Assert.Equal(all.Text, fromBest.Text);
+            Assert.Equal(all.Score, fromBest.Score);
+            Assert.Equal(all.Columns, fromBest.Columns);
+            Assert.Equal(all.Probabilities, fromBest.Probabilities);
+        }
+
+        int[] latin = Characters.Subset(CharacterSet.IsLatin);
+        Assert.Throws<InvalidOperationException>(() => CtcDecoder.Decode(new float[4], 2, 2, Characters, latin));
+        Assert.Throws<InvalidOperationException>(() => CtcDecoder.Decode([Characters.Count, 1f], 1, 2, Characters));
+        Assert.Throws<InvalidOperationException>(() => CtcDecoder.Decode([float.NaN, 1f], 1, 2, Characters));
+    }
+
     [Fact]
     public void SubsetKeepsOnlyAllowedClasses()
     {

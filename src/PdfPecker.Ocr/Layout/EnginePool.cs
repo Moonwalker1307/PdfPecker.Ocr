@@ -26,7 +26,7 @@ internal sealed class EngineWorker : IDisposable
         try
         {
             _detection = new ModelNetwork(ModelStore.Detection, _context);
-            _recognition = new ModelNetwork(ModelStore.Recognition, _context);
+            _recognition = new ModelNetwork(ModelStore.RecognitionArgMax, _context);
             _orientation = new ModelNetwork(ModelStore.Classifier, _context);
         }
         catch

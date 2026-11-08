@@ -24,6 +24,16 @@ internal sealed unsafe class OcrModel
         if (layers.Count == 0) throw new InvalidDataException("The model has no layers.");
     }
 
+    private OcrModel(OcrModel source, List<Layer> layers)
+    {
+        Name = source.Name;
+        Notice = source.Notice;
+        _inputShape = source._inputShape;
+        Characters = source.Characters;
+        Gemm = source.Gemm;
+        Layers = layers;
+    }
+
     public string Name { get; }
 
     public string Notice { get; }
@@ -47,6 +57,30 @@ internal sealed unsafe class OcrModel
     {
         ArgumentNullException.ThrowIfNull(definition);
         return new OcrModel(definition, gemm ?? GemmKernel.Best);
+    }
+
+    /// <summary>
+    /// The same model with its final linear layer and softmax replaced by <see cref="Layers.ArgMaxHeadLayer"/>: the
+    /// output is [.., 2], the index of the most probable class of each row (as a float, exact below 2^24) and its
+    /// probability, bit for bit what the full output gives, without storing the probabilities of every class. The
+    /// layers and their weights are shared with this model. Fails with <see cref="InvalidOperationException"/> for a
+    /// model that does not end in a plain linear layer whose only reader is a softmax.
+    /// </summary>
+    public OcrModel WithArgMaxOutput()
+    {
+        var layers = Layers;
+        if (layers.Count < 2 || layers[^1] is not Layers.SoftmaxLayer softmax || layers[^2] is not Layers.LinearLayer { IsPlain: true } linear)
+            throw new InvalidOperationException($"{Name} does not end in a linear layer and a softmax.");
+        int linearValue = linear.Node.Output;
+        if (softmax.Node.Inputs.Length != 1 || softmax.Node.Inputs[0] != linearValue)
+            throw new InvalidOperationException($"{Name}'s softmax does not read its last linear layer.");
+        if (linear.OutputFeatures > 1 << 24)
+            throw new InvalidOperationException($"{Name} has too many classes for an index stored as a float.");
+        var node = new NodeDefinition(OpKind.Linear, linear.Node.Inputs, linearValue, [(int)ActivationKind.None, 0], [0, 0], linear.Node.Weights);
+        var fused = new List<Layer>(layers.Count - 1);
+        for (int i = 0; i < layers.Count - 2; i++) fused.Add(layers[i]);
+        fused.Add(new Layers.ArgMaxHeadLayer(linear, node));
+        return new OcrModel(this, fused);
     }
 
     /// <summary>

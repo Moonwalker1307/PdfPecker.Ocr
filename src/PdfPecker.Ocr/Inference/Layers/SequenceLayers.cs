@@ -134,7 +134,28 @@ internal sealed unsafe class LinearLayer : Layer
         return output;
     }
 
+    /// <summary>True when the layer is a plain product plus bias, with no activation or residual.</summary>
+    public bool IsPlain => _activation == ActivationKind.None && !_hasResidual;
+
+    /// <summary>The input features.</summary>
+    public int InputFeatures => _k;
+
+    /// <summary>The output features.</summary>
+    public int OutputFeatures => _n;
+
+    /// <summary>The kernel the weights are packed for.</summary>
+    public GemmKernel Gemm => _gemm;
+
+    /// <summary>The weights in the kernel's B panels, which <see cref="ArgMaxHeadLayer"/> shares.</summary>
+    public float[] PackedWeights => _weights;
+
+    /// <summary>The bias padded to whole panels.</summary>
+    public float[] PaddedBias => _bias;
+
     private int TileColumns() => Tiling.Balanced(_n, Math.Clamp(32768 / _k / _gemm.NR * _gemm.NR, _gemm.NR, 1024), _gemm.NR);
+
+    /// <summary>The tiles of this layer's product for the given number of rows.</summary>
+    public Tiling ColumnTiling(int rows) => Tiling.For(1, _n, TileColumns(), rows, _gemm.MR);
 
     public override long SharedScratch(Step step) => _gemm.PackedASize(Rows.Count(step.OutputShape), _k);
 
@@ -253,5 +274,115 @@ internal sealed unsafe class SoftmaxLayer(NodeDefinition node) : Layer(node)
             if (x != y) new Span<float>(x, c).CopyTo(new Span<float>(y, c));
             VectorMath.Softmax(y, c);
         }
+    }
+}
+
+/// <summary>
+/// A <see cref="LinearLayer"/> followed by a softmax over its output, reduced to what greedy decoding reads: for each row,
+/// the index of the most probable class and its probability, as [.., 2]. Both values are bit for bit what the two layers
+/// and a search for the first largest probability give (see <see cref="VectorMath.SoftmaxArgMax"/>), but the
+/// probabilities of all classes are never kept: the recogniser's 18,710 classes made an output of 75 KB per time step,
+/// 45 to 180 MB for a batch of long lines, which the decoder then read once more.
+/// </summary>
+/// <remarks>
+/// The rows go in chunks: the linear layer writes a chunk's logits into shared scratch, tiled over blocks of output
+/// columns as <see cref="LinearLayer"/> is, so a block of weights stays in the cache for every row of the chunk; then
+/// the rows of the chunk are reduced in parallel. A value of the product does not depend on the tile it lands in (see
+/// <see cref="GemmKernel"/>), and each row is reduced on its own, so results do not depend on the chunks or threads.
+/// </remarks>
+internal sealed unsafe class ArgMaxHeadLayer : Layer
+{
+    // Rows per chunk: 8 panels of 12 rows hold 7 MB of logits for 18,710 classes, which stay in a large cache, and read
+    // the weights once for 96 rows.
+    private const int ChunkRows = 96;
+
+    // Rows per reduction tile, enough to give every thread several tiles of a chunk.
+    private const int RowsPerTile = 4;
+
+    private readonly LinearLayer _linear;
+    private readonly int _stride;
+
+    public ArgMaxHeadLayer(LinearLayer linear, NodeDefinition node)
+        : base(node)
+    {
+        _linear = linear;
+        _stride = GemmKernel.RoundUp(linear.OutputFeatures, 16);
+    }
+
+    public override int[] OutputShape(int[][] inputs)
+    {
+        var x = inputs[0];
+        if (x.Length == 0 || x[^1] != _linear.InputFeatures) throw Unsupported($"Linear expects {_linear.InputFeatures} features.");
+        var output = (int[])x.Clone();
+        output[^1] = 2;
+        return output;
+    }
+
+    // The packed rows come first in the shared scratch, and the chunk's logits after them on a 64-byte boundary.
+    private long PackedSize(int rows) => (_linear.Gemm.PackedASize(rows, _linear.InputFeatures) + 15) / 16 * 16;
+
+    public override long SharedScratch(Step step)
+    {
+        int rows = Rows.Count(step.OutputShape);
+        return PackedSize(rows) + (long)Math.Min(rows, ChunkRows) * _stride;
+    }
+
+    public override void Execute(Step step, InferenceContext context)
+    {
+        int rows = Rows.Count(step.OutputShape);
+        var gemm = _linear.Gemm;
+        gemm.PackARows(step.Input(0), _linear.InputFeatures, rows, _linear.InputFeatures, context.SharedScratch);
+        var chunk = step.State as Chunk ?? (Chunk)(step.State = new Chunk(step));
+        chunk.Logits = context.SharedScratch + PackedSize(rows);
+        for (int m0 = 0; m0 < rows; m0 += ChunkRows)
+        {
+            chunk.First = m0;
+            chunk.Count = Math.Min(ChunkRows, rows - m0);
+            chunk.Tiling = _linear.ColumnTiling(chunk.Count);
+            context.For(chunk.Tiling.Count, chunk, &Product);
+            context.For((chunk.Count + RowsPerTile - 1) / RowsPerTile, chunk, &Reduce);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Product(object state, int tile, int worker)
+    {
+        var chunk = (Chunk)state;
+        var layer = (ArgMaxHeadLayer)chunk.Step.Layer;
+        var linear = layer._linear;
+        int k = linear.InputFeatures;
+        chunk.Tiling!.Decode(tile, out _, out int n0, out int columns, out int m0, out int rows);
+        float* a = chunk.Step.Context.SharedScratch + (long)(chunk.First + m0) * k;
+        fixed (float* weights = linear.PackedWeights, bias = linear.PaddedBias)
+            linear.Gemm.Multiply(k, a, rows, weights + (long)n0 * k, columns, chunk.Logits + (long)m0 * layer._stride + n0, layer._stride, null, bias + n0);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Reduce(object state, int tile, int worker)
+    {
+        var chunk = (Chunk)state;
+        var layer = (ArgMaxHeadLayer)chunk.Step.Layer;
+        int n = layer._linear.OutputFeatures;
+        float* output = chunk.Step.Output + (long)chunk.First * 2;
+        for (int r = tile * RowsPerTile, end = Math.Min(chunk.Count, r + RowsPerTile); r < end; r++)
+        {
+            int index = VectorMath.SoftmaxArgMax(chunk.Logits + (long)r * layer._stride, n, out float probability);
+            output[2 * r] = index;
+            output[(2 * r) + 1] = probability;
+        }
+    }
+
+    /// <summary>The rows of one chunk and where its logits go, handed to the tiles; kept with the step between runs.</summary>
+    private sealed class Chunk(Step step)
+    {
+        public Step Step { get; } = step;
+
+        public float* Logits { get; set; }
+
+        public int First { get; set; }
+
+        public int Count { get; set; }
+
+        public Tiling? Tiling { get; set; }
     }
 }

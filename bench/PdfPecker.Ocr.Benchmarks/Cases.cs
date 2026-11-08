@@ -66,7 +66,7 @@ static class Cases
         var context = new PdfPecker.Ocr.Inference.InferenceContext(threads);
         var pipeline = new PdfPecker.Ocr.Layout.OcrPipeline(
             new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.Detection, context),
-            new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.Recognition, context),
+            new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.RecognitionArgMax, context),
             new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.Classifier, context),
             PdfPecker.Ocr.Layout.OcrEngine.Characters,
             PdfPecker.Ocr.Layout.OcrEngine.DetectionOptions,

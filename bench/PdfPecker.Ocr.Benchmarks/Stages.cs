@@ -141,7 +141,7 @@ static class Stages
         var renderer = PdfRenderer.Open(pdf);
         using var context = new InferenceContext(threads);
         var det = new TimedNetwork(new ModelNetwork(ModelStore.Detection, context));
-        var rec = new TimedNetwork(new ModelNetwork(ModelStore.Recognition, context));
+        var rec = new TimedNetwork(new ModelNetwork(ModelStore.RecognitionArgMax, context));
         var cls = new TimedNetwork(new ModelNetwork(ModelStore.Classifier, context));
         var options = new OcrOptions { MaxDegreeOfParallelism = threads };
         var pipeline = new OcrPipeline(det, rec, cls, OcrEngine.Characters, OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(options));

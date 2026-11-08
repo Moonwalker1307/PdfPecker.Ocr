@@ -24,16 +24,6 @@ internal static unsafe partial class VectorMath
         return i;
     }
 
-    /// <summary>Replaces the leading whole 512-bit vectors of a row with exp(x - max) and returns how many values it did.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private static int ExpShiftedWide(float* row, int length, float max)
-    {
-        var vmax = Vector512.Create(max);
-        int i = 0;
-        for (; i <= length - 16; i += 16) Vector512.Store(ExpWide(Vector512.Load(row + i) - vmax), row + i);
-        return i;
-    }
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector512<float> ActivateWide(Vector512<float> x, ActivationKind kind, float alpha, float beta) => kind switch
     {

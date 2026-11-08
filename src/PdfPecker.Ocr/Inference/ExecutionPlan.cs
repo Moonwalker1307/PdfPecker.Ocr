@@ -52,6 +52,9 @@ internal sealed unsafe class Step(Layer layer, int[][] inputShapes, int[] output
     /// <summary>The tile split of a matrix-product layer for this step's shapes, made on first use.</summary>
     public Layers.Tiling? Tiling { get; set; }
 
+    /// <summary>Whatever else a layer keeps for this step between runs, made on first use.</summary>
+    public object? State { get; set; }
+
     public float* Input(int index) => Frame.Resolve(InputLocations[index]);
 
     public float* Output => Frame.Resolve(OutputLocation);

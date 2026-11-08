@@ -13,12 +13,19 @@ internal static class ModelStore
     private static readonly Lazy<OcrModel> s_detection = new(() => Load("det"));
     private static readonly Lazy<OcrModel> s_recognition = new(() => Load("rec"));
     private static readonly Lazy<OcrModel> s_classifier = new(() => Load("cls"));
+    private static readonly Lazy<OcrModel> s_recognitionArgMax = new(() => Recognition.WithArgMaxOutput());
 
     /// <summary>The text detector: input [N, 3, H, W] with H and W multiples of 32, output the text probability [N, 1, H, W].</summary>
     public static OcrModel Detection => s_detection.Value;
 
     /// <summary>The line recogniser: input [N, 3, 48, W], output [N, W / 8, classes], a softmax over <see cref="Characters"/>.</summary>
     public static OcrModel Recognition => s_recognition.Value;
+
+    /// <summary>
+    /// The line recogniser with the output greedy decoding reads, [N, W / 8, 2]: the most probable class at each time
+    /// step and its probability (see <see cref="OcrModel.WithArgMaxOutput"/>). It shares the recogniser's layers.
+    /// </summary>
+    public static OcrModel RecognitionArgMax => s_recognitionArgMax.Value;
 
     /// <summary>The 0/180 degree line classifier: input [N, 3, 48, W] (rapidocr uses W = 192), output [N, 2] probabilities.</summary>
     public static OcrModel Classifier => s_classifier.Value;
