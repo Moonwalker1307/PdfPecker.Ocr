@@ -13,11 +13,11 @@
     {
       "type": "library",
       "name": "tesseract",
-      "version": "5.5.1",
+      "version": "5.5.4",
       "licenses": [{ "license": { "id": "Apache-2.0" } }],
-      "purl": "pkg:github/tesseract-ocr/tesseract@5.5.1",
+      "purl": "pkg:github/tesseract-ocr/tesseract@5.5.4",
       "externalReferences": [{ "type": "vcs", "url": "https://github.com/tesseract-ocr/tesseract" }],
-      "properties": [{ "name": "git:commit", "value": "3b7c70e34dea179549ed3e995872e2e019eb8477" }]
+      "properties": [{ "name": "git:commit", "value": "7e548e6eff172f38f97664afe7f7ce40db36c8d6" }]
     },
     {
       "type": "library",
