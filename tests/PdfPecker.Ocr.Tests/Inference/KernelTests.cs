@@ -317,6 +317,52 @@ public sealed class KernelTests
         }
     }
 
+    [Fact]
+    public void AttentionIsThePlainLoopsBitForBit()
+    {
+        // The vectorised layer computes each score and output as the plain loops do, sum by sum in the same order, so
+        // the recogniser's results stay those of the scalar code it replaced.
+        foreach (var (n, t, c, heads) in new[] { (1, 1, 8, 1), (2, 40, 120, 8), (3, 7, 24, 3), (1, 33, 45, 3), (2, 200, 120, 8) })
+        {
+            var x = Tensor.FromBuffer(Random(n * t * 3 * c, t + c, 3f), n, t, 3 * c);
+            float scale = 1 / MathF.Sqrt(c / heads);
+            var graph = new GraphBuilder(3);
+            graph.Add(OpKind.Attention, [0], [heads], [scale]);
+            var result = graph.Run(x).Span;
+            int d = c / heads;
+            var expected = new float[n * t * c];
+            var scores = new float[t];
+            var q = new float[d];
+            var qkv = x.Span;
+            for (int b = 0; b < n; b++)
+            {
+                for (int h = 0; h < heads; h++)
+                {
+                    for (int t1 = 0; t1 < t; t1++)
+                    {
+                        for (int i = 0; i < d; i++) q[i] = qkv[(b * t + t1) * 3 * c + h * d + i] * scale;
+                        for (int t2 = 0; t2 < t; t2++)
+                        {
+                            float acc = 0f;
+                            for (int i = 0; i < d; i++) acc += q[i] * qkv[(b * t + t2) * 3 * c + c + h * d + i];
+                            scores[t2] = acc;
+                        }
+
+                        VectorMath.Softmax(scores);
+                        for (int i = 0; i < d; i++)
+                        {
+                            float acc = 0f;
+                            for (int t2 = 0; t2 < t; t2++) acc += scores[t2] * qkv[(b * t + t2) * 3 * c + 2 * c + h * d + i];
+                            expected[(b * t + t1) * c + h * d + i] = acc;
+                        }
+                    }
+                }
+            }
+
+            Assert.True(expected.AsSpan().SequenceEqual(result), $"attention {n}x{t}x{c}/{heads}");
+        }
+    }
+
     [Theory]
     [MemberData(nameof(Kernels))]
     public void ConcatOfConvolutionsWithUpsampling(string kernel)

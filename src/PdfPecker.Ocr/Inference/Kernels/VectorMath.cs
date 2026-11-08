@@ -158,9 +158,15 @@ internal static unsafe partial class VectorMath
         Scale(row, length, 1f / sum);
     }
 
+    /// <summary>Softmax of one row in place, for callers that hold the row in a span.</summary>
+    public static void Softmax(Span<float> row)
+    {
+        fixed (float* p = row) Softmax(p, row.Length);
+    }
+
     /// <summary>
     /// The largest probability of a softmax over one row and the first index that has it, exactly as if the row had
-    /// gone through <see cref="Softmax"/> and then a search for the first largest value: the same exponentials, the same
+    /// gone through <see cref="Softmax(float*, int)"/> and then a search for the first largest value: the same exponentials, the same
     /// sum and the same products. The row is overwritten with the exponentials, and the probabilities are never stored.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]

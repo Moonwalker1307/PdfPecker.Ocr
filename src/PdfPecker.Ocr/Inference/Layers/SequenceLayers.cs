@@ -206,11 +206,30 @@ internal sealed unsafe class AttentionLayer : Layer
         return [x[0], x[1], x[2] / 3];
     }
 
-    public override long ScratchPerWorker(Step step, InferenceContext context) => step.InputShapes[0][1] + 64;
+    private static readonly int Width = Vector<float>.Count;
+
+    /// <summary>The scratch of one head: q, k transposed, v with rows padded to whole vectors, and one row of scores.</summary>
+    private static (int KeyStride, int ValueStride, long Floats) Layout(int t, int d)
+    {
+        int keyStride = GemmKernel.RoundUp(t, Width);
+        int valueStride = GemmKernel.RoundUp(d, Width);
+        return (keyStride, valueStride, d + ((long)d * keyStride) + ((long)t * valueStride) + keyStride);
+    }
+
+    public override long ScratchPerWorker(Step step, InferenceContext context)
+    {
+        int[] x = step.InputShapes[0];
+        return Layout(x[1], x[2] / 3 / _heads).Floats + 64;
+    }
 
     public override void Execute(Step step, InferenceContext context) =>
         context.For(step.InputShapes[0][0] * _heads, step, &Head);
 
+    /// <summary>
+    /// One head of one batch item. Each score and each output value is the same sum, in the same order and with the
+    /// same roundings, as the plain loops sum(q[i] * k[i]) over features and sum(p * v) over keys; the vectors only
+    /// compute several of them at once, scores across keys (from k transposed) and outputs across features.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Head(object state, int tile, int worker)
     {
@@ -219,29 +238,52 @@ internal sealed unsafe class AttentionLayer : Layer
         int[] x = step.InputShapes[0];
         int t = x[1], c = x[2] / 3, heads = layer._heads, d = c / heads;
         int n = tile / heads, h = tile % heads;
+        var (keyStride, valueStride, _) = Layout(t, d);
         float* qkv = step.Input(0) + (long)n * t * 3 * c;
         float* output = step.Output + (long)n * t * c;
-        float* scores = step.Context.Scratch(worker);
-        float* q = stackalloc float[d];
+        float* q = step.Context.Scratch(worker);
+        float* keys = q + d;
+        float* values = keys + ((long)d * keyStride);
+        float* scores = values + ((long)t * valueStride);
+
+        // Keys transposed, so that one vector holds one feature of consecutive keys, and values padded with zeros to
+        // whole vectors; the padding is never stored to the output.
+        for (int t2 = 0; t2 < t; t2++)
+        {
+            float* row = qkv + ((long)t2 * 3 * c) + c + (h * d);
+            for (int i = 0; i < d; i++) keys[((long)i * keyStride) + t2] = row[i];
+            float* value = values + ((long)t2 * valueStride);
+            new Span<float>(row + c, d).CopyTo(new Span<float>(value, d));
+            new Span<float>(value + d, valueStride - d).Clear();
+        }
+
+        for (int i = 0; i < d; i++) new Span<float>(keys + ((long)i * keyStride) + t, keyStride - t).Clear();
+
         for (int t1 = 0; t1 < t; t1++)
         {
-            float* qRow = qkv + (long)t1 * 3 * c + h * d;
+            float* qRow = qkv + ((long)t1 * 3 * c) + (h * d);
             for (int i = 0; i < d; i++) q[i] = qRow[i] * layer._scale;
-            for (int t2 = 0; t2 < t; t2++)
+            for (int t2 = 0; t2 < keyStride; t2 += Width)
             {
-                float* kRow = qkv + (long)t2 * 3 * c + c + h * d;
-                float acc = 0f;
-                for (int i = 0; i < d; i++) acc += q[i] * kRow[i];
-                scores[t2] = acc;
+                var acc = Vector<float>.Zero;
+                for (int i = 0; i < d; i++) acc += new Vector<float>(q[i]) * VectorMath.Load(keys + ((long)i * keyStride) + t2);
+                VectorMath.Store(acc, scores + t2);
             }
+
             VectorMath.Softmax(scores, t);
-            float* outRow = output + (long)t1 * c + h * d;
-            for (int i = 0; i < d; i++) outRow[i] = 0f;
-            for (int t2 = 0; t2 < t; t2++)
+            float* outRow = output + ((long)t1 * c) + (h * d);
+            for (int i = 0; i < d; i += Width)
             {
-                float p = scores[t2];
-                float* vRow = qkv + (long)t2 * 3 * c + 2 * c + h * d;
-                for (int i = 0; i < d; i++) outRow[i] += p * vRow[i];
+                var acc = Vector<float>.Zero;
+                for (int t2 = 0; t2 < t; t2++) acc += new Vector<float>(scores[t2]) * VectorMath.Load(values + ((long)t2 * valueStride) + i);
+                if (i + Width <= d)
+                {
+                    VectorMath.Store(acc, outRow + i);
+                }
+                else
+                {
+                    for (int j = 0; j < d - i; j++) outRow[i + j] = acc[j];
+                }
             }
         }
     }
