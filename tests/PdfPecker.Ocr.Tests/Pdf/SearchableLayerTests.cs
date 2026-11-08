@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using PdfPecker.Ocr.Input;
 using PdfPecker.Ocr.Pdf;
 using Xunit.Abstractions;
 
@@ -11,6 +12,12 @@ public sealed class SearchableLayerTests
     public SearchableLayerTests(ITestOutputHelper output) => _output = output;
 
     private static readonly double[] Letter = { 0, 0, 612, 792 };
+
+    /// <summary>Writes a result to the folder in PDFPECKER_OCR_DUMP, when it is set, for a look with other PDF tools.</summary>
+    private static void Dump(string name, byte[] pdf)
+    {
+        if (Environment.GetEnvironmentVariable("PDFPECKER_OCR_DUMP") is { Length: > 0 } dir) File.WriteAllBytes(Path.Combine(dir, name + ".pdf"), pdf);
+    }
 
     private static OcrOptions Options(float dpi = 150) => new() { Dpi = dpi, PageMode = OcrPageMode.Force };
 
@@ -67,6 +74,7 @@ public sealed class SearchableLayerTests
         var words = new[] { new[] { new WordSpec("Corner", 20, 30, 60, 14), new WordSpec("text", 90, 30, 40, 14) }, new[] { new WordSpec("Middle", w / 2, h / 2, 70, 16) } };
         var result = SearchablePdf.MakeSearchable(scan, Options(), new FakeRecognizer(words), default);
 
+        Dump("rotate" + rotate, result);
         var text = PdfText.ExtractPages(result)[0];
         Assert.Equal((w, h), (text.Width, text.Height));
         var found = text.Lines.SelectMany(l => l.Words).ToList();
@@ -91,6 +99,7 @@ public sealed class SearchableLayerTests
             new[] { new WordSpec("Upside", 500, 500, 80, 18, 180), new WordSpec("down", 410, 500, 60, 18, 180) },
         };
         var result = SearchablePdf.MakeSearchable(Scan(), Options(), new FakeRecognizer(words), default);
+        Dump("angles", result);
         var page = PdfText.ExtractPages(result)[0];
         foreach (var l in page.Lines) _output.WriteLine($"{l.Text} angle {l.Angle:0.0} at {l.X:0.0},{l.Y:0.0} {l.Width:0.0}x{l.Height:0.0}");
         foreach (var word in new[] { "Upwards", "Slanted", "Upside", "down" }) Assert.Contains(word, page.Text);
@@ -104,6 +113,7 @@ public sealed class SearchableLayerTests
         string[] samples = { "Blåbærsyltetøy", "Straße", "naïve café", "Ærøskøbing", "Ελληνικά", "Кириллица", "中文文本", "𝔘𝔫𝔦𝔠𝔬𝔡𝔢", "😀🎉", "áccent" };
         var lines = samples.Select((s, i) => s.Split(' ').Select((w, k) => new WordSpec(w, 72 + 120 * k, 60 + 30 * i, 100, 16)).ToArray()).ToArray();
         var result = SearchablePdf.MakeSearchable(Scan(), Options(), new FakeRecognizer(lines), default);
+        Dump("unicode", result);
         var text = PdfText.ExtractPages(result)[0].Lines.Select(l => l.Text).ToArray();
         _output.WriteLine(string.Join("\n", text));
         Assert.Equal(samples, text);
@@ -209,11 +219,30 @@ public sealed class SearchableLayerTests
     }
 
     [Fact]
+    public void SmallImagesKeepTheirWordsInTheirCorner()
+    {
+        // A 40 x 12 pixel image at 96 dpi is 30 x 9 points, but a page is at least 10 points high, so the image sits at
+        // the top of a larger page and the words must stay on the image rather than stretch over the page.
+        var bmp = TestImages.Bmp(new byte[40 * 12 * 3], 40, 12, pixelsPerMetre: 3780);
+        var words = new[] { new[] { new WordSpec("tiny", 1.5, 0.75, 15, 6) } };
+        var recognizer = new FakeRecognizer(words);
+        var pdf = SearchablePdf.FromImages(new[] { bmp }, new OcrOptions(), recognizer, default);
+        Assert.Equal((40, 12), (recognizer.Calls[0].Width, recognizer.Calls[0].Height));
+        var page = PdfText.ExtractPages(pdf)[0];
+        Assert.InRange(page.Height, 9.99, 10.01);
+        var word = page.Lines[0].Words[0];
+        Assert.Equal("tiny", word.Text);
+        Assert.InRange(word.X, 1.3, 1.7);
+        Assert.InRange(word.Y, 0.55, 0.95);
+        Assert.InRange(word.Width, 14.8, 15.2);
+    }
+
+    [Fact]
     public void ThousandsOfWordsAreQuick()
     {
         var lines = Enumerable.Range(0, 100).Select(l => Enumerable.Range(0, 50)
             .Select(k => new WordSpec("w" + (l * 50 + k).ToString(System.Globalization.CultureInfo.InvariantCulture) + "æ", 10 + 11.8 * k, 10 + 7.6 * l, 10, 6)).ToArray()).ToArray();
-        var page = new FakeRecognizer(lines).Recognize(Input.PagePixels.FromGray(new byte[2550 * 3300], 2550, 3300), 0, 300, new OcrOptions(), default);
+        var page = new FakeRecognizer(lines).Recognize(PagePixels.FromGray(new byte[2550 * 3300], 2550, 3300), 0, 300, new OcrOptions(), default);
         var layer = new[] { new LayerPage(page, 612, 792) };
         SearchableLayer.Write(layer);
 
