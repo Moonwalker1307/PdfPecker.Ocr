@@ -47,7 +47,7 @@ internal static class HocrWriter
             .Append("; ppageno ").Append(Math.Max(0, page.PageIndex));
         if (float.IsFinite(page.Dpi) && page.Dpi > 0)
         {
-            int dpi = (int)MathF.Round(Math.Min(page.Dpi, 100_000f));
+            int dpi = (int)MathF.Round(Math.Min(page.Dpi, 100_000f), MidpointRounding.AwayFromZero);
             sb.Append("; scan_res ").Append(dpi).Append(' ').Append(dpi);
         }
         sb.Append("\">\n");
@@ -106,7 +106,7 @@ internal static class HocrWriter
     private static void AppendConfidence(StringBuilder sb, float confidence)
     {
         float c = float.IsFinite(confidence) ? Math.Clamp(confidence, 0f, 1f) : 0f;
-        sb.Append("; x_wconf ").Append((int)MathF.Round(c * 100));
+        sb.Append("; x_wconf ").Append((int)MathF.Round(c * 100, MidpointRounding.AwayFromZero));
     }
 
     /// <summary>Appends text escaped for XML, replacing the characters XML does not allow.</summary>

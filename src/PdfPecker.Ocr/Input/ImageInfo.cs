@@ -38,11 +38,13 @@ internal sealed class ImageInfo
     private const int MaxChunks = 10_000;
     private static readonly int[] NoFrames = Array.Empty<int>();
 
-    private ImageInfo(ImageFormat format, float dpi, int[] frames)
+    private ImageInfo(ImageFormat format, float dpi, int[] frames, int width = 0, int height = 0)
     {
         Format = format;
         Dpi = dpi;
         TiffFrames = frames;
+        Width = Math.Max(0, width);
+        Height = Math.Max(0, height);
     }
 
     /// <summary>The file's format.</summary>
@@ -50,6 +52,15 @@ internal sealed class ImageInfo
 
     /// <summary>The horizontal resolution the file records in pixels per inch, or 0 when it records none that is plausible.</summary>
     public float Dpi { get; }
+
+    /// <summary>
+    /// The width in pixels of the image as it is displayed (after a JPEG's EXIF orientation), or 0 when the header
+    /// does not say. For TIFF it is the first page's.
+    /// </summary>
+    public int Width { get; }
+
+    /// <summary>The height in pixels of the image as it is displayed, or 0 when the header does not say.</summary>
+    public int Height { get; }
 
     /// <summary>For TIFF, the offset of each page's directory (IFD) in the file; empty for other formats.</summary>
     public IReadOnlyList<int> TiffFrames { get; }
@@ -65,9 +76,17 @@ internal sealed class ImageInfo
         {
             return format switch
             {
-                ImageFormat.Png => new ImageInfo(format, PngDpi(data), NoFrames),
-                ImageFormat.Jpeg => new ImageInfo(format, JpegDpi(data), NoFrames),
-                ImageFormat.Bmp => new ImageInfo(format, BmpDpi(data), NoFrames),
+                ImageFormat.Png => new ImageInfo(format, PngDpi(data), NoFrames,
+                    data.Length >= 24 ? Size(BinaryPrimitives.ReadUInt32BigEndian(data[16..])) : 0,
+                    data.Length >= 24 ? Size(BinaryPrimitives.ReadUInt32BigEndian(data[20..])) : 0),
+                ImageFormat.Jpeg => ReadJpeg(data),
+                ImageFormat.Bmp => new ImageInfo(format, BmpDpi(data), NoFrames,
+                    data.Length >= 26 ? BinaryPrimitives.ReadInt32LittleEndian(data[18..]) : 0,
+                    data.Length >= 26 ? Size((uint)Math.Abs((long)BinaryPrimitives.ReadInt32LittleEndian(data[22..]))) : 0),
+                ImageFormat.Gif => new ImageInfo(format, 0, NoFrames,
+                    data.Length >= 10 ? BinaryPrimitives.ReadUInt16LittleEndian(data[6..]) : 0,
+                    data.Length >= 10 ? BinaryPrimitives.ReadUInt16LittleEndian(data[8..]) : 0),
+                ImageFormat.WebP => ReadWebP(data),
                 ImageFormat.Tiff => ReadTiff(data),
                 _ => new ImageInfo(format, 0, NoFrames),
             };
@@ -129,35 +148,81 @@ internal sealed class ImageInfo
         return 0;
     }
 
-    private static float JpegDpi(ReadOnlySpan<byte> data)
+    private static int Size(uint value) => value > int.MaxValue ? 0 : (int)value;
+
+    private static ImageInfo ReadWebP(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 30) return new ImageInfo(ImageFormat.WebP, 0, NoFrames);
+        var chunk = data.Slice(12, 4);
+        var payload = data[20..];
+        int w = 0, h = 0;
+        if (chunk.SequenceEqual("VP8X"u8))
+        {
+            // The canvas size minus one, in 24 bits each, after four bytes of flags.
+            w = (payload[4] | payload[5] << 8 | payload[6] << 16) + 1;
+            h = (payload[7] | payload[8] << 8 | payload[9] << 16) + 1;
+        }
+        else if (chunk.SequenceEqual("VP8L"u8) && payload[0] == 0x2F)
+        {
+            // Lossless: a signature byte, then the size minus one in two 14-bit fields.
+            uint bits = BinaryPrimitives.ReadUInt32LittleEndian(payload[1..]);
+            w = (int)(bits & 0x3FFF) + 1;
+            h = (int)((bits >> 14) & 0x3FFF) + 1;
+        }
+        else if (chunk.SequenceEqual("VP8 "u8) && payload[3] == 0x9D && payload[4] == 0x01 && payload[5] == 0x2A)
+        {
+            // Lossy: a three-byte frame tag and start code, then the size in 14 bits each.
+            w = BinaryPrimitives.ReadUInt16LittleEndian(payload[6..]) & 0x3FFF;
+            h = BinaryPrimitives.ReadUInt16LittleEndian(payload[8..]) & 0x3FFF;
+        }
+        return new ImageInfo(ImageFormat.WebP, 0, NoFrames, w, h);
+    }
+
+    private static ImageInfo ReadJpeg(ReadOnlySpan<byte> data)
     {
         int pos = 2;
-        float exif = 0;
+        float exif = 0, jfif = 0;
+        bool haveJfif = false, turned = false;
+        int w = 0, h = 0;
         for (int n = 0; n < MaxChunks && pos + 4 <= data.Length; n++)
         {
             if (data[pos] != 0xFF) break;
             byte marker = data[pos + 1];
             if (marker == 0xFF) { pos++; continue; }
-            // Start of scan or of a frame: the headers that carry a resolution come before both.
-            if (marker is 0xDA or 0xD9 || marker is >= 0xC0 and <= 0xCF and not 0xC4 and not 0xC8 and not 0xCC) break;
+            if (marker is 0xDA or 0xD9) break;
             int length = BinaryPrimitives.ReadUInt16BigEndian(data[(pos + 2)..]);
             if (length < 2 || pos + 2 + length > data.Length) break;
             var segment = data.Slice(pos + 4, length - 2);
-            if (marker == 0xE0 && segment.Length >= 12 && segment[..5].SequenceEqual("JFIF\0"u8))
+            if (marker is >= 0xC0 and <= 0xCF and not 0xC4 and not 0xC8 and not 0xCC)
+            {
+                // A start of frame: precision, then the height and width. The headers with a resolution come before it.
+                if (segment.Length >= 5)
+                {
+                    h = BinaryPrimitives.ReadUInt16BigEndian(segment[1..]);
+                    w = BinaryPrimitives.ReadUInt16BigEndian(segment[3..]);
+                }
+                break;
+            }
+            if (marker == 0xE0 && !haveJfif && segment.Length >= 12 && segment[..5].SequenceEqual("JFIF\0"u8))
             {
                 int units = segment[7], x = BinaryPrimitives.ReadUInt16BigEndian(segment[8..]);
                 // Units 1 are dots per inch, 2 dots per centimetre; 0 gives only the aspect ratio.
-                if (units == 1) return Plausible(x);
-                if (units == 2) return Plausible(x * 2.54);
+                haveJfif = units is 1 or 2;
+                jfif = units == 1 ? Plausible(x) : units == 2 ? Plausible(x * 2.54) : 0;
             }
-            else if (marker == 0xE1 && exif == 0 && segment.Length > 14 && segment[..6].SequenceEqual("Exif\0\0"u8))
+            else if (marker == 0xE1 && segment.Length > 14 && segment[..6].SequenceEqual("Exif\0\0"u8))
             {
                 var tiff = segment[6..];
-                if (Sniff(tiff) == ImageFormat.Tiff) exif = TiffDpi(tiff, FirstIfd(tiff));
+                if (Sniff(tiff) == ImageFormat.Tiff)
+                {
+                    exif = TiffDpi(tiff, FirstIfd(tiff));
+                    // Orientations 5 to 8 turn the image a quarter, which PdfPecker applies, so width and height swap.
+                    turned = TiffShort(tiff, FirstIfd(tiff), 0x0112) is >= 5 and <= 8;
+                }
             }
             pos += 2 + length;
         }
-        return exif;
+        return new ImageInfo(ImageFormat.Jpeg, haveJfif ? jfif : exif, NoFrames, turned ? h : w, turned ? w : h);
     }
 
     private static float BmpDpi(ReadOnlySpan<byte> data)
@@ -184,8 +249,9 @@ internal sealed class ImageInfo
             if (next + 4 > data.Length) break;
             ifd = (int)Math.Min(U32(data, (int)next, little), int.MaxValue);
         }
-        float dpi = frames.Count > 0 ? TiffDpi(data, frames[0]) : 0;
-        return new ImageInfo(ImageFormat.Tiff, dpi, frames.ToArray());
+        if (frames.Count == 0) return new ImageInfo(ImageFormat.Tiff, 0, NoFrames);
+        return new ImageInfo(ImageFormat.Tiff, TiffDpi(data, frames[0]), frames.ToArray(),
+            TiffShort(data, frames[0], 256), TiffShort(data, frames[0], 257));
     }
 
     private static int FirstIfd(ReadOnlySpan<byte> tiff)
@@ -215,6 +281,23 @@ internal sealed class ImageInfo
         }
         // Unit 1 means the image has no absolute size; 3 is the centimetre.
         return unit == 2 ? Plausible(resolution) : unit == 3 ? Plausible(resolution * 2.54) : 0;
+    }
+
+    /// <summary>The value of a SHORT or LONG tag of a TIFF directory, or 0 when it is missing.</summary>
+    private static int TiffShort(ReadOnlySpan<byte> tiff, int ifd, int wanted)
+    {
+        bool little = tiff[0] == 0x49;
+        if (ifd < 8 || ifd + 2 > tiff.Length) return 0;
+        int count = U16(tiff, ifd, little);
+        for (int i = 0; i < count; i++)
+        {
+            int entry = ifd + 2 + i * 12;
+            if (entry + 12 > tiff.Length) break;
+            if (U16(tiff, entry, little) != wanted) continue;
+            int type = U16(tiff, entry + 2, little);
+            return type == 3 ? U16(tiff, entry + 8, little) : type == 4 ? Size(U32(tiff, entry + 8, little)) : 0;
+        }
+        return 0;
     }
 
     private static int U16(ReadOnlySpan<byte> d, int at, bool little)

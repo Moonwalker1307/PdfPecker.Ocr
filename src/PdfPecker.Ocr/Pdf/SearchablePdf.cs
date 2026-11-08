@@ -64,12 +64,14 @@ internal static class SearchablePdf
             var layer = new LayerPage[data.Count];
             for (int i = 0; i < data.Count; i++)
             {
-                var decoded = ImageDecoder.Render(native, i, group.Dpi, options.MaxPixels, cancellationToken);
+                var decoded = ImageDecoder.Render(native, i, ImageInfo.Read(data[i]), group.Dpi, options.MaxPixels, cancellationToken);
                 OcrPage page;
                 using (decoded.Pixels)
                     page = recognizer.Recognize(decoded.Pixels, pageIndex++, decoded.Dpi, options, cancellationToken);
                 var (w, h) = sizes.GetPageSize(i);
-                layer[i] = new LayerPage(page, w, h);
+                // A page is at least 10 points on a side, so a smaller image sits in its top-left corner: the words are
+                // placed by the image's resolution from that corner rather than stretched over the page.
+                layer[i] = new LayerPage(page, w, h, ScaleByDpi: true);
             }
             var stamp = SearchableLayer.Write(layer, cancellationToken);
             parts.Add(PdfStamper.Stamp(output, stamp, StampOptions(null, null), cancellationToken));

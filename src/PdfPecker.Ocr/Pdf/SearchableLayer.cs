@@ -6,7 +6,11 @@ namespace PdfPecker.Ocr.Pdf;
 /// <param name="Page">The OCR result, or null for a page that keeps no text layer (an empty stamp page).</param>
 /// <param name="Width">The page's displayed width in points.</param>
 /// <param name="Height">The page's displayed height in points.</param>
-internal readonly record struct LayerPage(OcrPage? Page, double Width, double Height);
+/// <param name="ScaleByDpi">
+/// Place words by the page's resolution from the top-left corner instead of scaling the pixels to the page size: for
+/// pages that may be larger than the image they show.
+/// </param>
+internal readonly record struct LayerPage(OcrPage? Page, double Width, double Height, bool ScaleByDpi = false);
 
 /// <summary>
 /// Writes the invisible text layer as a PDF of its own, one page per page of the scanned document, to be put on the
@@ -47,7 +51,7 @@ internal static class SearchableLayer
         for (int i = 0; i < pages.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (pages[i].Page is { } page) contents[i] = PageContent(page, Size(pages[i]), cids);
+            if (pages[i].Page is { } page) contents[i] = PageContent(page, Size(pages[i]), pages[i].ScaleByDpi, cids);
         }
 
         var pdf = new PdfBuffer(4096);
@@ -98,9 +102,9 @@ internal static class SearchableLayer
     }
 
     /// <summary>The content stream of one page, deflated, or null when no word could be placed.</summary>
-    private static byte[]? PageContent(OcrPage page, (double W, double H) size, CidMap cids)
+    private static byte[]? PageContent(OcrPage page, (double W, double H) size, bool scaleByDpi, CidMap cids)
     {
-        var geometry = new PageGeometry(size.W, size.H, page);
+        var geometry = new PageGeometry(size.W, size.H, page, scaleByDpi);
         var content = new PdfBuffer(64 + 96 * page.Lines.Count * 4);
         var codes = new List<int>(32);
         bool any = false;

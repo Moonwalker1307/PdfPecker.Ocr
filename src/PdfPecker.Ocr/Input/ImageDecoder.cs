@@ -41,7 +41,7 @@ internal static class ImageDecoder
         if (info.Format == ImageFormat.Unknown)
             throw new InvalidDataException("The data is not a PNG, JPEG, GIF, WebP, BMP or TIFF image.");
         var renderer = PdfRenderer.Open(ToNativePdf(new[] { image }, cancellationToken));
-        return Render(renderer, 0, info.Dpi > 0 ? info.Dpi : fallbackDpi, maxPixels, cancellationToken);
+        return Render(renderer, 0, info, fallbackDpi, maxPixels, cancellationToken);
     }
 
     /// <summary>A PDF with one page per image, each page exactly its image's size in pixels at <see cref="NativeDpi"/>.</summary>
@@ -52,12 +52,39 @@ internal static class ImageDecoder
 
     /// <summary>
     /// Renders page <paramref name="pageIndex"/> of a PDF made by <see cref="ToNativePdf"/> at one pixel per image pixel,
-    /// or smaller within <paramref name="maxPixels"/>, and gives it the image's resolution <paramref name="imageDpi"/>
-    /// scaled the same way.
+    /// or smaller within <paramref name="maxPixels"/>, and gives it the image's resolution (from <paramref name="info"/>,
+    /// else <paramref name="fallbackDpi"/>) scaled the same way.
     /// </summary>
-    public static DecodedImage Render(PdfRenderer renderer, int pageIndex, float imageDpi, long maxPixels, CancellationToken cancellationToken)
+    public static DecodedImage Render(PdfRenderer renderer, int pageIndex, ImageInfo info, float fallbackDpi, long maxPixels, CancellationToken cancellationToken)
     {
+        float imageDpi = info.Dpi > 0 ? info.Dpi : fallbackDpi;
+        int w = info.Width, h = info.Height;
+        // HTML pages are at least 10 points on a side, so an image narrower or lower than that sits in the top-left
+        // corner of a larger page, which the renderer rounds and stretches by a fraction of a pixel. At four times 72
+        // dpi such a page is a whole number of pixels and each image pixel a block of 3 by 3 pixels whose centre is
+        // the image pixel itself, so those centres give the image back unchanged.
+        if (w > 0 && h > 0 && (w < MinPagePixels || h < MinPagePixels) && 16L * Math.Max(w, MinPagePixels) * Math.Max(h, MinPagePixels) <= maxPixels)
+            return new DecodedImage(SmallImage(renderer, pageIndex, w, h, cancellationToken), imageDpi);
         var page = PageRaster.Render(renderer, pageIndex, NativeDpi, maxPixels, cancellationToken);
         return new DecodedImage(page.Pixels, imageDpi * (page.Dpi / NativeDpi));
+    }
+
+    /// <summary>The fewest pixels on a side of a page at <see cref="NativeDpi"/>: 10 points.</summary>
+    private const int MinPagePixels = 14;
+
+    private static PagePixels SmallImage(PdfRenderer renderer, int pageIndex, int width, int height, CancellationToken cancellationToken)
+    {
+        var image = renderer.RenderPage(pageIndex, new ImageOptions { Dpi = 288, MaxDimension = int.MaxValue }, cancellationToken);
+        if (image.Width < 3 * width || image.Height < 3 * height)
+            throw new InvalidDataException("The image is not the size its header gives.");
+        var rgba = image.Rgba;
+        var small = new byte[checked(width * height * 4)];
+        for (int y = 0; y < height; y++)
+        {
+            int row = (3 * y + 1) * image.Width;
+            for (int x = 0; x < width; x++)
+                rgba.AsSpan((row + 3 * x + 1) * 4, 4).CopyTo(small.AsSpan((y * width + x) * 4));
+        }
+        return PagePixels.FromRgba(small, width, height);
     }
 }
