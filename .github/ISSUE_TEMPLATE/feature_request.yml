@@ -1,0 +1,26 @@
+name: Feature request
+description: A language, an output format, an option or an API you'd like PdfPecker.Ocr to support.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        PdfPecker.Ocr has no dependencies besides PdfPecker and ships no native code, so requests that need a native
+        library, a GPU runtime or a network service are out of scope. Everything else is worth asking for.
+  - type: textarea
+    id: need
+    attributes:
+      label: What you want to do
+      description: The documents or task you're working on, and what PdfPecker.Ocr can't do today.
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example
+      description: A sample image or PDF, and the result you would expect.
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround
+      description: How you work around it now, if at all.

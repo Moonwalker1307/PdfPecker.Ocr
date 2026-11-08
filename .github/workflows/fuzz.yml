@@ -1,0 +1,120 @@
+name: Fuzz
+
+# Nightly, and on demand. Deliberately not on pull requests: a fuzz run is random, so it must not decide whether a
+# change can merge. A finding fails the job and uploads the minimised inputs; see fuzz/README.md.
+on:
+  schedule:
+    - cron: "37 2 * * *"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes to fuzz each target
+        default: "10"
+      target:
+        description: One target name, or "all" (see fuzz/README.md for the names)
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  # A job-level `if` cannot read the matrix, so the targets to run are chosen here and handed to the fuzz job as its
+  # matrix: every target on the schedule or for "all", otherwise only the one asked for. A new target in
+  # fuzz/PdfPecker.Ocr.Fuzz/Targets.cs is added to ALL as well.
+  targets:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - id: pick
+        env:
+          ALL: >-
+            ocr-smoke
+          TARGET: ${{ github.event_name == 'schedule' && 'all' || inputs.target }}
+        run: |
+          if [ "$TARGET" = "all" ]; then
+            picked="$ALL"
+          elif [[ " $ALL " == *" $TARGET "* ]]; then
+            picked="$TARGET"
+          else
+            echo "::error::Unknown fuzz target '$TARGET'; use one of: $ALL, or all"
+            exit 1
+          fi
+          read -ra names <<< "$picked"
+          json=$(printf '%s\n' "${names[@]}" | jq -R . | jq -cs .)
+          echo "matrix=$json" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    name: fuzz ${{ matrix.target }}
+    needs: targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false # one target's finding must not stop the others
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    steps:
+      # Actions are pinned to commits so a moved tag cannot change what runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+
+      - name: Build the fuzzer
+        run: dotnet build -c Release fuzz/PdfPecker.Ocr.Fuzz
+
+      # The seed is the run id, so every night explores different inputs; a finding names its seed in its .txt file, and
+      # --repro on the saved input reproduces it without the seed. --jobs runs one worker per core, each with its own
+      # seed, because a single worker leaves the other cores of the runner idle.
+      - name: Fuzz ${{ matrix.target }}
+        env:
+          MINUTES: ${{ inputs.minutes || '10' }}
+          TARGET: ${{ matrix.target }}
+          SEED: ${{ github.run_id }}
+        run: >
+          dotnet fuzz/PdfPecker.Ocr.Fuzz/bin/Release/net10.0/PdfPecker.Ocr.Fuzz.dll
+          --target "$TARGET" --duration "${MINUTES}m" --seed "$SEED" --jobs "$(nproc)" --out fuzz-findings
+
+      # Artifacts are not reachable from every place a finding gets triaged, and most inputs are small, so each
+      # finding's report and its input (base64, cut at 200 KB) also go into the log and the job summary.
+      - name: Print findings
+        if: ${{ failure() }}
+        run: |
+          shopt -s nullglob
+          for txt in fuzz-findings/*/*.txt; do
+            input="$(dirname "$txt")/$(sed -n 's/^input: \([^ ]*\).*/\1/p' "$txt")"
+            {
+              echo "### $txt"
+              echo '```'
+              head -c 4000 "$txt"
+              echo
+              echo "base64 of $input:"
+              base64 -w0 "$input" | head -c 200000
+              echo
+              echo '```'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload findings
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-findings-${{ matrix.target }}
+          path: fuzz-findings/
+          if-no-files-found: ignore
+          retention-days: 30

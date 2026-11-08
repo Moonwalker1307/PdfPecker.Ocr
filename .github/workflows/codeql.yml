@@ -1,0 +1,58 @@
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main]
+  # Also after each merge, so the alerts for main are never a week old.
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - .github/workflows/codeql.yml
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A PR's newer push replaces its older run. Every push to main runs on its own: with one group for main, GitHub keeps
+# only the newest waiting run and cancels the others, so commits merged minutes apart would get no result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # uploads the results to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: csharp
+          build-mode: manual
+
+      # Only the shipped package is analysed; tests, samples, the fuzzer and the tools are not part of it.
+      - run: dotnet build -c Release -f net10.0 src/PdfPecker.Ocr
+
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:csharp
