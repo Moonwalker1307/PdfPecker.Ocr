@@ -98,6 +98,7 @@ internal sealed unsafe class GemmKernel
     }
 
     /// <summary>Packs columns [0, cols) of a k x ld row-major block (activations) into NR-column panels at dst.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void PackBRows(float* src, nint ld, int k, int cols, float* dst)
     {
         int nr = NR;
@@ -122,6 +123,7 @@ internal sealed unsafe class GemmKernel
     }
 
     /// <summary>Packs rows [0, rows) of a rows x k row-major block (activations, row stride ld) into MR-row panels.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void PackARows(float* src, nint ld, int rows, int k, float* dst)
     {
         int mr = MR;
@@ -145,6 +147,7 @@ internal sealed unsafe class GemmKernel
     /// per column) seed the sums; both must be padded to whole panels. The epilogue runs on each panel of MR rows as
     /// soon as it is written, while it is still in the cache.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void Multiply(int k, float* aPanels, int rows, float* bPanels, int cols, float* c, nint ldc, float* rowBias, float* colBias, in Epilogue epilogue = default)
     {
         bool hasEpilogue = !epilogue.IsEmpty;
@@ -540,6 +543,7 @@ internal readonly unsafe struct Epilogue(ActivationKind activation, float alpha,
     public bool IsEmpty => Activation == ActivationKind.None && Residual == null;
 
     /// <summary>Applies the epilogue to a rows x cols block at c, which lies offset values after C's first value.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void Apply(float* c, nint ldc, nint offset, int rows, int cols)
     {
         for (int r = 0; r < rows; r++)

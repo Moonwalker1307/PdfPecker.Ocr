@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -47,6 +48,7 @@ internal sealed unsafe class LayerNormLayer : Layer
         context.For((Rows.Count(step.OutputShape) + perTile - 1) / perTile, step, &Tile);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Tile(object state, int tile, int worker)
     {
         var step = (Step)state;
@@ -144,6 +146,7 @@ internal sealed unsafe class LinearLayer : Layer
         context.For(step.Tiling.Count, step, &Tile);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Tile(object state, int tile, int worker)
     {
         var step = (Step)state;
@@ -187,6 +190,7 @@ internal sealed unsafe class AttentionLayer : Layer
     public override void Execute(Step step, InferenceContext context) =>
         context.For(step.InputShapes[0][0] * _heads, step, &Head);
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Head(object state, int tile, int worker)
     {
         var step = (Step)state;
@@ -236,6 +240,7 @@ internal sealed unsafe class SoftmaxLayer(NodeDefinition node) : Layer(node)
         context.For((Rows.Count(step.OutputShape) + perTile - 1) / perTile, step, &Tile);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Tile(object state, int tile, int worker)
     {
         var step = (Step)state;

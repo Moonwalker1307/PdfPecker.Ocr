@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -74,6 +75,7 @@ internal sealed unsafe class BinaryLayer : Layer
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void SameShapeChunk(object state, int chunk, int worker)
     {
         var step = (Step)state;
@@ -84,6 +86,7 @@ internal sealed unsafe class BinaryLayer : Layer
         else VectorMath.Add(step.Input(0) + start, step.Input(1) + start, step.Output + start, length);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void UpsampledPlane(object state, int plane, int worker)
     {
         var step = (Step)state;
@@ -112,6 +115,7 @@ internal sealed unsafe class BinaryLayer : Layer
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void Broadcast(float* a, int[] sa, float* b, int[] sb, float* output, int[] so)
     {
         int rank = so.Length;
@@ -201,6 +205,7 @@ internal sealed unsafe class ActivationLayer : Layer
     public override void Execute(Step step, InferenceContext context) =>
         context.For((Tensor.ElementCount(step.OutputShape) + ChunkSize - 1) / ChunkSize, step, &Chunk);
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Chunk(object state, int chunk, int worker)
     {
         var step = (Step)state;
@@ -236,6 +241,7 @@ internal sealed unsafe class UpsampleLayer : Layer
     public override void Execute(Step step, InferenceContext context) =>
         context.For(step.OutputShape[0] * step.OutputShape[1], step, &Plane);
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Plane(object state, int plane, int worker)
     {
         var step = (Step)state;
@@ -245,6 +251,7 @@ internal sealed unsafe class UpsampleLayer : Layer
     }
 
     /// <summary>Writes one plane enlarged by (fh, fw) to dst, whose rows are w * fw long.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void Upsample(float* src, int h, int w, int fh, int fw, float* dst)
     {
         int ow = w * fw;

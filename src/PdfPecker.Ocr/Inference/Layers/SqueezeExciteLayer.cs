@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -74,6 +75,7 @@ internal sealed unsafe class SqueezeExciteLayer : Layer
         context.For(batch * _channels, step, &ScalePlane);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Mean(object state, int plane, int worker)
     {
         var step = (Step)state;
@@ -84,6 +86,7 @@ internal sealed unsafe class SqueezeExciteLayer : Layer
         means[plane] = VectorMath.Sum(step.Input(0) + (long)plane * size, size) / size;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void ScalePlane(object state, int plane, int worker)
     {
         var step = (Step)state;

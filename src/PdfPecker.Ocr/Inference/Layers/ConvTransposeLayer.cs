@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -71,6 +72,7 @@ internal sealed unsafe class ConvTransposeLayer : Layer
         context.For(step.Tiling.Count, step, &Tile);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Tile(object state, int tile, int worker)
     {
         var step = (Step)state;

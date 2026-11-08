@@ -123,6 +123,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         context.For(step.Tiling.Count, step, &Tile);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Tile(object state, int tile, int worker)
     {
         var step = (Step)state;
@@ -150,6 +151,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     /// other, so the writes are sequential; within a panel, the pixels of one output row read one run of an input row
     /// per tap, contiguous for stride 1 and every Sw-th value otherwise.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void PackPatches(float* input, int channels, int h, int w, int ow, int n0, int columns, float* packed)
     {
         int nr = _gemm.NR;
@@ -198,6 +200,11 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
                             if (Sw == 1 && ix >= 0 && ix + length <= w)
                             {
                                 Unsafe.CopyBlockUnaligned(d, row + ix, (uint)(length * sizeof(float)));
+                            }
+                            else if (ix >= 0 && ix + (length - 1) * Sw < w)
+                            {
+                                float* s = row + ix;
+                                for (int t = 0; t < length; t++, s += Sw) d[t] = *s;
                             }
                             else
                             {
@@ -256,6 +263,7 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
         context.For(o[0] * o[1] * bands, step, &Tile);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Tile(object state, int tile, int worker)
     {
         var step = (Step)state;
@@ -271,6 +279,7 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
         layer.Compute(step, (long)plane * x[2] * x[3], (long)plane * o[2] * o[3], c, x[2], x[3], o[3], y0, y1, step.Context.Scratch(worker));
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void Compute(Step step, long inOffset, long outOffset, int c, int h, int w, int ow, int y0, int y1, float* scratch)
     {
         float* input = step.Input(0) + inOffset;

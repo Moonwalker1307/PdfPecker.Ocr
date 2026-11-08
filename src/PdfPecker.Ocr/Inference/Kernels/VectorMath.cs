@@ -14,6 +14,7 @@ internal static unsafe partial class VectorMath
     private static readonly int Width = Vector<float>.Count;
 
     /// <summary>Applies an activation to length values in place.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void Activate(float* data, int length, ActivationKind kind, float alpha, float beta)
     {
         if (kind == ActivationKind.None || length <= 0) return;
@@ -120,6 +121,7 @@ internal static unsafe partial class VectorMath
         ErfQ6 = -2.13374055278905e-04f, ErfQ8 = -1.45660718464996e-05f;
 
     /// <summary>The sum of length values, lane by lane and then across lanes, in a fixed order.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static float Sum(float* data, int length)
     {
         var acc = Vector<float>.Zero;
@@ -131,6 +133,7 @@ internal static unsafe partial class VectorMath
     }
 
     /// <summary>The largest of length values (length at least 1).</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static float Max(float* data, int length)
     {
         int i = 0;
@@ -146,29 +149,25 @@ internal static unsafe partial class VectorMath
     }
 
     /// <summary>Softmax of one row in place: exp(x - max) / sum.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void Softmax(float* row, int length)
     {
         float max = Max(row, length);
+        // The exponentials are stored first, 512 bits at a time where AVX-512 is used, and then summed in Vector<T>
+        // lanes and tail order, so the sum does not depend on the vector width.
+        int i = Wide ? ExpShiftedWide(row, length, max) : 0;
         var vmax = new Vector<float>(max);
+        for (; i <= length - Width; i += Width) Store(Exp(Load(row + i) - vmax), row + i);
+        for (; i < length; i++) row[i] = Exp(new Vector<float>(row[i] - max))[0];
         var acc = Vector<float>.Zero;
-        int i = 0;
-        for (; i <= length - Width; i += Width)
-        {
-            var e = Exp(Load(row + i) - vmax);
-            Store(e, row + i);
-            acc += e;
-        }
+        for (i = 0; i <= length - Width; i += Width) acc += Load(row + i);
         float sum = Vector.Sum(acc);
-        for (; i < length; i++)
-        {
-            float e = Exp(new Vector<float>(row[i] - max))[0];
-            row[i] = e;
-            sum += e;
-        }
+        for (; i < length; i++) sum += row[i];
         Scale(row, length, 1f / sum);
     }
 
     /// <summary>Multiplies length values in place by a factor.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void Scale(float* data, int length, float factor)
     {
         var f = new Vector<float>(factor);
@@ -178,6 +177,7 @@ internal static unsafe partial class VectorMath
     }
 
     /// <summary>dst[i] += src[i].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void AddInPlace(float* dst, float* src, int length)
     {
         int i = 0;
@@ -186,6 +186,7 @@ internal static unsafe partial class VectorMath
     }
 
     /// <summary>dst[i] = a[i] + b[i].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void Add(float* a, float* b, float* dst, int length)
     {
         int i = 0;
@@ -194,6 +195,7 @@ internal static unsafe partial class VectorMath
     }
 
     /// <summary>dst[i] = a[i] * b[i].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void Multiply(float* a, float* b, float* dst, int length)
     {
         int i = 0;
@@ -202,6 +204,7 @@ internal static unsafe partial class VectorMath
     }
 
     /// <summary>dst[i] = a[i] + s.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void AddScalar(float* a, float s, float* dst, int length)
     {
         var v = new Vector<float>(s);
@@ -214,6 +217,7 @@ internal static unsafe partial class VectorMath
     /// dst[i] = a[i] + a[i] * s, rounding the product first as the original graph's separate Mul and Add do. Each value
     /// is read before it is written, so dst may be a.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void AddScaled(float* a, float s, float* dst, int length)
     {
         var v = new Vector<float>(s);
@@ -232,6 +236,7 @@ internal static unsafe partial class VectorMath
     }
 
     /// <summary>dst[i] = a[i] * s.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void MultiplyScalar(float* a, float s, float* dst, int length)
     {
         var v = new Vector<float>(s);

@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.Intrinsics;
+using System.Runtime.CompilerServices;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -42,6 +43,7 @@ internal sealed unsafe class PoolLayer : Layer
     public override void Execute(Step step, InferenceContext context) =>
         context.For(step.OutputShape[0] * step.OutputShape[1], step, &Plane);
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Plane(object state, int plane, int worker)
     {
         var step = (Step)state;
@@ -57,6 +59,7 @@ internal sealed unsafe class PoolLayer : Layer
     }
 
     /// <summary>The stem's 2x2, stride 1 maximum with padding only at the bottom and right (SAME_UPPER).</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void MaxPool2x2Stride1(float* input, int h, int w, float* output, int oh, int ow)
     {
         int width = Vector<float>.Count;
@@ -82,6 +85,7 @@ internal sealed unsafe class PoolLayer : Layer
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void Generic(float* input, int h, int w, float* output, int oh, int ow)
     {
         for (int y = 0; y < oh; y++)

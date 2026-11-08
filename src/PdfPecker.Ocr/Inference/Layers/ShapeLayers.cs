@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using PdfPecker.Ocr.Models;
 
 namespace PdfPecker.Ocr.Inference.Layers;
@@ -71,6 +72,7 @@ internal sealed unsafe class ConcatLayer : Layer
         else Generic(step);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Plane(object state, int tile, int worker)
     {
         var step = (Step)state;
@@ -98,6 +100,7 @@ internal sealed unsafe class ConcatLayer : Layer
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void Generic(Step step)
     {
         int[] o = step.OutputShape;
