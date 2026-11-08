@@ -23,6 +23,7 @@ internal sealed unsafe class InferenceContext : IDisposable
     private object? _jobState;
     private delegate*<object, int, int, void> _jobBody;
     private int _jobCount;
+    private int _jobChunk;
     private int _jobNext;
 
     /// <summary>Creates a context that uses at most the given number of threads for one run.</summary>
@@ -69,15 +70,19 @@ internal sealed unsafe class InferenceContext : IDisposable
     /// <summary>The arena for a plan, grown when needed; its contents are not preserved across growth.</summary>
     internal float* Arena(long floats) => Pointer(ref _arena, floats);
 
-    /// <summary>The output buffer of a model, owned by this context and overwritten by its next run of the model.</summary>
-    internal float[] OutputBuffer(OcrModel model, int floats)
+    /// <summary>
+    /// The output buffer of a model, owned by this context and overwritten by its next run of the model; offset is where
+    /// its 64-byte aligned part starts.
+    /// </summary>
+    internal float[] OutputBuffer(OcrModel model, int floats, out int offset)
     {
-        if (!_outputs.TryGetValue(model, out var buffer) || buffer.Length < floats)
+        if (!_outputs.TryGetValue(model, out var buffer) || buffer.Length < floats + 16)
         {
             _outputs.Remove(model);
-            buffer = GC.AllocateUninitializedArray<float>(Math.Max(floats, 16), pinned: true);
+            buffer = GC.AllocateUninitializedArray<float>(floats + 16, pinned: true);
             _outputs[model] = buffer;
         }
+        offset = (int)((Aligned(buffer) - (float*)Unsafe.AsPointer(ref buffer[0])));
         return buffer;
     }
 
@@ -89,10 +94,10 @@ internal sealed unsafe class InferenceContext : IDisposable
     }
 
     /// <summary>The scratch of one worker, as sized by <see cref="EnsureScratch"/>.</summary>
-    internal float* Scratch(int worker) => (float*)Unsafe.AsPointer(ref _scratch[worker]![0]);
+    internal float* Scratch(int worker) => Aligned(_scratch[worker]!);
 
     /// <summary>The scratch shared by all workers of one operator, as sized by <see cref="EnsureScratch"/>.</summary>
-    internal float* SharedScratch => (float*)Unsafe.AsPointer(ref _shared![0]);
+    internal float* SharedScratch => Aligned(_shared!);
 
     /// <summary>
     /// Runs body(state, i, worker) for i in [0, count), on up to <see cref="MaxDegreeOfParallelism"/> threads. Each i
@@ -112,6 +117,9 @@ internal sealed unsafe class InferenceContext : IDisposable
         _jobState = state;
         _jobBody = body;
         _jobCount = count;
+        // Workers take runs of consecutive items, so thousands of tiny items (the planes of a depthwise convolution,
+        // the rows of a softmax) do not all contend for the counter; about eight runs per worker still balance the load.
+        _jobChunk = Math.Max(1, count / (workers * 8));
         _jobNext = 0;
         try
         {
@@ -131,21 +139,29 @@ internal sealed unsafe class InferenceContext : IDisposable
     {
         var body = _jobBody;
         object state = _jobState!;
-        int count = _jobCount;
-        int i;
-        while ((i = Interlocked.Increment(ref _jobNext) - 1) < count) body(state, i, worker);
+        int count = _jobCount, chunk = _jobChunk;
+        int start;
+        while ((start = Interlocked.Add(ref _jobNext, chunk) - chunk) < count)
+            for (int i = start, end = Math.Min(count, start + chunk); i < end; i++) body(state, i, worker);
     }
 
     private static float* Pointer(ref float[]? buffer, long floats)
     {
-        // A little slack lets vector loops read a full vector past the end of the last value without a bounds branch.
-        long needed = Math.Max(floats, 0) + 64;
+        // A little slack lets vector loops read a full vector past the end of the last value without a bounds branch,
+        // and 16 more floats leave room to align the start.
+        long needed = Math.Max(floats, 0) + 64 + 16;
         if (buffer is null || buffer.LongLength < needed)
         {
             buffer = null;
             if (needed > Array.MaxLength) throw new ArgumentException("The tensors of this input do not fit in one buffer.", "input");
             buffer = GC.AllocateUninitializedArray<float>((int)needed, pinned: true);
         }
-        return (float*)Unsafe.AsPointer(ref buffer[0]);
+        return Aligned(buffer);
     }
+
+    /// <summary>
+    /// The first 64-byte aligned address in a pinned buffer. AVX-512 loads and stores that cross a cache line cost two,
+    /// and tiles that meet inside a cache line would make threads fight over it.
+    /// </summary>
+    private static float* Aligned(float[] buffer) => (float*)(((nint)Unsafe.AsPointer(ref buffer[0]) + 63) & ~(nint)63);
 }

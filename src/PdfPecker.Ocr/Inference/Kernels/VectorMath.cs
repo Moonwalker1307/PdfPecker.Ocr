@@ -9,7 +9,7 @@ namespace PdfPecker.Ocr.Inference.Kernels;
 /// AVX2 and 128 bits on Arm64. A row's tail goes through the same vector code on a zero-padded copy, so a value gets the
 /// same result whichever position in a row it has; that keeps results independent of how work is split into tiles.
 /// </summary>
-internal static unsafe class VectorMath
+internal static unsafe partial class VectorMath
 {
     private static readonly int Width = Vector<float>.Count;
 
@@ -17,7 +17,7 @@ internal static unsafe class VectorMath
     public static void Activate(float* data, int length, ActivationKind kind, float alpha, float beta)
     {
         if (kind == ActivationKind.None || length <= 0) return;
-        int i = 0;
+        int i = Wide ? ActivateWide(data, length, kind, alpha, beta) : 0;
         for (; i <= length - Width; i += Width)
             Store(Activate(Load(data + i), kind, alpha, beta), data + i);
         if (i < length)
@@ -90,22 +90,34 @@ internal static unsafe class VectorMath
     }
 
     /// <summary>
-    /// erf(x) by Abramowitz and Stegun 7.1.26, with an absolute error below 1.5e-7, well inside the models' tolerance.
+    /// erf(x) as an odd polynomial over an even one in x, on x clamped to [-4, 4] where erf is 1 to single precision
+    /// beyond (the rational approximation Eigen and XLA use). Its absolute error is below 5e-7, well inside the models'
+    /// tolerance, and it needs neither an exponential nor a branch.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Vector<float> Erf(Vector<float> x)
     {
-        var ax = Vector.Abs(x);
-        var t = Vector<float>.One / (Vector<float>.One + new Vector<float>(0.3275911f) * ax);
-        var p = new Vector<float>(1.061405429f);
-        p = p * t + new Vector<float>(-1.453152027f);
-        p = p * t + new Vector<float>(1.421413741f);
-        p = p * t + new Vector<float>(-0.284496736f);
-        p = p * t + new Vector<float>(0.254829592f);
-        p *= t;
-        var e = Vector<float>.One - p * Exp(-(ax * ax));
-        return Vector.ConditionalSelect(Vector.LessThan(x, Vector<float>.Zero), -e, e);
+        x = Vector.Min(Vector.Max(x, new Vector<float>(-4f)), new Vector<float>(4f));
+        var x2 = x * x;
+        var p = x2 * new Vector<float>(ErfP13) + new Vector<float>(ErfP11);
+        p = x2 * p + new Vector<float>(ErfP9);
+        p = x2 * p + new Vector<float>(ErfP7);
+        p = x2 * p + new Vector<float>(ErfP5);
+        p = x2 * p + new Vector<float>(ErfP3);
+        p = x2 * p + new Vector<float>(ErfP1);
+        p = x * p;
+        var q = x2 * new Vector<float>(ErfQ8) + new Vector<float>(ErfQ6);
+        q = x2 * q + new Vector<float>(ErfQ4);
+        q = x2 * q + new Vector<float>(ErfQ2);
+        q = x2 * q + new Vector<float>(ErfQ0);
+        return p / q;
     }
+
+    private const float ErfP1 = -1.60960333262415e-02f, ErfP3 = -2.95459980854025e-03f, ErfP5 = -7.34990630326855e-04f,
+        ErfP7 = -5.69250639462346e-05f, ErfP9 = -2.10102402082508e-06f, ErfP11 = 2.77068142495902e-08f, ErfP13 = -2.72614225801306e-10f;
+
+    private const float ErfQ0 = -1.42647390514189e-02f, ErfQ2 = -7.37332916720468e-03f, ErfQ4 = -1.68282697438203e-03f,
+        ErfQ6 = -2.13374055278905e-04f, ErfQ8 = -1.45660718464996e-05f;
 
     /// <summary>The sum of length values, lane by lane and then across lanes, in a fixed order.</summary>
     public static float Sum(float* data, int length)

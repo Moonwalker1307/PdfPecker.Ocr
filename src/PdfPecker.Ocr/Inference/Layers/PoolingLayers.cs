@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.Intrinsics;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -99,7 +100,9 @@ internal sealed unsafe class PoolLayer : Layer
                         int ix = x0 + kx;
                         if ((uint)ix >= (uint)w) continue;
                         float v = input[(long)iy * w + ix];
-                        acc = _max ? Math.Max(acc, v) : acc + v;
+                        // maxss rather than Math.Max, whose branches mispredict on maps that are half zeros after
+                        // HardSwish; values here are never NaN.
+                        acc = _max ? Vector128.Max(Vector128.CreateScalarUnsafe(acc), Vector128.CreateScalarUnsafe(v)).ToScalar() : acc + v;
                         count++;
                     }
                 }

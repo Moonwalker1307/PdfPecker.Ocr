@@ -62,14 +62,14 @@ internal sealed unsafe class OcrModel
         var plan = context.GetPlan(this, input.Shape);
         context.EnsureScratch(plan.ScratchPerWorker, plan.SharedScratch);
         float* arena = context.Arena(plan.ArenaFloats);
-        float[] output = context.OutputBuffer(this, plan.OutputLength);
+        float[] output = context.OutputBuffer(this, plan.OutputLength, out int offset);
         using var pin = input.Data.Pin();
         fixed (float* outputPointer = output)
         {
             var frame = plan.Frame;
             frame.Arena = arena;
             frame.Input = (float*)pin.Pointer;
-            frame.Output = outputPointer;
+            frame.Output = outputPointer + offset;
             var token = context.CancellationToken;
             foreach (var step in plan.Steps)
             {
@@ -77,7 +77,7 @@ internal sealed unsafe class OcrModel
                 step.Layer.Execute(step, context);
             }
         }
-        return new Tensor(output.AsMemory(0, plan.OutputLength), plan.OutputShape);
+        return new Tensor(output.AsMemory(offset, plan.OutputLength), plan.OutputShape);
     }
 
     private void CheckInputShape(int[] shape)

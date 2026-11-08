@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
+using PdfPecker.Ocr.Models;
 
 namespace PdfPecker.Ocr.Inference.Kernels;
 
@@ -141,10 +142,12 @@ internal sealed unsafe class GemmKernel
     /// <summary>
     /// C[rows x cols] = A x B (+ bias), where A is MR-row panels starting at a row that is a multiple of MR and B is
     /// NR-column panels starting at a column that is a multiple of NR. rowBias (one value per row of C) or colBias (one
-    /// per column) seed the sums; both must be padded to whole panels.
+    /// per column) seed the sums; both must be padded to whole panels. The epilogue runs on each panel of MR rows as
+    /// soon as it is written, while it is still in the cache.
     /// </summary>
-    public void Multiply(int k, float* aPanels, int rows, float* bPanels, int cols, float* c, nint ldc, float* rowBias, float* colBias)
+    public void Multiply(int k, float* aPanels, int rows, float* bPanels, int cols, float* c, nint ldc, float* rowBias, float* colBias, in Epilogue epilogue = default)
     {
+        bool hasEpilogue = !epilogue.IsEmpty;
         int mr = MR, nr = NR;
         var kernel = _kernel;
         float* edge = stackalloc float[12 * 32];
@@ -169,6 +172,7 @@ internal sealed unsafe class GemmKernel
                         Unsafe.CopyBlockUnaligned(c + (i + r) * ldc + j, edge + r * nr, (uint)(w * sizeof(float)));
                 }
             }
+            if (hasEpilogue) epilogue.Apply(c + i * ldc, ldc, i * ldc, h, cols);
         }
     }
 
@@ -516,3 +520,33 @@ internal sealed unsafe class GemmKernel
         Vector128.Store(c5_0, c + 5 * ldc);
         Vector128.Store(c5_1, c + 5 * ldc + 4);
     }}
+
+/// <summary>
+/// What a matrix product does to its result: an activation, then a residual added. The residual is laid out like C
+/// (same leading dimension) and is read at the same offsets. Each value is treated alone, so the result does not
+/// depend on the blocks it is applied to.
+/// </summary>
+internal readonly unsafe struct Epilogue(ActivationKind activation, float alpha, float beta, float* residual)
+{
+    public ActivationKind Activation { get; } = activation;
+
+    public float Alpha { get; } = alpha;
+
+    public float Beta { get; } = beta;
+
+    /// <summary>The residual at the position of C's first value, or null.</summary>
+    public float* Residual { get; } = residual;
+
+    public bool IsEmpty => Activation == ActivationKind.None && Residual == null;
+
+    /// <summary>Applies the epilogue to a rows x cols block at c, which lies offset values after C's first value.</summary>
+    public void Apply(float* c, nint ldc, nint offset, int rows, int cols)
+    {
+        for (int r = 0; r < rows; r++)
+        {
+            float* row = c + r * ldc;
+            if (Activation != ActivationKind.None) VectorMath.Activate(row, cols, Activation, Alpha, Beta);
+            if (Residual != null) VectorMath.AddInPlace(row, Residual + offset + r * ldc, cols);
+        }
+    }
+}

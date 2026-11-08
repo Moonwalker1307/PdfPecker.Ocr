@@ -55,7 +55,7 @@ internal sealed unsafe class ConvTransposeLayer : Layer
     private int TileColumns(int columns)
     {
         int nr = _gemm.NR;
-        return Math.Min(Math.Clamp(16384 / Math.Max(_cin, _rows) / nr * nr, nr, 1024), GemmKernel.RoundUp(columns, nr));
+        return Tiling.Balanced(columns, Math.Clamp(16384 / Math.Max(_cin, _rows) / nr * nr, nr, 1024), nr);
     }
 
     public override long ScratchPerWorker(Step step, InferenceContext context)
@@ -93,12 +93,14 @@ internal sealed unsafe class ConvTransposeLayer : Layer
             VectorMath.Activate(src, columns, layer._activation, layer._alpha, layer._beta);
             int row = m0 + r;
             int co = row / taps, dy = row % taps / kw, dx = row % kw;
-            float* outPlane = output + (long)co * plane * taps;
-            for (int j = 0; j < columns; j++)
+            float* outPlane = output + (long)co * plane * taps + dx;
+            int y = n0 / w, x = n0 - y * w;
+            for (int j = 0; j < columns; y++, x = 0)
             {
-                int p = n0 + j;
-                int y = p / w, x = p - y * w;
-                outPlane[(long)(y * kh + dy) * ow + x * kw + dx] = src[j];
+                int run = Math.Min(w - x, columns - j);
+                float* dst = outPlane + (long)(y * kh + dy) * ow + (long)x * kw;
+                for (int t = 0; t < run; t++) dst[t * kw] = src[j + t];
+                j += run;
             }
         }
     }

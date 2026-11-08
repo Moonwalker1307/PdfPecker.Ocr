@@ -132,7 +132,7 @@ internal sealed unsafe class LinearLayer : Layer
         return output;
     }
 
-    private int TileColumns() => Math.Min(Math.Clamp(32768 / _k / _gemm.NR * _gemm.NR, _gemm.NR, 1024), GemmKernel.RoundUp(_n, _gemm.NR));
+    private int TileColumns() => Tiling.Balanced(_n, Math.Clamp(32768 / _k / _gemm.NR * _gemm.NR, _gemm.NR, 1024), _gemm.NR);
 
     public override long SharedScratch(Step step) => _gemm.PackedASize(Rows.Count(step.OutputShape), _k);
 
@@ -150,18 +150,10 @@ internal sealed unsafe class LinearLayer : Layer
         var layer = (LinearLayer)step.Layer;
         step.Tiling!.Decode(tile, out _, out int n0, out int columns, out int m0, out int rows);
         int n = layer._n, k = layer._k;
-        float* output = step.Output;
+        long offset = (long)m0 * n + n0;
+        var epilogue = new Epilogue(layer._activation, layer._alpha, layer._beta, layer._hasResidual ? step.Input(1) + offset : null);
         fixed (float* weights = layer._weights, bias = layer._bias)
-            layer._gemm.Multiply(k, step.Context.SharedScratch + (long)m0 * k, rows, weights + (long)n0 * k, columns, output + (long)m0 * n + n0, n, null, bias + n0);
-        if (layer._activation != ActivationKind.None || layer._hasResidual)
-        {
-            for (int r = m0; r < m0 + rows; r++)
-            {
-                long offset = (long)r * n + n0;
-                VectorMath.Activate(output + offset, columns, layer._activation, layer._alpha, layer._beta);
-                if (layer._hasResidual) VectorMath.AddInPlace(output + offset, step.Input(1) + offset, columns);
-            }
-        }
+            layer._gemm.Multiply(k, step.Context.SharedScratch + (long)m0 * k, rows, weights + (long)n0 * k, columns, step.Output + offset, n, null, bias + n0, epilogue);
     }
 }
 

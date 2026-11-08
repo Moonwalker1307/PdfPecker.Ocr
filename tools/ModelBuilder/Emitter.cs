@@ -40,6 +40,10 @@ internal static class Emitter
             ids.TryGetValue(tensor, out int id) ? id : throw new NotSupportedException($"Tensor {tensor} is a constant or undefined where the runtime needs a computed value.");
         int AddWeight(float[] data, int[] shape)
         {
+            // The models hold negligible weights (tens of thousands in two of the detector's convolutions, many of them
+            // subnormal); the runtime reads them as zero, and writing zero keeps the file the same as what runs.
+            data = (float[])data.Clone();
+            ModelDefinition.FlushNegligible(data);
             model.Weights.Add(new WeightDefinition(shape, data, data.Length <= SmallWeight ? WeightStorage.Float32 : precision));
             return model.Weights.Count - 1;
         }

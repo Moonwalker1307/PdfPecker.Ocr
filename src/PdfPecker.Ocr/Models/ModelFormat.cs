@@ -333,7 +333,23 @@ internal sealed class ModelDefinition
             default:
                 throw new InvalidDataException("Unknown weight storage.");
         }
+        FlushNegligible(result);
         return result;
+    }
+
+    /// <summary>
+    /// Replaces values smaller than 2^-64 in magnitude with zero of the same sign. Such weights are left over from
+    /// channels that training switched off (the detector has tens of thousands, many of them subnormal); a product with
+    /// an activation is far below what a float sum of values near one can hold, so they cannot change a result. But
+    /// they make subnormal products and sums, and every arithmetic instruction that reads or writes a subnormal takes a
+    /// microcode assist on x86, which made some convolutions ten times slower. .NET cannot set the processor's
+    /// flush-to-zero mode, so the weights are flushed instead.
+    /// </summary>
+    public static void FlushNegligible(Span<float> values)
+    {
+        const float Limit = 5.42101086e-20f; // 2^-64
+        foreach (ref float v in values)
+            if (Math.Abs(v) < Limit) v = BitConverter.UInt32BitsToSingle(BitConverter.SingleToUInt32Bits(v) & 0x80000000u);
     }
 
     private sealed class FormatWriter

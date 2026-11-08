@@ -170,6 +170,39 @@ public sealed class KernelTests
         AssertClose(values, standalone.Run(x).Span, Tolerance, $"{act} standalone");
     }
 
+    [Fact]
+    public void ActivationsAgreeAcrossVectorWidths()
+    {
+        // Rows run through 512-bit vectors where the processor has AVX-512 and through Vector<T> otherwise and for the
+        // tail; a value must get the same bits either way, or results would depend on where a tile boundary falls.
+        float[] special = [0f, -0f, 1e-30f, -1e-30f, 87f, -87f, 88.5f, -88.5f, 100f, -100f, 3f, -3f, 4f, -4f, 5.7f, -5.7f, 0.5f];
+        float[] values = [.. special, .. Random(4096, 11, 30f), .. special];
+        foreach (var kind in Enum.GetValues<ActivationKind>())
+        {
+            var graph = new GraphBuilder(2);
+            graph.Add(OpKind.Activation, [0], [(int)kind], [0.2f, 0.5f]);
+            var row = graph.Run(Tensor.FromBuffer((float[])values.Clone(), 1, values.Length)).Span;
+            for (int i = 0; i < values.Length; i++)
+            {
+                float single = VectorMath.Activate(values[i], kind, 0.2f, 0.5f);
+                Assert.True(BitConverter.SingleToUInt32Bits(single) == BitConverter.SingleToUInt32Bits(row[i]), $"{kind}({values[i]}) at {i}: row {row[i]}, single {single}");
+            }
+        }
+    }
+
+    [Fact]
+    public void ErfIsAccurate()
+    {
+        double worst = 0;
+        for (int i = -6000; i <= 6000; i++)
+        {
+            float x = i / 1000f;
+            float erf = VectorMath.Erf(new System.Numerics.Vector<float>(x))[0];
+            worst = Math.Max(worst, Math.Abs(erf - Erf(x)));
+        }
+        Assert.True(worst < 5e-7, $"max error {worst}");
+    }
+
     [Theory]
     [MemberData(nameof(Kernels))]
     public void TransposedConvolutionMatchesNaive(string kernel)

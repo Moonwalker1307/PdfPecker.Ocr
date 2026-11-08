@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -77,13 +78,6 @@ internal abstract class ConvLayer : Layer
         if (HasResidual && !inputs[1].AsSpan().SequenceEqual(output)) throw Unsupported("The residual does not match the convolution output.");
         return output;
     }
-
-    /// <summary>Applies the activation and adds the residual to a run of one output row.</summary>
-    protected unsafe void Epilogue(Step step, float* output, long offset, int length)
-    {
-        VectorMath.Activate(output + offset, length, Activation, Alpha, Beta);
-        if (HasResidual) VectorMath.AddInPlace(output + offset, step.Input(1) + offset, length);
-    }
 }
 
 /// <summary>
@@ -113,8 +107,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     private int TileColumns(int columns)
     {
         int nr = _gemm.NR;
-        int nc = Math.Clamp(65536 / _k / nr * nr, nr, 2048);
-        return Math.Min(nc, GemmKernel.RoundUp(columns, nr));
+        return Tiling.Balanced(columns, Math.Clamp(65536 / _k / nr * nr, nr, 2048), nr);
     }
 
     public override long ScratchPerWorker(Step step, InferenceContext context)
@@ -146,62 +139,73 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         else layer.PackPatches(input, x[1], x[2], x[3], ow, n0, columns, packed);
         float* output = step.Output;
         long baseOffset = (long)n * layer.Cout * planeOut + (long)m0 * planeOut + n0;
+        var epilogue = new Epilogue(layer.Activation, layer.Alpha, layer.Beta, layer.HasResidual ? step.Input(1) + baseOffset : null);
         fixed (float* weights = layer._weights, bias = layer._bias)
-            gemm.Multiply(layer._k, weights + (long)m0 * layer._k, rows, packed, columns, output + baseOffset, planeOut, bias + m0, null);
-        if (layer.Activation != ActivationKind.None || layer.HasResidual)
-            for (int r = 0; r < rows; r++) layer.Epilogue(step, output, baseOffset + (long)r * planeOut, columns);
+            gemm.Multiply(layer._k, weights + (long)m0 * layer._k, rows, packed, columns, output + baseOffset, planeOut, bias + m0, null, epilogue);
     }
 
     /// <summary>
-    /// Gathers the patches of output pixels [n0, n0 + columns) into NR-column panels: row (ci, ky, kx) of the panel holds
-    /// the input value each output pixel's kernel tap reads, or zero in the padding. Runs of pixels in one output row
-    /// read contiguous input (stride 1) or every second value (stride 2).
+    /// Gathers the patches of output pixels [n0, n0 + columns) into NR-column panels: row (ci, ky, kx) of a panel holds
+    /// the input value each output pixel's kernel tap reads, or zero in the padding. Panels are filled one after the
+    /// other, so the writes are sequential; within a panel, the pixels of one output row read one run of an input row
+    /// per tap, contiguous for stride 1 and every Sw-th value otherwise.
     /// </summary>
     private void PackPatches(float* input, int channels, int h, int w, int ow, int n0, int columns, float* packed)
     {
         int nr = _gemm.NR;
         int k = _k;
-        int padded = GemmKernel.RoundUp(columns, nr);
-        int kk = 0;
-        for (int ci = 0; ci < channels; ci++)
+        // A panel's pixels split into at most nr runs that each lie in one output row.
+        int* runStart = stackalloc int[nr];
+        int* runLength = stackalloc int[nr];
+        int* runY = stackalloc int[nr];
+        int* runX = stackalloc int[nr];
+        for (int j0 = 0; j0 < columns; j0 += nr)
         {
-            float* plane = input + (long)ci * h * w;
-            for (int ky = 0; ky < Kh; ky++)
+            int width = Math.Min(nr, columns - j0);
+            int runs = 0;
+            for (int t = 0; t < width;)
             {
-                for (int kx = 0; kx < Kw; kx++, kk++)
+                int n = n0 + j0 + t;
+                int oy = n / ow, ox = n - oy * ow;
+                int length = Math.Min(ow - ox, width - t);
+                runStart[runs] = t;
+                runLength[runs] = length;
+                runY[runs] = oy * Sh - Pt;
+                runX[runs] = ox * Sw - Pl;
+                runs++;
+                t += length;
+            }
+            float* dst = packed + (long)j0 * k;
+            for (int ci = 0; ci < channels; ci++)
+            {
+                float* plane = input + (long)ci * h * w;
+                for (int ky = 0; ky < Kh; ky++)
                 {
-                    int j = 0;
-                    while (j < columns)
+                    for (int kx = 0; kx < Kw; kx++, dst += nr)
                     {
-                        int n = n0 + j;
-                        int oy = n / ow, ox = n - oy * ow;
-                        int run = Math.Min(ow - ox, columns - j);
-                        // Split the run at panel boundaries so each piece is contiguous in the packed layout.
-                        int panelLeft = nr - j % nr;
-                        run = Math.Min(run, panelLeft);
-                        float* dst = packed + (long)(j / nr) * k * nr + (long)kk * nr + j % nr;
-                        int iy = oy * Sh - Pt + ky * Dh;
-                        if ((uint)iy >= (uint)h)
+                        for (int r = 0; r < runs; r++)
                         {
-                            new Span<float>(dst, run).Clear();
-                        }
-                        else
-                        {
-                            float* row = plane + (long)iy * w;
-                            int ix = ox * Sw - Pl + kx * Dw;
-                            if (Sw == 1 && ix >= 0 && ix + run <= w)
+                            float* d = dst + runStart[r];
+                            int length = runLength[r];
+                            int iy = runY[r] + ky * Dh;
+                            if ((uint)iy >= (uint)h)
                             {
-                                new Span<float>(row + ix, run).CopyTo(new Span<float>(dst, run));
+                                new Span<float>(d, length).Clear();
+                                continue;
+                            }
+                            float* row = plane + (long)iy * w;
+                            int ix = runX[r] + kx * Dw;
+                            if (Sw == 1 && ix >= 0 && ix + length <= w)
+                            {
+                                Unsafe.CopyBlockUnaligned(d, row + ix, (uint)(length * sizeof(float)));
                             }
                             else
                             {
-                                for (int t = 0; t < run; t++, ix += Sw) dst[t] = (uint)ix < (uint)w ? row[ix] : 0f;
+                                for (int t = 0; t < length; t++, ix += Sw) d[t] = (uint)ix < (uint)w ? row[ix] : 0f;
                             }
                         }
-                        j += run;
+                        if (width < nr) new Span<float>(dst + width, nr - width).Clear();
                     }
-                    // Zero the unused columns of the last panel.
-                    for (int jj = columns; jj < padded; jj++) packed[(long)(jj / nr) * k * nr + (long)kk * nr + jj % nr] = 0f;
                 }
             }
         }
@@ -305,7 +309,32 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
         {
             float* outRow = output + (long)y * ow;
             float* rows = scratch + (long)(y * Sh - Pt - iyStart) * rowLength;
-            for (int ox = 0; ox < ow; ox += Width)
+            int ox = 0;
+            // Four vectors of pixels at a time: four independent sums hide the latency of the additions, and each tap is
+            // broadcast once for all four. Every pixel still sums its taps in the same order as in the loop below.
+            for (; ox + 4 * Width <= ow; ox += 4 * Width)
+            {
+                Vector<float> a0 = bias, a1 = bias, a2 = bias, a3 = bias;
+                for (int ky = 0; ky < Kh; ky++)
+                {
+                    float* row = rows + (long)ky * rowLength;
+                    float* tap = taps + ky * Kw;
+                    for (int kx = 0; kx < Kw; kx++)
+                    {
+                        float* src = Sw == 1 ? row + ox + kx : row + ((kx & 1) == 0 ? 0 : half) + ox + (kx >> 1);
+                        var t = new Vector<float>(tap[kx]);
+                        a0 += t * VectorMath.Load(src);
+                        a1 += t * VectorMath.Load(src + Width);
+                        a2 += t * VectorMath.Load(src + 2 * Width);
+                        a3 += t * VectorMath.Load(src + 3 * Width);
+                    }
+                }
+                VectorMath.Store(VectorMath.Activate(a0, Activation, Alpha, Beta), outRow + ox);
+                VectorMath.Store(VectorMath.Activate(a1, Activation, Alpha, Beta), outRow + ox + Width);
+                VectorMath.Store(VectorMath.Activate(a2, Activation, Alpha, Beta), outRow + ox + 2 * Width);
+                VectorMath.Store(VectorMath.Activate(a3, Activation, Alpha, Beta), outRow + ox + 3 * Width);
+            }
+            for (; ox < ow; ox += Width)
             {
                 var acc = bias;
                 for (int ky = 0; ky < Kh; ky++)
@@ -358,6 +387,16 @@ internal sealed class Tiling
     public int Rows { get; private set; }
     public int Panel { get; private set; }
     public int Count => Batch * _columnBlocks * _rowBlocks;
+
+    /// <summary>
+    /// The width of the fewest equal column blocks, in whole panels, that are at most maxColumns wide (a multiple of the
+    /// panel width), so that tiles do about the same work and the last one is not a sliver.
+    /// </summary>
+    public static int Balanced(int columns, int maxColumns, int panel)
+    {
+        int blocks = (columns + maxColumns - 1) / maxColumns;
+        return GemmKernel.RoundUp((columns + blocks - 1) / blocks, panel);
+    }
 
     public static Tiling For(int batch, int columns, int tileColumns, int rows, int panel)
     {

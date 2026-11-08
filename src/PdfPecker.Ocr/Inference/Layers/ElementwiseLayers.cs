@@ -54,6 +54,9 @@ internal sealed unsafe class BinaryLayer : Layer
         return -1;
     }
 
+    /// <summary>The upsampled path enlarges each row of the smaller map once into scratch, for all the rows it covers.</summary>
+    public override long ScratchPerWorker(Step step, InferenceContext context) => Upsamples ? step.OutputShape[3] : 0;
+
     public override void Execute(Step step, InferenceContext context)
     {
         int[] a = step.InputShapes[0], b = step.InputShapes[1], o = step.OutputShape;
@@ -90,14 +93,22 @@ internal sealed unsafe class BinaryLayer : Layer
         float* a = step.Input(0) + (long)plane * h * w;
         float* small = step.Input(1) + (long)plane * b[2] * bw;
         float* output = step.Output + (long)plane * h * w;
+        float* wide = step.Context.Scratch(worker);
+        int fh = layer._fh, fw = layer._fw;
         for (int y = 0; y < h; y++)
         {
-            float* src = small + (long)(y / layer._fh) * bw;
+            if (y % fh == 0)
+            {
+                float* src = small + (long)(y / fh) * bw;
+                for (int x = 0; x < bw; x++)
+                {
+                    float v = src[x];
+                    for (int i = 0; i < fw; i++) wide[x * fw + i] = v;
+                }
+            }
             float* ar = a + (long)y * w, orow = output + (long)y * w;
-            if (layer._multiply)
-                for (int x = 0; x < w; x++) orow[x] = ar[x] * src[x / layer._fw];
-            else
-                for (int x = 0; x < w; x++) orow[x] = ar[x] + src[x / layer._fw];
+            if (layer._multiply) VectorMath.Multiply(ar, wide, orow, w);
+            else VectorMath.Add(ar, wide, orow, w);
         }
     }
 
