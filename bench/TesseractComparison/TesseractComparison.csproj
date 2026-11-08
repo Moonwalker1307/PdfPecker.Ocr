@@ -15,6 +15,10 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <PublishAot>true</PublishAot>
     <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <!-- Native AOT compiles for a baseline processor unless told otherwise, and PdfPecker.Ocr's kernels then run without
+         AVX2, FMA and AVX-512: an A4 page took two and a half to four times as long as with the JIT, which picks them at
+         run time. The app runs on the machine it measures, so it is compiled for that machine's processor. -->
+    <IlcInstructionSet Condition="'$(IlcInstructionSet)' == ''">native</IlcInstructionSet>
     <StripSymbols>true</StripSymbols>
     <RootNamespace>TesseractComparison</RootNamespace>
     <AssemblyName>TesseractComparison</AssemblyName>

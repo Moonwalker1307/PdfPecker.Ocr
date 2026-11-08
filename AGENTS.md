@@ -194,6 +194,9 @@ must be unchanged unless the output change is intended. If only one runtime is i
   wrong text; damaged-input limits belong in the code's own work budget, counted before allocating.
 - Cloud VMs and GitHub runners differ too much in CPU to compare a single benchmark run with an earlier one; only
   version-against-version runs on one machine are meaningful.
+- Native AOT builds target a baseline processor unless `IlcInstructionSet` says otherwise, so the AVX2, FMA and
+  AVX-512 kernels are skipped and an A4 page takes two and a half to four times as long as under the JIT. The
+  Tesseract comparison sets `native`; a published sample without it is slow, not broken.
 - An idle engine worker keeps the buffers of the largest page it read (an activation arena of about 130 MB after an
   A4 page at 300 dpi) until `EnginePool` disposes it after 30 seconds without a call; tests and benchmarks that need a
   cold start call `EnginePool.Clear()`.

@@ -58,6 +58,9 @@ as the AOT build; `dotnet publish -r linux-x64` needs the ILCompiler package fro
   Recall is matched ground truth words over all of them, precision matched engine words over all engine words, and mean IoU is
   over matches. Ground truth boxes hug the ink (see `tools/Corpus/README.md`); rapidocr's boxes are padded by its unclip ratio, so
   its IoU is lower than its recall would suggest.
+- **Instruction set.** The app is compiled with `IlcInstructionSet=native`: Native AOT otherwise targets a baseline x64
+  processor, PdfPecker.Ocr's AVX2, FMA and AVX-512 kernels are left out, and a page takes two and a half to four times as
+  long as under the JIT. Tesseract picks its SIMD code at run time, so both use the machine's processor.
 - Machines that run other jobs give noisy times. The numbers in `baseline/` were measured on a 4-core VM shared with other
   builds; compare engines within one run, and use `bench/compare-versions.sh` (same machine, in turns) for a change to PdfPecker.Ocr.
 

@@ -27,6 +27,11 @@ dotnet add package PdfPecker.Ocr
 The package targets `net8.0`, `net9.0` and `net10.0`, so it works on .NET 8 and later, on Windows, Linux and macOS,
 on x64 and Arm64. It is trimmable and works in Native AOT applications.
 
+Native AOT compiles for a baseline processor unless told otherwise, and the network kernels then run without AVX2, FMA
+and AVX-512, which on x64 makes a page two and a half to four times slower than under the JIT (which picks them at run
+time). Name the processors you deploy to in your application's project, for example
+`<IlcInstructionSet>x86-64-v3</IlcInstructionSet>` for AVX2 and FMA, or `native` for the machine that builds it.
+
 ## Quick start
 
 ```csharp

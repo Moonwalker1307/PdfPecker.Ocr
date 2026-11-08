@@ -13,7 +13,9 @@ using PdfPecker.Ocr;
 //   --threads <n>        the most threads a page uses (default: the number of processors)
 //
 // sample.png next to this file is a page PdfPecker drew from HTML and rendered at 300 dpi; CI publishes this program
-// with Native AOT and checks the text it reads there.
+// with Native AOT and checks the text it reads there. A Native AOT build that should be fast names its processors, for
+// example dotnet publish -c Release -p:PublishAot=true -p:IlcInstructionSet=native, since the baseline it targets
+// otherwise leaves out the AVX2, FMA and AVX-512 kernels.
 
 const string Usage = "Usage: PdfPecker.Ocr.Sample [--hocr] [--searchable <out.pdf>] [--dpi <n>] [--threads <n>] <image or PDF file>";
 
