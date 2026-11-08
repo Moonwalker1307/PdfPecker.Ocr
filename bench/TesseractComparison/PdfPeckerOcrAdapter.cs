@@ -1,10 +1,9 @@
 namespace TesseractComparison;
 
 /// <summary>
-/// PdfPecker.Ocr through its public API. The adapter is a stub until the app is built with -p:WithPdfPeckerOcr=true, which
-/// references src/PdfPecker.Ocr and defines PDFPECKER_OCR; the real branch is written against the API in the design brief
-/// (ImageOcr.RecognizeGray and RecognizeRgba returning an OcrPage of lines and words with boxes in page pixels) and has to be
-/// checked against the code once it exists.
+/// PdfPecker.Ocr through its public API: ImageOcr.RecognizeGray for gray pages (read in place) and RecognizeRgba for colour
+/// ones, with the package's default settings and MaxDegreeOfParallelism set to the thread count. The app builds it in by
+/// default (PDFPECKER_OCR); with -p:WithPdfPeckerOcr=false the adapter is a stub.
 /// </summary>
 sealed class PdfPeckerOcrAdapter : IOcrEngineAdapter
 {
@@ -28,7 +27,17 @@ sealed class PdfPeckerOcrAdapter : IOcrEngineAdapter
         "PdfPecker.Ocr (not built in: stub)";
 #endif
 
-    public void Initialize(int threads) => _threads = threads;
+    public void Initialize(int threads)
+    {
+        _threads = threads;
+#if PDFPECKER_OCR
+        // The models load on first use and the engine's worker (threads, buffers) is built on the first page of a thread
+        // count; a blank page does both here, outside the timed runs, as the other adapters load their models here.
+        var blank = new byte[64 * 64];
+        blank.AsSpan().Fill(255);
+        PdfPecker.Ocr.ImageOcr.RecognizeGray(blank, 64, 64, new PdfPecker.Ocr.OcrOptions { MaxDegreeOfParallelism = threads });
+#endif
+    }
 
     public void Prepare(CorpusPage page) { }
 
@@ -45,7 +54,7 @@ sealed class PdfPeckerOcrAdapter : IOcrEngineAdapter
                 words.Add(new Box(w.Text, w.Box.X, w.Box.Y, w.Box.Width, w.Box.Height, w.Confidence));
         return new OcrResult { Text = string.Join('\n', page.Lines.Select(l => l.Text)), Words = words };
 #else
-        throw new NotSupportedException("This build has no PdfPecker.Ocr: build with -p:WithPdfPeckerOcr=true once the package has its API.");
+        throw new NotSupportedException("This build has no PdfPecker.Ocr: it was built with -p:WithPdfPeckerOcr=false.");
 #endif
     }
 

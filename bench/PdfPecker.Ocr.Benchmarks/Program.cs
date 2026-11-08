@@ -11,7 +11,10 @@ using OcrBench;
 //                                                   version comparison starts a fresh process for)
 //        dotnet run -c Release -- versions <other.dll> [rounds]   this build against another build of this program, in turns
 //                                                   (bench/compare-versions.sh builds the other one from a git ref)
-//        add -p:OcrApi=true (and -p:OcrInternals=true) to the build to switch the real cases on; see the csproj.
+//        dotnet run -c Release -p:OcrInternals=true -- stages [--threads n] [--runs n]
+//                                                   an A4 invoice page at 300 dpi end to end, cold and warm, and its time
+//                                                   by stage; run it in a fresh process per thread count
+//        the API cases are on by default (-p:OcrApi=false turns them off); -p:OcrInternals=true adds the stage cases.
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 
@@ -19,6 +22,19 @@ if (args.Length > 1 && args[0] == "versions")
 {
     Versions.Compare(Path.GetFullPath(args[1]), args.Length > 2 ? int.Parse(args[2], CultureInfo.InvariantCulture) : 3);
     return 0;
+}
+
+if (args.Length > 0 && args[0] == "stages")
+{
+#if OCR_INTERNALS
+    Stages.Run(
+        int.TryParse(ArgValue("--threads"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var st) ? st : Environment.ProcessorCount,
+        int.TryParse(ArgValue("--runs"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var sr) ? sr : 5);
+    return 0;
+#else
+    Console.Error.WriteLine("The stages command needs a build with -p:OcrInternals=true.");
+    return 2;
+#endif
 }
 
 bool json = args.Contains("--json");

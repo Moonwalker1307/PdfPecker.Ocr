@@ -55,19 +55,29 @@ static class Cases
         yield return new BenchCase("searchable-pdf (1 page, 150 dpi)", () => PdfOcr.MakeSearchable(scan, new OcrOptions { MaxDegreeOfParallelism = threads }), (long)bw2 * bh2, MinRuns: 3, BudgetSeconds: 20);
 #else
         foreach (var (name, _, w, h, _) in pages)
-            yield return new BenchCase($"{name} ({threads}t)", null, (long)w * h, Pending: "needs -p:OcrApi=true (ImageOcr.RecognizeGray / RecognizeRgba)");
-        yield return new BenchCase("searchable-pdf (1 page, 150 dpi)", null, 0, Pending: "needs -p:OcrApi=true (PdfOcr.MakeSearchable)");
+            yield return new BenchCase($"{name} ({threads}t)", null, (long)w * h, Pending: "built with -p:OcrApi=false (ImageOcr.RecognizeGray / RecognizeRgba)");
+        yield return new BenchCase("searchable-pdf (1 page, 150 dpi)", null, 0, Pending: "built with -p:OcrApi=false (PdfOcr.MakeSearchable)");
 #endif
 
 #if OCR_INTERNALS
-        // The internal contracts of the design brief. The signatures below are the ones it names; adjust them to the real code.
-        // TextDetector.Detect(page pixels) -> quads; TextRecognizer.Recognize(page pixels, quads) -> lines.
+        // The stages on their own, with the engine's settings: detection of the 300 dpi page, and orientation with
+        // recognition of the lines found there.
         var (dp, dw, dh) = (bp, bw, bh);
-        yield return new BenchCase("detection (300 dpi page)", () => throw new NotImplementedException("wire up TextDetector.Detect"), (long)dw * dh, MinRuns: 3);
-        yield return new BenchCase("recognition (lines of the 300 dpi page)", () => throw new NotImplementedException("wire up TextRecognizer.Recognize"), (long)dw * dh, MinRuns: 3);
+        var context = new PdfPecker.Ocr.Inference.InferenceContext(threads);
+        var pipeline = new PdfPecker.Ocr.Layout.OcrPipeline(
+            new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.Detection, context),
+            new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.Recognition, context),
+            new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.Classifier, context),
+            PdfPecker.Ocr.Layout.OcrEngine.Characters,
+            PdfPecker.Ocr.Layout.OcrEngine.DetectionOptions,
+            PdfPecker.Ocr.Layout.OcrEngine.RecognitionOptions(new OcrOptions()));
+        var quads = pipeline.Detector.Detect(new PdfPecker.Ocr.Detection.PixelView(dp, dw, dh, 1));
+        yield return new BenchCase($"detection (300 dpi page, {threads}t)", () => pipeline.Detector.Detect(new PdfPecker.Ocr.Detection.PixelView(dp, dw, dh, 1)), (long)dw * dh, MinRuns: 3);
+        yield return new BenchCase($"orientation + recognition ({quads.Count} lines, {threads}t)", () => pipeline.Recognizer.Recognize(new PdfPecker.Ocr.Detection.PixelView(dp, dw, dh, 1), quads), (long)dw * dh, MinRuns: 3);
+        yield return new BenchCase("kernels: 1x1 conv as GEMM, depthwise conv, attention", null, 0, Pending: "not written yet; the reference and kernel tests time nothing");
 #else
         yield return new BenchCase("detection (300 dpi page)", null, (long)bw * bh, Pending: "needs -p:OcrInternals=true (TextDetector.Detect)");
-        yield return new BenchCase("recognition (lines of the 300 dpi page)", null, (long)bw * bh, Pending: "needs -p:OcrInternals=true (TextRecognizer.Recognize)");
+        yield return new BenchCase("orientation + recognition (lines of the 300 dpi page)", null, (long)bw * bh, Pending: "needs -p:OcrInternals=true (TextRecognizer.Recognize)");
         yield return new BenchCase("kernels: 1x1 conv as GEMM, depthwise conv, attention", null, 0, Pending: "needs -p:OcrInternals=true (Inference kernels)");
 #endif
     }

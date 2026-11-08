@@ -4,8 +4,8 @@
        on the synthetic corpus of tools/Corpus. Published with Native AOT so that the measurements of a .NET engine are
        those of the shipped kind of build. Dev tooling only: nothing here is packed. See README.md.
 
-       PdfPecker.Ocr is plugged in with -p:WithPdfPeckerOcr=true, which references src/PdfPecker.Ocr and compiles the real
-       adapter; without it the adapter is a stub, so the app builds before the package has its API. -->
+       PdfPecker.Ocr is built in by default: the app references src/PdfPecker.Ocr and compiles the real adapter.
+       -p:WithPdfPeckerOcr=false leaves it out (the adapter is then a stub), for measuring only the other engines. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -19,6 +19,10 @@
     <RootNamespace>TesseractComparison</RootNamespace>
     <AssemblyName>TesseractComparison</AssemblyName>
     <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <WithPdfPeckerOcr Condition="'$(WithPdfPeckerOcr)' == ''">true</WithPdfPeckerOcr>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(WithPdfPeckerOcr)' == 'true'">

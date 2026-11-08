@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Benchmarks PdfPecker.Ocr from the working tree against another version (a tag, branch or commit; the latest release tag, or
 # origin/main when there is none) on this machine, running the two in turns. Usage: bench/compare-versions.sh [git-ref] [rounds]
-#   OCR_BENCH_BUILD_ARGS="-p:OcrApi=true"   MSBuild arguments for both builds: the switches that turn the cases on (see the csproj).
+#   OCR_BENCH_BUILD_ARGS="-p:OcrApi=false"  MSBuild arguments for both builds: the switches that turn cases on or off (see the csproj).
 #                                           Both builds get the same ones, so a case the other version cannot compile shows as n/a
 #                                           only if its code is behind a switch that version lacks; pass only what both support.
 #   DOTNET_GCgen0size                        fixes the GC allocation budget (default 0x1000000, 16 MB) so memory compares across machines.
