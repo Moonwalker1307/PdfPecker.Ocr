@@ -11,4 +11,7 @@
   <Folder Name="/samples/">
     <Project Path="samples/PdfPecker.Ocr.Sample/PdfPecker.Ocr.Sample.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/ModelBuilder/ModelBuilder.csproj" />
+  </Folder>
 </Solution>

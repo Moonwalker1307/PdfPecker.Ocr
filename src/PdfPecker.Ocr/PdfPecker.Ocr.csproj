@@ -47,4 +47,9 @@
     <InternalsVisibleTo Include="ModelBuilder" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The neural network models, written by tools/ModelBuilder; never edit them by hand. -->
+    <EmbeddedResource Include="Models/*.bin.br" LogicalName="PdfPecker.Ocr.Models.%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>
