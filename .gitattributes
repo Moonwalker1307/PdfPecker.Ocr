@@ -1,0 +1,28 @@
+# Source and text files are checked out with LF on every platform, so tests that compare text do not depend on a
+# Windows checkout's autocrlf setting. The test fixture folders carry their own .gitattributes that turn conversion off.
+* text=auto eol=lf
+
+# Binary files must never be touched by line-ending conversion.
+*.pdf binary
+*.ttf binary
+*.ttc binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.png binary
+*.gif binary
+*.webp binary
+*.bmp binary
+*.tif binary
+*.tiff binary
+*.jpg binary
+*.jpeg binary
+*.jp2 binary
+*.j2k binary
+*.jb2 binary
+*.pbm binary
+*.rgb binary
+*.glob binary
+*.br binary
+*.bin binary
+*.gz binary

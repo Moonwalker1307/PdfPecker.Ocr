@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>PdfPecker.Ocr</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PackageId>PdfPecker.Ocr</PackageId>
+    <Authors>Moonwalker1307</Authors>
+    <Description>Dependency-free OCR for .NET: reads text from scanned PDFs and images and makes scanned PDFs searchable. Its own neural network runtime in C#, no native binaries.</Description>
+    <Copyright>Copyright (c) 2026 Moonwalker1307</Copyright>
+    <RepositoryUrl>https://github.com/Moonwalker1307/PdfPecker.Ocr</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>ocr;text-recognition;pdf;searchable-pdf;scanned-pdf;image-to-text;paddleocr;csharp;dotnet;pdfpecker</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Moonwalker1307/PdfPecker.Ocr</PackageProjectUrl>
+    <!-- The code is MIT and the embedded model weights are Apache-2.0; both are OSI-approved, so nuget.org takes the
+         expression. The notices file, packed below, carries the attribution and licence text Apache-2.0 asks for. -->
+    <PackageLicenseExpression>MIT AND Apache-2.0</PackageLicenseExpression>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- Package validation stays off until 0.1.0 is on nuget.org: it compares the public API with a published
+         baseline, and there is none yet. The first PR after that release sets EnablePackageValidation to true and
+         PackageValidationBaselineVersion to 0.1.0 here, as RELEASING.md describes. -->
+  </PropertyGroup>
+
+  <!-- Reproducible paths in the PDBs of packages built by CI. -->
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PdfPecker" Version="$(PdfPeckerVersion)" />
+    <InternalsVisibleTo Include="PdfPecker.Ocr.Tests" />
+    <InternalsVisibleTo Include="PdfPecker.Ocr.Fuzz" />
+    <InternalsVisibleTo Include="PdfPecker.Ocr.Benchmarks" />
+    <InternalsVisibleTo Include="ModelBuilder" />
+  </ItemGroup>
+
+</Project>

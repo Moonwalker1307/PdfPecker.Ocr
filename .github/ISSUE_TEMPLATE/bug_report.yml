@@ -1,0 +1,45 @@
+name: Bug report
+description: Text read wrongly, a crash, or an exception you didn't expect.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A small image or PDF that shows the problem is the most useful thing you can give us.
+        Security problems go through [private reporting](https://github.com/Moonwalker1307/PdfPecker.Ocr/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What text you expected and what you got. For misread text, a crop of the line helps.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Input and code
+      description: |
+        The smallest image or PDF that shows it (attach the file), and the call with the options you used. Please
+        leave out anything private: a scan of a real document often holds names, addresses or account numbers.
+      render: csharp
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: PdfPecker.Ocr version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: .NET version, OS and processor
+      description: The processor matters because the kernels take different SIMD paths on x64 and Arm64.
+      placeholder: ".NET 10 on Windows 11, x64"
+  - type: textarea
+    id: exception
+    attributes:
+      label: Exception and stack trace
+      description: If it threw, paste the full exception.
+      render: text

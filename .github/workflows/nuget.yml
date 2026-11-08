@@ -1,0 +1,282 @@
+name: NuGet package
+
+on:
+  # Every pull request is built and tested, so the checks can be made required without a PR that touches other files
+  # waiting for checks that never start.
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - tests/**
+      - samples/**
+      - fuzz/**
+      - bench/**
+      - tools/**
+      - README.md
+      - THIRD-PARTY-NOTICES.md
+      - LICENSE
+      - PdfPecker.Ocr.slnx
+      - Directory.Build.props
+      - global.json
+      - .github/workflows/nuget.yml
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Least privilege: jobs only read the repository; the release job alone may attach files to a release, and the publish
+# job alone may request an OIDC token for NuGet Trusted Publishing.
+permissions:
+  contents: read
+
+# A PR's newer push replaces its older run. Every push to main runs on its own: with one group for main, GitHub keeps
+# only the newest waiting run and cancels the others, so commits merged minutes apart would get no result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # Actions are pinned to commits so a moved tag cannot change what runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the release tags give preview builds their version
+
+      # The package targets net8.0, net9.0 and net10.0, and the tests run on each runtime.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+          # Keeps ~/.nuget/packages between runs. A release builds without it: the package it publishes comes from a
+          # fresh restore from nuget.org, not from a cache that an earlier run on main saved and could have altered.
+          cache: ${{ github.event_name != 'release' }}
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+
+      - name: Compute version
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            version="${TAG#v}"
+            if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::Release tag '$TAG' is not a version like v0.1.0 or 0.1.0-beta"
+              exit 1
+            fi
+          else
+            # Previews are pre-releases of the next patch after the latest release, so NuGet sorts them above it and
+            # below the next release: 0.1.1-preview.<run> after v0.1.0. Before the first release they lead up to 0.1.0.
+            latest=$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+            if [[ "${latest#v}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              next="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+            else
+              next="0.1.0"
+            fi
+            version="$next-preview.$GITHUB_RUN_NUMBER"
+            # Package validation compares the API with this baseline once it is turned on after the first release, so
+            # it must move to each new release; otherwise a break against the latest release goes unnoticed.
+            baseline=$(sed -n 's:.*<PackageValidationBaselineVersion>\(.*\)</PackageValidationBaselineVersion>.*:\1:p' src/PdfPecker.Ocr/PdfPecker.Ocr.csproj)
+            if [ -n "$latest" ] && [ "$baseline" != "${latest#v}" ]; then
+              echo "::warning file=src/PdfPecker.Ocr/PdfPecker.Ocr.csproj::PackageValidationBaselineVersion is '${baseline}' but the latest release is ${latest#v}; set it (see RELEASING.md)."
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version" >> "$GITHUB_STEP_SUMMARY"
+
+      - run: dotnet build -c Release -p:Version=${{ steps.version.outputs.version }}
+      - run: dotnet test -c Release --no-build
+
+      # Package validation is off until the first release, because there is no published version to compare the API
+      # with; RELEASING.md turns it on with that release as the baseline.
+      - run: dotnet pack src/PdfPecker.Ocr -c Release --no-build -p:Version=${{ steps.version.outputs.version }} -o artifacts
+
+      # The package must name PdfPecker as its only dependency and carry the notices the Apache-2.0 model licence asks
+      # for. A pack that loses either still succeeds, so the package is opened and checked here.
+      - name: Check the package's dependencies and notices
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          package="artifacts/PdfPecker.Ocr.$VERSION.nupkg"
+          unzip -l "$package" | grep -q 'THIRD-PARTY-NOTICES.md'
+          unzip -l "$package" | grep -q 'LICENSE'
+          unzip -p "$package" PdfPecker.Ocr.nuspec > nuspec.xml
+          ids=$(grep -o '<dependency id="[^"]*"' nuspec.xml | sed 's/.*id="//; s/"//' | sort -u)
+          if [ "$ids" != "PdfPecker" ]; then
+            echo "::error::The package must depend on PdfPecker and nothing else, but depends on: $ids"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages-${{ steps.version.outputs.version }}
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+          # Artifact storage is shared by the account's repositories. Release builds keep their packages longer, and
+          # every release has them attached anyway.
+          retention-days: ${{ github.event_name == 'release' && 90 || 7 }}
+
+  # Coverage runs the net10.0 tests a second time with instrumentation, so it has a job of its own that runs alongside
+  # the build job. It runs for main rather than for every pull request: the figure is followed over time, and a PR's
+  # tests already run in the build job.
+  coverage:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+
+      - run: dotnet build -c Release -f net10.0 tests/PdfPecker.Ocr.Tests
+
+      # Coverage never fails the build: instrumentation makes the tests that bound their run time many times slower, so
+      # they are left out and the step may not fail the job.
+      - name: Coverage
+        continue-on-error: true
+        run: dotnet test -c Release --no-build -f net10.0 tests/PdfPecker.Ocr.Tests --filter "FullyQualifiedName!~HostileInputTests" --collect:"XPlat Code Coverage" --results-directory coverage
+
+      - name: Coverage summary
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob
+          import xml.etree.ElementTree as ET
+          reports = glob.glob("coverage/*/coverage.cobertura.xml")
+          if reports:
+              print(f"Line coverage: {float(ET.parse(reports[0]).getroot().get('line-rate')):.1%} (net10.0 tests)")
+          else:
+              print("No coverage report was produced.")
+          PY
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: coverage/**/coverage.cobertura.xml
+          retention-days: 7
+
+  # Build and tests on Windows, for net10.0 only, because paths, line endings and the SIMD paths the runner's processor
+  # takes can differ there.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+
+      - run: dotnet build -c Release -f net10.0 tests/PdfPecker.Ocr.Tests
+      - run: dotnet test -c Release -f net10.0 --no-build tests/PdfPecker.Ocr.Tests
+
+  # IsAotCompatible only turns on the analyzers; publishing and running the sample as a native executable proves the
+  # package really works trimmed and ahead-of-time compiled, embedded model data included.
+  native-aot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+
+      - name: Publish the sample with native AOT
+        run: dotnet publish samples/PdfPecker.Ocr.Sample -c Release -p:PublishAot=true -p:TreatWarningsAsErrors=true -o aot
+
+      # Until the recognition API is in, the sample prints the package version. Once it reads images, this step runs it
+      # on a fixture image and checks the text it prints.
+      - name: Run the sample
+        run: ./aot/PdfPecker.Ocr.Sample README.md | grep -q '^PdfPecker.Ocr '
+
+  release:
+    if: github.event_name == 'release'
+    needs: [build, windows, native-aot]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages-${{ needs.build.outputs.version }}
+          path: artifacts
+
+      - name: Attach the package to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" artifacts/*.nupkg --clobber
+
+  # Pushes the release package to nuget.org with Trusted Publishing: NuGet/login swaps a GitHub OIDC token for a
+  # short-lived API key, so no long-lived key is stored in the repository. Runs only for published releases.
+  publish:
+    if: github.event_name == 'release'
+    needs: [build, windows, native-aot]
+    runs-on: ubuntu-latest
+    environment: nuget
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages-${{ needs.build.outputs.version }}
+          path: artifacts
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Check nuget.org user is set
+        env:
+          NUGET_USER: ${{ vars.NUGET_USER }}
+        run: |
+          if [ -z "$NUGET_USER" ]; then
+            echo "::error::Set the repository variable NUGET_USER to the nuget.org account that owns the Trusted Publishing policy"
+            exit 1
+          fi
+
+      - name: NuGet login (OIDC)
+        id: login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      # The symbols package goes with it: dotnet nuget push finds the .snupkg next to the .nupkg.
+      - name: Push to nuget.org
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          for package in artifacts/*.nupkg; do
+            dotnet nuget push "$package" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+          done

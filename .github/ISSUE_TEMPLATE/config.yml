@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Moonwalker1307/PdfPecker.Ocr/security/advisories/new
+    about: Please report security problems privately, not as a public issue.
+  - name: PdfPecker
+    url: https://github.com/Moonwalker1307/PdfPecker/issues
+    about: Problems with rendering, image decoding or PDF writing that also happen without OCR belong to PdfPecker.

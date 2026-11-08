@@ -426,3 +426,13 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# PdfPecker.Ocr
+# Fuzzer findings, the packed packages, the Native AOT sample, coverage and benchmark results stay local or become CI
+# artifacts; none of them belong in the repository.
+fuzz-findings*/
+nupkg/
+aot/
+aot-*/
+coverage/
+perf*.json

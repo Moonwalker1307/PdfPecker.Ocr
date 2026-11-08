@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PdfPecker.Ocr/PdfPecker.Ocr.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PdfPecker.Ocr.Tests/PdfPecker.Ocr.Tests.csproj" />
+  </Folder>
+  <Folder Name="/fuzz/">
+    <Project Path="fuzz/PdfPecker.Ocr.Fuzz/PdfPecker.Ocr.Fuzz.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/PdfPecker.Ocr.Sample/PdfPecker.Ocr.Sample.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,35 @@
+# Turns on GitHub auto-merge (squash) for Dependabot's patch and minor updates, so GitHub merges them once the required
+# checks on main have passed. Major updates are left for a person to review. Needs "Allow auto-merge" and required
+# status checks on main; see CONFIG.md.
+name: Dependabot auto-merge
+
+# pull_request_target runs this file as it is on main, with a token that can merge. It never checks out or runs the
+# pull request's code.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      # PdfPecker itself is never proposed (see dependabot.yml), but should it ever be, raising the package's minimum
+      # dependency is a release decision, so it waits for a person like a major update.
+      - name: Enable auto-merge
+        if: >
+          steps.metadata.outputs.update-type != 'version-update:semver-major' &&
+          !contains(steps.metadata.outputs.dependency-names, 'PdfPecker')
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}

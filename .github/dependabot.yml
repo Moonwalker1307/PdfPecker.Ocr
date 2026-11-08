@@ -1,0 +1,21 @@
+# Weekly pull requests when a pinned GitHub Action or a test package gets a new version. The package itself has one
+# reference, PdfPecker, whose version is the PdfPeckerVersion property in Directory.Build.props; it is the minimum the
+# package depends on, so it is raised by hand when the package needs a newer release (see RELEASING.md), never by a bot.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # CodeQL refuses to run when its init and analyze steps are on different versions, so they must move together.
+    groups:
+      codeql-action:
+        patterns: ["github/codeql-action*"]
+
+  - package-ecosystem: nuget
+    directory: /tests/PdfPecker.Ocr.Tests
+    schedule:
+      interval: weekly
+    groups:
+      nuget-minor-and-patch:
+        update-types: [minor, patch]
