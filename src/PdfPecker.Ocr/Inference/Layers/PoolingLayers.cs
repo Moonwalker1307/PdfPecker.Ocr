@@ -40,6 +40,20 @@ internal sealed unsafe class PoolLayer : Layer
         return [x[0], x[1], oh, ow];
     }
 
+    /// <summary>
+    /// Windows without padding and a horizontal stride of 1 or 2 take the vector path; the rest, and the edges the
+    /// vectors cannot reach, the generic one.
+    /// </summary>
+    private bool Vectorised => _pt == 0 && _pl == 0 && _pb == 0 && _pr == 0 && _sw <= 2 && !(_max && _kh == 2 && _kw == 2 && _sh == 1 && _sw == 1);
+
+    // The slack after a de-interleaved row, enough for a vector read that starts at its last value.
+    private const int Slack = 16;
+
+    private static int HalfLength(int w) => (w + 1) / 2 + Slack;
+
+    public override long ScratchPerWorker(Step step, InferenceContext context) =>
+        Vectorised && _sw == 2 ? (long)_kh * 2 * HalfLength(step.InputShapes[0][3]) : 0;
+
     public override void Execute(Step step, InferenceContext context) =>
         context.For(step.OutputShape[0] * step.OutputShape[1], step, &Plane);
 
@@ -54,8 +68,64 @@ internal sealed unsafe class PoolLayer : Layer
         float* output = step.Output + (long)plane * o[2] * o[3];
         if (layer._max && layer._kh == 2 && layer._kw == 2 && layer._sh == 1 && layer._sw == 1 && layer._pt == 0 && layer._pl == 0)
             MaxPool2x2Stride1(input, x[2], x[3], output, o[2], o[3]);
+        else if (layer.Vectorised)
+            layer.Windows(input, x[2], x[3], output, o[2], o[3], step.Context.Scratch(worker));
         else
-            layer.Generic(input, x[2], x[3], output, o[2], o[3]);
+            layer.Generic(input, x[2], x[3], output, o[2], o[3], 0, 0, o[2]);
+    }
+
+    /// <summary>
+    /// A window without padding, over a vector of output pixels at a time. A horizontal stride of 2 first splits the
+    /// window's rows into their even and odd values, so every tap is one contiguous read. Each output takes its
+    /// values in the same order and with the same operations as <see cref="Generic"/>, so either path gives the same
+    /// bits.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private void Windows(float* input, int h, int w, float* output, int oh, int ow, float* scratch)
+    {
+        int width = Vector<float>.Count;
+        int half = HalfLength(w);
+        var divisor = new Vector<float>(_kh * _kw);
+        var start = _max ? new Vector<float>(float.NegativeInfinity) : Vector<float>.Zero;
+        for (int y = 0; y < oh; y++)
+        {
+            float* rows = input + (long)y * _sh * w;
+            if (_sw == 2)
+            {
+                for (int ky = 0; ky < _kh; ky++)
+                {
+                    float* src = rows + (long)ky * w;
+                    float* dst = scratch + (long)ky * 2 * half;
+                    VectorMath.CopyEven(src, dst, (w + 1) / 2);
+                    if (w > 1) VectorMath.CopyEven(src + 1, dst + half, w / 2);
+                }
+            }
+
+            // Whole vectors only: without padding, the last of them reads at most the last value of each row (for a
+            // stride of 1) or of its half (for 2), and the generic loop finishes the row.
+            int done = ow / width * width;
+
+            float* dstRow = output + (long)y * ow;
+            for (int ox = 0; ox < done; ox += width)
+            {
+                var acc = start;
+                for (int ky = 0; ky < _kh; ky++)
+                {
+                    for (int kx = 0; kx < _kw; kx++)
+                    {
+                        float* src = _sw == 1
+                            ? rows + (long)ky * w + ox + kx
+                            : scratch + (long)ky * 2 * half + ((kx & 1) == 0 ? 0 : half) + ox + (kx >> 1);
+                        var v = VectorMath.Load(src);
+                        acc = _max ? System.Numerics.Vector.Max(acc, v) : acc + v;
+                    }
+                }
+
+                VectorMath.Store(_max ? acc : acc / divisor, dstRow + ox);
+            }
+
+            if (done < ow) Generic(input, h, w, output, oh, ow, y, done, y + 1);
+        }
     }
 
     /// <summary>The stem's 2x2, stride 1 maximum with padding only at the bottom and right (SAME_UPPER).</summary>
@@ -85,12 +155,13 @@ internal sealed unsafe class PoolLayer : Layer
         }
     }
 
+    /// <summary>Output columns [xStart, ow) of rows [yStart, yEnd), by the definition.</summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private void Generic(float* input, int h, int w, float* output, int oh, int ow)
+    private void Generic(float* input, int h, int w, float* output, int oh, int ow, int yStart, int xStart, int yEnd)
     {
-        for (int y = 0; y < oh; y++)
+        for (int y = yStart; y < yEnd; y++)
         {
-            for (int x = 0; x < ow; x++)
+            for (int x = xStart; x < ow; x++)
             {
                 int y0 = y * _sh - _pt, x0 = x * _sw - _pl;
                 float acc = _max ? float.NegativeInfinity : 0f;

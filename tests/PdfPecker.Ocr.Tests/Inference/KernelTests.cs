@@ -99,7 +99,7 @@ public sealed class KernelTests
 
     public static TheoryData<string> DepthwiseCases => new()
     {
-        "3x3", "3x3-stride2", "3x3-stride2x1", "5x5", "7x7", "1x7", "7x1-stride2", "3x3-asymmetric", "5x5-stride2-odd", "wide",
+        "3x3", "3x3-stride2", "3x3-stride2x1", "5x5", "7x7", "1x7", "7x1-stride2", "3x3-asymmetric", "5x5-stride2-odd", "wide", "wide-stride2",
     };
 
     [Theory]
@@ -117,6 +117,7 @@ public sealed class KernelTests
             "7x1-stride2" => (3, 21, 6, 7, 1, 2, 2, 3, 0, 3, 0),
             "3x3-asymmetric" => (4, 8, 9, 3, 3, 2, 2, 0, 0, 1, 1),
             "5x5-stride2-odd" => (3, 13, 15, 5, 5, 2, 2, 2, 2, 2, 2),
+            "wide-stride2" => (3, 7, 163, 5, 5, 2, 2, 2, 2, 2, 2),
             _ => (2, 5, 133, 3, 3, 1, 1, 1, 1, 1, 1),
         };
         var x = RandomTensor(c * 11 + w, 2, c, h, w);
@@ -230,6 +231,9 @@ public sealed class KernelTests
     [InlineData(false, 3, 3, 2, 2, 1, 1, 1, 1, false)]
     [InlineData(false, 3, 3, 2, 2, 1, 1, 1, 1, true)]
     [InlineData(false, 3, 2, 3, 2, 1, 0, 2, 1, true)]
+    [InlineData(false, 3, 2, 3, 2, 0, 0, 0, 0, false)]
+    [InlineData(true, 3, 3, 1, 1, 0, 0, 0, 0, false)]
+    [InlineData(false, 2, 3, 1, 2, 0, 0, 0, 0, false)]
     public void PoolingMatchesNaive(bool max, int kh, int kw, int sh, int sw, int pt, int pl, int pb, int pr, bool countIncludePad)
     {
         foreach (var (h, w) in new[] { (9, 13), (16, 40), (2, 3) })

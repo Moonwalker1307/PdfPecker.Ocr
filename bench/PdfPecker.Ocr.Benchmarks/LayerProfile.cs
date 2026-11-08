@@ -146,6 +146,7 @@ static unsafe class LayerProfile
             OpKind.Conv => string.Create(CultureInfo.InvariantCulture, $" {n.Ints[0]}x{n.Ints[1]}/{n.Ints[2]}x{n.Ints[3]} g{n.Ints[10]} {x[1]}->{step.OutputShape[1]} act{n.Ints[11]}{(n.Ints[12] != 0 ? " +res" : "")}"),
             OpKind.Linear when layer is PdfPecker.Ocr.Inference.Layers.ArgMaxHeadLayer => string.Create(CultureInfo.InvariantCulture, $" (linear {x[^1]}->classes, softmax, argmax)"),
             OpKind.Linear => string.Create(CultureInfo.InvariantCulture, $" {x[^1]}->{step.OutputShape[^1]} act{n.Ints[0]}{(n.Ints[1] != 0 ? " +res" : "")}"),
+            OpKind.MaxPool or OpKind.AveragePool => string.Create(CultureInfo.InvariantCulture, $" {n.Ints[0]}x{n.Ints[1]}/{n.Ints[2]}x{n.Ints[3]} pad {n.Ints[4]},{n.Ints[5]},{n.Ints[6]},{n.Ints[7]} on [{string.Join(",", x)}]"),
             _ => "",
         };
         return Kind(layer) + extra;
