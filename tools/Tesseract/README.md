@@ -15,6 +15,10 @@ tools/Tesseract/build.sh --jobs 4   # or TESSERACT_BUILD_JOBS=4
 Needs `git`, `cmake`, `ninja`, a C and C++ compiler with OpenMP (`libgomp`), and `curl`. It builds on Linux (x64, arm64) and
 macOS; the comparison app is only run on Linux so far.
 
+> **Status:** the script and the Tesseract adapter were written against the pinned versions' CMake options and `capi.h`
+> (the header was read at 5.5.1 and every imported signature checked), but they have **not been run yet**: the sandbox they were
+> written in did not allow building cloned code. The first run may need a CMake option adjusted; the model hashes are verified.
+
 ## What the script does
 
 1. Clones Leptonica `1.85.0` and Tesseract `5.5.1` with `git clone --depth 1 --branch <tag>`, then **checks the commit** each tag

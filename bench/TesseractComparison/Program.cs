@@ -54,7 +54,12 @@ var childOptions = new ChildOptions
 switch (args[0])
 {
     case "child":
-        return Child.Run(childOptions);
+        try { return Child.Run(childOptions); }
+        catch (Exception e) when (e is IOException or InvalidOperationException or NotSupportedException or ArgumentException)
+        {
+            Console.Error.WriteLine($"ERROR {e.Message}");
+            return 1;
+        }
     case "report":
         return WriteReport(Opt("in", "."), Opt("title", "OCR comparison"));
     case "run":

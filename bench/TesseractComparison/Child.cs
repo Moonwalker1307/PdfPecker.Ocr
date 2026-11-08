@@ -113,6 +113,7 @@ static class Child
         switch (o.Engine)
         {
             case "tesseract":
+                if (!File.Exists(o.TesseractLib)) throw new FileNotFoundException($"libtesseract not found at {o.TesseractLib}: run tools/Tesseract/build.sh or pass --lib");
                 TesseractNative.SetLibraryPath(o.TesseractLib);
                 return new TesseractAdapter(o.Tessdata, o.TessLang, o.TessPsm);
             case "rapidocr":
