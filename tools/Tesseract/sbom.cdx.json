@@ -1,0 +1,32 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "PdfPecker.Ocr Tesseract comparison",
+      "description": "The native Tesseract build that bench/TesseractComparison calls. It is dev tooling and never ships in the package. tools/Tesseract/build.sh builds these commits, and the daily vulnerability scan asks osv.dev about them."
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "tesseract",
+      "version": "5.5.1",
+      "licenses": [{ "license": { "id": "Apache-2.0" } }],
+      "purl": "pkg:github/tesseract-ocr/tesseract@5.5.1",
+      "externalReferences": [{ "type": "vcs", "url": "https://github.com/tesseract-ocr/tesseract" }],
+      "properties": [{ "name": "git:commit", "value": "3b7c70e34dea179549ed3e995872e2e019eb8477" }]
+    },
+    {
+      "type": "library",
+      "name": "leptonica",
+      "version": "1.87.0",
+      "licenses": [{ "license": { "id": "BSD-2-Clause" } }],
+      "purl": "pkg:github/DanBloomberg/leptonica@1.87.0",
+      "externalReferences": [{ "type": "vcs", "url": "https://github.com/DanBloomberg/leptonica" }],
+      "properties": [{ "name": "git:commit", "value": "13275a278eb55b5746e33f95fbf5a2c8f604b3ab" }]
+    }
+  ]
+}
