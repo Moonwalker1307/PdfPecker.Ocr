@@ -44,8 +44,9 @@ dpi and compare the text exactly: Latin with Nordic and German letters, numbers,
 90 and 180 degrees, 8 point text, a whole invoice, PNG and scanned PDF input, the searchable PDF read back with
 `PdfText`, identical results at 1, 3 and 4 threads, and cancellation. `RapidocrAgreementTests` read the eight pipeline
 pages with the package's own runtime: with rapidocr's settings the lines must be rapidocr's exactly, and with the
-defaults its words. These tests, `EnginePoolTests` and `HostileInputTests` share one test collection, so their threads
-do not compete with each other.
+defaults its words. These tests and `EnginePoolTests` share one test collection and `HostileInputTests` has
+`HostileInputCollection`; both run alone, after the other tests, so their threads and time bounds do not compete with
+other tests.
 
 ## Golden baselines
 
@@ -65,11 +66,19 @@ Never regenerate just to make a failing test pass. A refactor or a speed-up must
 
 ## Hostile input
 
-`HostileInputTests` run truncated and corrupted images and PDFs, pixel buffers that do not match their stated size,
-zero, negative and huge dimensions, pages above `OcrOptions.MaxPixels`, PDFs with thousands of pages and a cancelled
-token, each within a time bound. Malformed input may only surface as the exceptions the public API documents. A fix for
-a crash, hang or huge allocation on bad input gets a regression test there, and new handling of untrusted input also
-gets resource limits and a fuzz target.
+`HostileInputTests` (collection `HostileInputCollection`) run each case through a `Bounded` helper that fails the test
+when the work is not done within its bound (20 seconds for input that must be refused or read cheaply, 60 for whole
+pages) and only then cancels it, so a slow input fails instead of ending in an `OperationCanceledException` that looks
+documented. The cases: truncated and changed PNG, JPEG, TIFF, WebP, GIF and BMP files; zero-size and one-pixel images;
+headers that state billions of pixels with little or no data behind them, which must be refused or read within
+`MaxPixels` without allocating the stated size; pixel buffers that do not match their stated size, and zero, negative
+and huge dimensions; damaged PDFs, encrypted PDFs without or with the wrong password, a PDF of 10,000 empty pages,
+page boxes from zero to 10^9 points and not numbers, and images of extreme shapes on a page; costly pixels (noise,
+thin stripes, a fine checkerboard, a page black but for one pixel in 997, and dashes like text everywhere) at A4
+and 300 dpi; pages of one colour, which are skipped before detection; and cancellation part way through a page and a
+document. Malformed input may only surface as the exceptions the public
+API documents. A fix for a crash, hang or huge allocation on bad input gets a regression test there, and new handling
+of untrusted input also gets resource limits and a fuzz target.
 
 ## Fuzzing
 
