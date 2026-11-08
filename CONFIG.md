@@ -29,6 +29,7 @@ configure the package itself (`OcrOptions`) is in the XML doc comments and the R
 | `codeql.yml` | PRs, pushes to main touching `src`, and a weekly schedule | CodeQL analysis of the package. |
 | `fuzz.yml` | Nightly, and on demand with `minutes` and `target` inputs | Fuzzes every target, one job per target, one worker per core; findings fail the job and are uploaded. |
 | `perf.yml` | On demand | Runs `bench/PdfPecker.Ocr.Benchmarks` on main and keeps the results for 90 days. A nightly schedule and a comparison with earlier runs, as in PdfPecker, come once the benchmark has settled. |
+| `vulnerability-scan.yml` | Daily, and PRs that change it or the Tesseract SBOM | OSV-Scanner checks every NuGet package (transitive ones too, from lock files the restore writes) against osv.dev and reports to Security → Code scanning, failing the run when something is affected. A second job asks osv.dev about the Tesseract and Leptonica commits listed in `tools/Tesseract/sbom.cdx.json` and fails when one is affected; `tools/Tesseract/build.sh` must build the same commits. |
 | `dependabot-auto-merge.yml` | Dependabot PRs | Turns on auto-merge (squash) for patch and minor updates of actions and test packages, so GitHub merges them once the required checks pass. Major updates wait for a person. |
 
 Each push to main gets its own run, while a newer push to a PR cancels that PR's older run. Package and coverage
