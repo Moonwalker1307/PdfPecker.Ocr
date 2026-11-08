@@ -57,6 +57,11 @@ File.WriteAllText("scanned.hocr", document.ToHocr());
 // Pages that already have text are left as they are unless PageMode is Force.
 byte[] searchable = PdfOcr.MakeSearchable(File.ReadAllBytes("scanned.pdf"));
 
+// Every byte array method also takes a stream, and has a file version, as in PdfPecker
+OcrDocument fromFile = PdfOcr.RecognizeFile("scanned.pdf");
+PdfOcr.MakeSearchableFile("scanned.pdf", "searchable.pdf");
+OcrPage photo = ImageOcr.RecognizeFile("photo.png");
+
 // Images straight to one searchable PDF, a page per image
 byte[] pdf = ImageOcr.ToSearchablePdf(Directory.GetFiles("scans", "*.png").Select(File.ReadAllBytes));
 
@@ -66,7 +71,9 @@ OcrDocument report = PdfOcr.Recognize(File.ReadAllBytes("report.pdf"), options);
 ```
 
 The methods are static and thread-safe, so documents can be recognised in parallel. The models are loaded once, on
-first use, and shared.
+first use, and shared. Pages are read one after another, each with up to `MaxDegreeOfParallelism` threads (at most the
+number of processors) working inside the networks; the threads and buffers are kept for the next call and released after
+30 seconds without one, so a stream of pages allocates little after the first.
 
 ## How it works
 
@@ -84,8 +91,9 @@ first use, and shared.
 The runtime that executes the models is the package's own: a graph executor with SIMD kernels (AVX2, FMA, AVX-512
 where present, and Arm64 Advanced SIMD) for convolutions, matrix products and the other operations these models use,
 with buffers planned when the model loads, so a steady stream of pages allocates little. Results are the same whatever
-`MaxDegreeOfParallelism` is. The model weights are embedded in the assembly as 16-bit floats, generated from the
-published ONNX files by `tools/ModelBuilder`.
+`MaxDegreeOfParallelism` is. The model weights are embedded in the assembly as 24-bit floats (32-bit floats rounded to
+15 mantissa bits, which keeps the outputs within 1e-3 of ONNX Runtime's), generated from the published ONNX files by
+`tools/ModelBuilder`.
 
 ## Languages
 
@@ -100,14 +108,16 @@ Arabic, Hebrew, Devanagari or Thai letters, so text in those scripts is not reco
 - **Accuracy depends on the scan.** Blurred, very low resolution (below about 150 dpi for body text), heavily
   compressed or noisy scans read worse, as do decorative fonts, text on busy backgrounds and very small print. The
   confidence of each line and word says how sure the model was.
-- **Rotation.** Lines that are slanted or upside down are handled; pages rotated by 90 degrees, or vertical writing, are
-  not turned upright on their own.
+- **Rotation.** Lines that are slanted, on their side or upside down are read, so pages turned by 90 or 180 degrees are
+  read too; each line's quad says which way its text runs. Vertical writing, such as Japanese in columns, is not
+  supported.
 - **Layout.** Reading order is worked out from the positions of lines. Tables come out as lines of text, not as cells,
   and complex magazine layouts can come out in a different order than a person would read them.
 - **No language model.** Each line is read on its own, without a dictionary, so a misread character is not corrected
   from the words around it.
 - **Size.** Pages are limited to `OcrOptions.MaxPixels` (100 million pixels by default), so that a hostile file cannot
-  exhaust memory; a larger page is refused with an exception.
+  exhaust memory: a PDF page or image file with more pixels is read at a lower resolution, and a raw pixel buffer that
+  large is refused with a `PdfLimitException`.
 
 ## Performance
 

@@ -72,14 +72,17 @@ wins here.
 ## Repo map
 
 - `src/PdfPecker.Ocr/` – the package. The public API sits at the top level (`ImageOcr`, `PdfOcr`, `OcrOptions`,
-  `OcrDocument`, `OcrPage`, `OcrLine`, `OcrWord`, `OcrQuad`, `OcrBox`, `OcrInfo`). Below it:
+  `OcrPageMode`, `OcrDocument`, `OcrPage`, `OcrLine`, `OcrWord`, `OcrQuad`, `OcrPoint`, `OcrBox`, `OcrInfo`). Below it:
   - `Inference/` – tensors, the graph executor and the kernels (GEMM, convolutions, depthwise convolutions,
-    activations, normalisation, attention), with buffers planned when a model loads.
+    activations, normalisation, attention), with buffers planned when a model loads; `ModelNetwork` puts a model
+    behind the pipeline's `INetwork` seam without copying its input or output.
   - `Models/` – the generated model data (embedded resources), its loader and `ModelStore`, which loads the detection,
     recognition and orientation models lazily and holds the character list.
   - `Detection/` – the differentiable binarisation post-processing that turns the detection map into text quads.
   - `Recognition/` – line crops, the orientation step, CTC decoding and words with their positions.
-  - `Layout/` – lines into reading order, and the `OcrPage` built from them.
+  - `Layout/` – lines into reading order, and the `OcrPage` built from them; `OcrPipeline` runs one page through
+    every stage, `OcrEngine` is the recognizer behind the public API (the default settings, threads, the mapping to
+    `OcrPage`), and `EnginePool` keeps the workers (context, networks, pipeline) between calls.
   - `Pdf/` – the searchable text layer (a glyphless font, invisible text scaled to each word), stamped onto the
     original pages with PdfPecker.
   - `Input/` – images and PDF pages to pixels through PdfPecker.
@@ -87,15 +90,17 @@ wins here.
   protobuf reader, simplifies the graph and writes `src/PdfPecker.Ocr/Models/*.bin`.
 - `tools/OnnxReference/` – Python, dev only: runs ONNX Runtime on fixed inputs and writes the reference outputs the
   tests compare with.
-- `tests/PdfPecker.Ocr.Tests/` – xUnit: kernels, model outputs against the ONNX Runtime references, the pipeline,
-  golden tests, searchable PDF goldens and `HostileInputTests`. `Fixtures/` holds inputs, `Golden/` the baselines.
+- `tests/PdfPecker.Ocr.Tests/` – xUnit: kernels, model outputs against the ONNX Runtime references, the pipeline
+  against rapidocr's recorded outputs, end-to-end tests of the public API on rendered pages (`EndToEnd/`), golden
+  tests, searchable PDF goldens and `HostileInputTests`. `Fixtures/` holds inputs, `Golden/` the baselines.
 - `fuzz/PdfPecker.Ocr.Fuzz/` – the dependency-free mutation fuzzer; targets register in `Targets.cs`.
 - `bench/PdfPecker.Ocr.Benchmarks/` – the timing and allocation harness (no BenchmarkDotNet), and
   `bench/compare-versions.sh`, which runs two versions in turns on one machine.
 - `bench/TesseractComparison/` and `tools/Tesseract/build.sh` – a native build of Tesseract and Leptonica from pinned
   git tags, called through its C API from a Native AOT comparison app, with a synthetic corpus and its ground truth.
   Tesseract never ships in the package.
-- `samples/PdfPecker.Ocr.Sample` – a console app that prints the text of an image; CI publishes it with Native AOT.
+- `samples/PdfPecker.Ocr.Sample` – a console app that prints the text of an image or a scanned PDF, or writes hOCR or
+  a searchable PDF; CI publishes it with Native AOT and checks the text it reads on `sample.png`.
 - `.github/workflows/` – `nuget.yml`, `codeql.yml`, `fuzz.yml`, `perf.yml`, `dependabot-auto-merge.yml`; see
   `CONFIG.md`.
 
@@ -189,3 +194,6 @@ must be unchanged unless the output change is intended. If only one runtime is i
   wrong text; damaged-input limits belong in the code's own work budget, counted before allocating.
 - Cloud VMs and GitHub runners differ too much in CPU to compare a single benchmark run with an earlier one; only
   version-against-version runs on one machine are meaningful.
+- An idle engine worker keeps the buffers of the largest page it read (an activation arena of about 130 MB after an
+  A4 page at 300 dpi) until `EnginePool` disposes it after 30 seconds without a call; tests and benchmarks that need a
+  cold start call `EnginePool.Clear()`.

@@ -30,6 +30,24 @@ internal sealed record RenderedPage(byte[] Rgba, int Width, int Height, byte[] P
         return turned;
     }
 
+    /// <summary>The page as gray pixels turned clockwise by 90 or 270 degrees; its width and height swap.</summary>
+    public byte[] TurnedGray(int degrees)
+    {
+        var turned = new byte[Width * Height];
+        for (int y = 0; y < Width; y++)
+        {
+            for (int x = 0; x < Height; x++)
+            {
+                // Turned clockwise, the top of the page goes to the right: pixel (x, y) comes from (y, H - 1 - x).
+                int sx = degrees == 90 ? y : Width - 1 - y;
+                int sy = degrees == 90 ? Height - 1 - x : x;
+                turned[(y * Height) + x] = Rgba[(((sy * Width) + sx) * 4) + 1];
+            }
+        }
+
+        return turned;
+    }
+
     /// <summary>A scanned PDF of the page: the PNG as the page's only content, at 300 dpi, with no text.</summary>
     public byte[] ScannedPdf() => ImageToPdf.Convert([Png], null, new ImageToPdfOptions { FitPageToImage = true, Dpi = 300 });
 }

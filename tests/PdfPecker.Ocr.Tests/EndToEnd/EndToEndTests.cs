@@ -90,6 +90,19 @@ public sealed class EndToEndTests
         Assert.DoesNotContain("quick brown fox", unturned.Text, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(90)]
+    [InlineData(270)]
+    public void PageTurnedByAQuarterIsRead(int degrees)
+    {
+        // Each line of a page on its side is a tall box, which is cropped upright and then checked for being upside
+        // down, so the text reads as on the upright page, and the reading order follows the text's direction.
+        RenderedPage page = TestPages.Latin;
+        OcrPage result = ImageOcr.RecognizeGray(page.TurnedGray(degrees), page.Height, page.Width);
+        Assert.Equal(TestPages.LatinText, result.Text);
+        Assert.All(result.Lines, l => Assert.True(degrees == 90 ? l.Quad.TopRight.Y > l.Quad.TopLeft.Y + 500 : l.Quad.TopRight.Y < l.Quad.TopLeft.Y - 500));
+    }
+
     [Fact]
     public void EightPointText()
     {

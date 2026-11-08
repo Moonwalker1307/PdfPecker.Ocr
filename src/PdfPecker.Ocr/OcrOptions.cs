@@ -43,7 +43,10 @@ public sealed class OcrOptions
     /// </summary>
     public PdfPageRange? Pages { get; set; }
 
-    /// <summary>How many threads one page may use at most. Must be at least 1. Default: the number of processors.</summary>
+    /// <summary>
+    /// How many threads one page may use at most; no more than the number of processors are used, since more would only
+    /// take turns. The results are the same whatever it is. Must be at least 1. Default: the number of processors.
+    /// </summary>
     public int MaxDegreeOfParallelism { get; set; } = Environment.ProcessorCount;
 
     /// <summary>

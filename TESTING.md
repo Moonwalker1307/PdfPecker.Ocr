@@ -33,6 +33,20 @@ Regenerate them only when the inputs or the models change, and say so in the pul
 post-processing the reference is RapidOCR itself (`pip install rapidocr`): the goal for recognised text is to be equal
 to what RapidOCR reads from the same page, so compare with it when changing how pages are prepared or outputs read.
 
+## Pipeline and end-to-end tests
+
+`Pipeline/` runs the pre- and post-processing against what rapidocr 3.10 recorded on eight rendered pages
+(`Fixtures/pipeline`, written by `tools/PipelineReference/capture.py`): the networks are replaced by stand-ins that
+replay ONNX Runtime's outputs, so boxes, crops, batching, decoding and words are checked without the models.
+
+`EndToEnd/` runs the real models through the public API. `EndToEndTests` render short HTML pages with PdfPecker at 300
+dpi and compare the text exactly: Latin with Nordic and German letters, numbers, a table, two columns, pages turned by
+90 and 180 degrees, 8 point text, a whole invoice, PNG and scanned PDF input, the searchable PDF read back with
+`PdfText`, identical results at 1, 3 and 4 threads, and cancellation. `RapidocrAgreementTests` read the eight pipeline
+pages with the package's own runtime: with rapidocr's settings the lines must be rapidocr's exactly, and with the
+defaults its words. These tests, `EnginePoolTests` and `HostileInputTests` share one test collection, so their threads
+do not compete with each other.
+
 ## Golden baselines
 
 `GoldenTests` render each `Golden/*.html` page with PdfPecker, run OCR on it and compare the recognised text with the
@@ -66,8 +80,16 @@ gets resource limits and a fuzz target.
 ## Benchmarks
 
 `bench/PdfPecker.Ocr.Benchmarks` is the package's own timing and allocation harness (no BenchmarkDotNet): it times
-each model and the whole pipeline on fixed pages after a warm-up, and reports the time per page, allocations per page
-and peak memory. To check a change of your own, run both versions in turns on one machine:
+whole pages through the public API on fixed pages after a warm-up, and reports the time per page, allocations per page
+and peak memory. Built with `-p:OcrInternals=true` it adds detection and recognition on their own, and a `stages`
+command that reads an A4 invoice page at 300 dpi, cold and warm, and splits its time into rendering, detection,
+orientation, recognition and layout:
+
+```
+dotnet run -c Release --project bench/PdfPecker.Ocr.Benchmarks -p:OcrInternals=true -- stages --threads 1 --runs 5
+```
+
+To check a change of your own, run both versions in turns on one machine:
 
 ```
 bench/compare-versions.sh main        # the working tree against a branch, tag or commit
@@ -78,8 +100,8 @@ benchmark on demand on main and keeps the results.
 
 ## Tesseract comparison
 
-`bench/TesseractComparison` compares accuracy, speed and peak memory with Tesseract 5.5.1 on a synthetic corpus with
-known ground truth. `tools/Tesseract/build.sh` builds Tesseract and Leptonica from pinned git tags, and the comparison
+`bench/TesseractComparison` compares accuracy, speed and peak memory of PdfPecker.Ocr (built in from `src/PdfPecker.Ocr`)
+with Tesseract 5.5.1 and rapidocr on a synthetic corpus with known ground truth. `tools/Tesseract/build.sh` builds Tesseract and Leptonica from pinned git tags, and the comparison
 app, compiled with Native AOT, calls Tesseract through its C API in the same process, so neither side pays for starting
 a process. Tesseract is dev tooling only and never ships in the package. The README's figures come from this
 comparison; change them only from a measured run, and name the machine.
