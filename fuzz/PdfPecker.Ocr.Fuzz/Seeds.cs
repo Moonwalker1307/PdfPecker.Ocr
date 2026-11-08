@@ -71,4 +71,92 @@ internal sealed class SeedContext
         foreach (var (name, pdf) in GeneratedPdfs())
             yield return (Path.ChangeExtension(name, RenderedImage.GetFileExtension(format)), PdfToImage.ConvertPage(pdf, 0, new ImageOptions { Dpi = dpi, Format = format }));
     }
+
+    /// <summary>
+    /// <see cref="GeneratedPdfs"/> as scans: each page rendered at 72 dpi and put back into a PDF as an image, with no
+    /// text, so the PDF targets reach rendering and the models with the default page mode.
+    /// </summary>
+    public IEnumerable<(string Name, byte[] Data)> ScannedPdfs()
+    {
+        foreach (var (name, png) in RenderedImages(PdfImageFormat.Png).Take(3))
+            yield return (Path.ChangeExtension(name, ".scan.pdf"), ImageToPdf.Convert([png], null, new ImageToPdfOptions { FitPageToImage = true, Dpi = 72 }));
+    }
+
+    /// <summary>
+    /// The first generated page as a GIF and a BMP, which PdfPecker reads but does not write: an uncompressed 24-bit BMP,
+    /// and a GIF whose LZW stream sends a clear code before its codes outgrow nine bits.
+    /// </summary>
+    public IEnumerable<(string Name, byte[] Data)> GeneratedGifAndBmp()
+    {
+        var (name, pdf) = GeneratedPdfs()[0];
+        var image = PdfRenderer.Open(pdf).RenderPage(0, new ImageOptions { Dpi = 50 });
+        int w = image.Width, h = image.Height;
+        var gray = new byte[w * h];
+        for (int i = 0; i < gray.Length; i++) gray[i] = image.Rgba[(i * 4) + 1];
+        yield return (Path.ChangeExtension(name, ".gif"), Gif(gray, w, h));
+        yield return (Path.ChangeExtension(name, ".bmp"), Bmp(gray, w, h));
+    }
+
+    private static byte[] Bmp(byte[] gray, int w, int h)
+    {
+        int stride = ((w * 3) + 3) & ~3;
+        var bmp = new byte[54 + (stride * h)];
+        var s = bmp.AsSpan();
+        "BM"u8.CopyTo(s);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(s[2..], bmp.Length);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(s[10..], 54);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(s[14..], 40);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(s[18..], w);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(s[22..], h);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(s[26..], 1);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(s[28..], 24);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                bmp.AsSpan(54 + ((h - 1 - y) * stride) + (x * 3), 3).Fill(gray[(y * w) + x]);
+        return bmp;
+    }
+
+    private static byte[] Gif(byte[] gray, int w, int h)
+    {
+        var gif = new List<byte>();
+        gif.AddRange("GIF89a"u8.ToArray());
+        gif.AddRange([(byte)w, (byte)(w >> 8), (byte)h, (byte)(h >> 8), 0xF7, 0, 0]);
+        for (int i = 0; i < 256; i++) gif.AddRange([(byte)i, (byte)i, (byte)i]);
+        gif.AddRange([0x2C, 0, 0, 0, 0, (byte)w, (byte)(w >> 8), (byte)h, (byte)(h >> 8), 0, 8]);
+        var codes = new List<byte>();
+        int buffer = 0, bits = 0, sinceClear = 0;
+        void Emit(int code)
+        {
+            buffer |= code << bits;
+            for (bits += 9; bits >= 8; bits -= 8)
+            {
+                codes.Add((byte)buffer);
+                buffer >>= 8;
+            }
+        }
+
+        Emit(256);
+        foreach (byte g in gray)
+        {
+            if (sinceClear++ == 254)
+            {
+                Emit(256);
+                sinceClear = 1;
+            }
+
+            Emit(g);
+        }
+
+        Emit(257);
+        if (bits > 0) codes.Add((byte)buffer);
+        for (int i = 0; i < codes.Count; i += 255)
+        {
+            int n = Math.Min(255, codes.Count - i);
+            gif.Add((byte)n);
+            gif.AddRange(codes.GetRange(i, n));
+        }
+
+        gif.AddRange([0, 0x3B]);
+        return gif.ToArray();
+    }
 }
