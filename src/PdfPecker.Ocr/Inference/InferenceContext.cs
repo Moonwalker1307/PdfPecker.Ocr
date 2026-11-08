@@ -52,10 +52,10 @@ internal sealed unsafe class InferenceContext : IDisposable
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     /// <summary>The plan of a model for an input shape, reusing the previous one when the shape is unchanged.</summary>
-    internal ExecutionPlan GetPlan(OcrModel model, int[] inputShape)
+    internal ExecutionPlan GetPlan(OcrModel model, ReadOnlySpan<int> inputShape)
     {
         if (_plans.TryGetValue(model, out var plan) && plan.InputShape.AsSpan().SequenceEqual(inputShape)) return plan;
-        plan = ExecutionPlan.Create(model, inputShape, this);
+        plan = ExecutionPlan.Create(model, inputShape.ToArray(), this);
         _plans[model] = plan;
         return plan;
     }

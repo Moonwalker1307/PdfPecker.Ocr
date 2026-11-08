@@ -1,6 +1,9 @@
 namespace PdfPecker.Ocr;
 
-/// <summary>A word that OCR read: the text between two spaces of a line, with its position and confidence.</summary>
+/// <summary>
+/// A word that OCR read: the text between two spaces of a line (or one character of a script written without spaces),
+/// with its position and confidence.
+/// </summary>
 public sealed class OcrWord
 {
     internal OcrWord(string text, OcrQuad quad, float confidence)

@@ -15,7 +15,10 @@ public sealed class OcrLine
         Words = new ReadOnlyCollection<OcrWord>(words.ToArray());
     }
 
-    /// <summary>The line's text, its words separated by single spaces.</summary>
+    /// <summary>
+    /// The line's text, its words separated by single spaces. Chinese and Japanese characters, which are written without
+    /// spaces, are each a word of their own and follow each other without one.
+    /// </summary>
     public string Text { get; }
 
     /// <summary>The line's corners, in pixels of the page; the text runs from the top-left to the top-right corner.</summary>

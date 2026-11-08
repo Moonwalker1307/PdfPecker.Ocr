@@ -59,16 +59,47 @@ internal sealed unsafe class OcrModel
         ArgumentNullException.ThrowIfNull(context);
         context.ThrowIfDisposed();
         CheckInputShape(input.Shape);
-        var plan = context.GetPlan(this, input.Shape);
+        using var pin = input.Data.Pin();
+        var plan = RunCore((float*)pin.Pointer, input.Shape, context, out float[] output, out int offset);
+        return new Tensor(output.AsMemory(offset, plan.OutputLength), plan.OutputShape);
+    }
+
+    /// <summary>
+    /// Runs the model on values the caller holds in a span, without copying them, and returns the output in the
+    /// context's buffer for this model: it stays valid until the context runs this model again. This is the pipeline's
+    /// path (see <see cref="ModelNetwork"/>), which saves a copy of each input and output and the tensor objects.
+    /// </summary>
+    /// <param name="input">At least as many values as <paramref name="shape"/> holds, in row-major order; read, never written.</param>
+    /// <param name="shape">The input's shape.</param>
+    /// <param name="context">The context to run in.</param>
+    /// <param name="outputShape">The output's shape, a new array the caller may keep.</param>
+    public ReadOnlySpan<float> Run(ReadOnlySpan<float> input, ReadOnlySpan<int> shape, InferenceContext context, out int[] outputShape)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.ThrowIfDisposed();
+        CheckInputShape(shape);
+        if (input.Length < Tensor.ElementCount(shape))
+            throw new ArgumentException("The input holds fewer values than its shape needs.", nameof(input));
+        fixed (float* pointer = input)
+        {
+            var plan = RunCore(pointer, shape, context, out float[] output, out int offset);
+            outputShape = (int[])plan.OutputShape.Clone();
+            return output.AsSpan(offset, plan.OutputLength);
+        }
+    }
+
+    /// <summary>Runs every step of the plan for the input's shape; the output lands in the context's buffer at the offset.</summary>
+    private ExecutionPlan RunCore(float* input, ReadOnlySpan<int> shape, InferenceContext context, out float[] output, out int offset)
+    {
+        var plan = context.GetPlan(this, shape);
         context.EnsureScratch(plan.ScratchPerWorker, plan.SharedScratch);
         float* arena = context.Arena(plan.ArenaFloats);
-        float[] output = context.OutputBuffer(this, plan.OutputLength, out int offset);
-        using var pin = input.Data.Pin();
+        output = context.OutputBuffer(this, plan.OutputLength, out offset);
         fixed (float* outputPointer = output)
         {
             var frame = plan.Frame;
             frame.Arena = arena;
-            frame.Input = (float*)pin.Pointer;
+            frame.Input = input;
             frame.Output = outputPointer + offset;
             var token = context.CancellationToken;
             foreach (var step in plan.Steps)
@@ -77,10 +108,10 @@ internal sealed unsafe class OcrModel
                 step.Layer.Execute(step, context);
             }
         }
-        return new Tensor(output.AsMemory(offset, plan.OutputLength), plan.OutputShape);
+        return plan;
     }
 
-    private void CheckInputShape(int[] shape)
+    private void CheckInputShape(ReadOnlySpan<int> shape)
     {
         if (shape.Length != _inputShape.Length)
             throw new ArgumentException($"{Name} takes a {_inputShape.Length}-dimensional input.", "input");
