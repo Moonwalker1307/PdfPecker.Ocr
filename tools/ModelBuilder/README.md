@@ -51,7 +51,9 @@ The models are Apache 2.0 (copyright Baidu and/or the PaddleOCR rights holders, 
 ## Weight precision
 
 Weights with more than 1,024 values are stored as float32 rounded to nearest even at 15 mantissa bits ("fp24", three
-bytes), smaller ones (biases, norms) as float32. Half precision would halve the large tensors but does not meet the
+bytes), smaller ones (biases, norms) as float32. Weights below 2^-64 in magnitude are written as zero: the detector has
+tens of thousands left over from channels training switched off, many of them subnormal, and arithmetic on subnormals
+is very slow on x86 while these values cannot change a result (the runtime flushes them on loading too). Half precision would halve the large tensors but does not meet the
 1e-3 tolerance against ONNX Runtime: with every weight rounded to fp16 ONNX Runtime itself moves the detector's
 probability map by up to 6.7e-3 and the recogniser's softmax by up to 9.8e-3 on real text, and rounding even single
 tensors to fp16 moves the detector's output by up to 9e-3. With fp24 the differences are 1.8e-4 and 2.4e-4.
@@ -59,9 +61,9 @@ tensors to fp16 moves the detector's output by up to 9e-3. With fp24 the differe
 
 | Model | Values | float32 | fp24 file | Brotli |
 | --- | ---: | ---: | ---: | ---: |
-| det | 2,453,833 | 9.8 MB | 7,390,181 B | 5,056,659 B |
-| rec | 5,266,550 | 21.1 MB | 15,902,704 B | 11,750,074 B |
-| cls | 127,220 | 0.5 MB | 401,338 B | 321,189 B |
+| det | 2,453,833 | 9.8 MB | 7,390,181 B | 4,940,206 B |
+| rec | 5,266,550 | 21.1 MB | 15,902,704 B | 11,748,712 B |
+| cls | 127,220 | 0.5 MB | 401,338 B | 321,152 B |
 
 ## File format (version 1)
 
