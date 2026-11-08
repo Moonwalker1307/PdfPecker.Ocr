@@ -105,6 +105,7 @@ static class Report
             ("clean, 300 dpi", r => r["degradation"] == "none" && r["dpi"] == "300"),
             ("clean, 150 dpi", r => r["degradation"] == "none" && r["dpi"] == "150"),
         };
+        if (all.Any(r => r["category"] == "tesseract-sample")) groups.Add(("Tesseract's sample images", r => r["category"] == "tesseract-sample"));
         foreach (var d in all.Select(r => r["degradation"]).Where(d => d != "none").Distinct().OrderBy(d => d, StringComparer.Ordinal))
         {
             string name = d;
