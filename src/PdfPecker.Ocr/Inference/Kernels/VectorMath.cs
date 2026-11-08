@@ -1,5 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using PdfPecker.Ocr.Models;
 
 namespace PdfPecker.Ocr.Inference.Kernels;
@@ -233,6 +235,24 @@ internal static unsafe partial class VectorMath
             float product = a[i] * s;
             dst[i] = a[i] + product;
         }
+    }
+
+    /// <summary>dst[i] = src[2 i] for i in [0, count); reads nothing past src[2 count - 2].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public static void CopyEven(float* src, float* dst, int count)
+    {
+        int i = 0;
+        if (Avx2.IsSupported)
+        {
+            for (; i + 8 <= count; i += 8, src += 16)
+            {
+                // Shuffle picks elements 0 and 2 of each half-lane pair, giving (s0 s2 s8 s10 | s4 s6 s12 s14); the
+                // permute puts the 64-bit pairs in order.
+                var even = Avx.Shuffle(Avx.LoadVector256(src), Avx.LoadVector256(src + 8), 0b10_00_10_00);
+                Avx.Store(dst + i, Avx2.Permute4x64(even.AsDouble(), 0b11_01_10_00).AsSingle());
+            }
+        }
+        for (; i < count; i++, src += 2) dst[i] = *src;
     }
 
     /// <summary>dst[i] = a[i] * s.</summary>

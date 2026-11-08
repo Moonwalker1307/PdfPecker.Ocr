@@ -203,8 +203,15 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
                             }
                             else if (ix >= 0 && ix + (length - 1) * Sw < w)
                             {
-                                float* s = row + ix;
-                                for (int t = 0; t < length; t++, s += Sw) d[t] = *s;
+                                if (Sw == 2)
+                                {
+                                    VectorMath.CopyEven(row + ix, d, length);
+                                }
+                                else
+                                {
+                                    float* s = row + ix;
+                                    for (int t = 0; t < length; t++, s += Sw) d[t] = *s;
+                                }
                             }
                             else
                             {
@@ -301,11 +308,13 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
             }
             else
             {
-                // Padded position p = ix + Pl goes to the even half at p / 2 or the odd half at half + p / 2.
-                for (int ix = 0; ix < w; ix++)
+                // Padded position p = ix + Pl goes to the even half at p / 2 or the odd half at half + p / 2; positions
+                // from 2 * half on are never read.
+                int limit = Math.Min(w, 2 * half - Pl);
+                for (int parity = 0; parity < 2; parity++)
                 {
-                    int p = ix + Pl;
-                    if ((p >> 1) < half) dst[(p & 1) == 0 ? p >> 1 : half + (p >> 1)] = src[ix];
+                    int first = (parity + Pl) & 1;
+                    if (first < limit) VectorMath.CopyEven(src + first, dst + parity * half + ((first + Pl) >> 1), (limit - first + 1) / 2);
                 }
             }
         }
