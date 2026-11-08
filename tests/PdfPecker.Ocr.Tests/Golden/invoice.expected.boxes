@@ -1,0 +1,81 @@
+page 1748x1890 dpi 300 lines 26 confidence 1.00
+line 99,121 650x72 angle -0 conf 1.00 | Invoice 2026-0731
+  word 110,121 254x72 conf 1.00 | Invoice
+  word 399,121 350x72 conf 1.00 | 2026-0731
+line 103,263 441x46 angle -0 conf 1.00 | Example Customer Ltd.
+  word 112,263 160x46 conf 1.00 | Example
+  word 288,263 183x46 conf 1.00 | Customer
+  word 472,263 72x46 conf 1.00 | Ltd.
+line 101,317 327x46 angle -0 conf 1.00 | Harbour Road 17
+  word 109,317 151x46 conf 1.00 | Harbour
+  word 276,317 91x46 conf 1.00 | Road
+  word 382,317 45x46 conf 1.00 | 17
+line 99,375 470x53 angle -0 conf 1.00 | 4006 Stavanger, Norway
+  word 108,375 97x50 conf 1.00 | 4006
+  word 215,376 204x51 conf 1.00 | Stavanger,
+  word 427,378 138x50 conf 1.00 | Norway
+line 103,472 565x45 angle -0 conf 0.99 | Invoice date: 14 October 2026
+  word 104,472 134x45 conf 1.00 | Invoice
+  word 255,472 96x45 conf 1.00 | date:
+  word 360,472 43x45 conf 1.00 | 14
+  word 420,472 149x45 conf 1.00 | October
+  word 578,472 89x45 conf 1.00 | 2026
+line 102,532 555x44 angle -0 conf 0.99 | Due date: 13 November 2026
+  word 109,532 74x44 conf 1.00 | Due
+  word 197,532 96x44 conf 1.00 | date:
+  word 300,532 45x44 conf 1.00 | 13
+  word 358,532 198x44 conf 1.00 | November
+  word 563,532 89x44 conf 1.00 | 2026
+line 119,636 240x51 angle -0 conf 1.00 | Description
+  word 130,636 222x51 conf 1.00 | Description
+line 812,631 95x66 angle -2 conf 1.00 | Qty
+  word 838,632 65x65 conf 1.00 | Qty
+line 1084,635 207x54 angle -0 conf 1.00 | Unit price
+  word 1096,635 83x54 conf 1.00 | Unit
+  word 1185,635 101x54 conf 1.00 | price
+line 1460,637 171x46 angle -0 conf 1.00 | Amount
+  word 1474,637 156x46 conf 1.00 | Amount
+line 119,712 331x56 angle -1 conf 1.00 | Design workshop
+  word 130,712 126x54 conf 1.00 | Design
+  word 270,713 170x55 conf 1.00 | workshop
+line 862,714 41x50 angle -0 conf 1.00 | 2
+  word 862,714 41x50 conf 1.00 | 2
+line 1115,714 175x50 angle -0 conf 1.00 | 1,450.00
+  word 1126,714 162x50 conf 1.00 | 1,450.00
+line 1453,714 176x50 angle -0 conf 1.00 | 2,900.00
+  word 1464,714 162x50 conf 1.00 | 2,900.00
+line 120,797 338x46 angle -0 conf 1.00 | Printed brochures
+  word 130,797 127x46 conf 1.00 | Printed
+  word 276,797 180x46 conf 1.00 | brochures
+line 816,794 87x51 angle -0 conf 1.00 | 500
+  word 824,794 76x51 conf 1.00 | 500
+line 1194,792 98x55 angle -0 conf 1.00 | 1.20
+  word 1208,792 73x55 conf 1.00 | 1.20
+line 1490,795 139x48 angle -0 conf 1.00 | 600.00
+  word 1500,795 125x48 conf 1.00 | 600.00
+line 114,872 171x62 angle -1 conf 1.00 | Delivery
+  word 129,872 146x62 conf 1.00 | Delivery
+line 862,877 41x50 angle -0 conf 1.00 | 1
+  word 862,877 41x50 conf 1.00 | 1
+line 1172,874 119x53 angle -0 conf 1.00 | 85.00
+  word 1184,874 99x53 conf 1.00 | 85.00
+line 1510,875 121x52 angle -0 conf 1.00 | 85.00
+  word 1521,875 108x52 conf 1.00 | 85.00
+line 101,984 335x46 angle -0 conf 1.00 | Subtotal 3,585.00
+  word 110,984 157x46 conf 1.00 | Subtotal
+  word 270,984 157x46 conf 1.00 | 3,585.00
+line 101,1041 319x44 angle -0 conf 1.00 | VAT 25% 896.25
+  word 116,1041 65x44 conf 1.00 | VAT
+  word 196,1041 65x44 conf 1.00 | 25%
+  word 290,1041 123x44 conf 1.00 | 896.25
+line 103,1101 452x45 angle -0 conf 0.98 | Total due NOK 4,481.25
+  word 111,1101 90x45 conf 1.00 | Total
+  word 208,1101 68x45 conf 1.00 | due
+  word 291,1101 83x45 conf 1.00 | NOK
+  word 388,1101 165x45 conf 0.95 | 4,481.25
+line 103,1195 968x44 angle -0 conf 0.99 | Bank account 9710.05.12345, reference 2026-0731.
+  word 110,1195 95x44 conf 0.88 | Bank
+  word 213,1195 154x44 conf 1.00 | account
+  word 374,1195 293x44 conf 1.00 | 9710.05.12345,
+  word 668,1195 183x44 conf 1.00 | reference
+  word 858,1195 213x44 conf 1.00 | 2026-0731.

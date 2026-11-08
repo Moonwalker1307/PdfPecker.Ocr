@@ -1,0 +1,143 @@
+%PDF-1.7
+obj 1 0
+<< /Type /Catalog /Pages 3 0 R >>
+obj 2 0
+<< /Producer <5064665065636b6572> /CreationDate <443a32303236313130383132303030305a> >>
+obj 3 0
+<< /Type /Pages /Count 1 /Kids [4 0 R] >>
+obj 4 0
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 425.28 198.48] /Resources << /ProcSet [/PDF /Text /ImageB /ImageC /ImageI] /Font << >> /XObject << /Im1 6 0 R /Stamp 5 0 R >> >> /Contents [7 0 R 8 0 R] >>
+obj 7 0
+<< /Length * >>
+stream (29 bytes)
+q
+1 0 0 1 0 0 cm
+/Stamp Do
+Q
+endstream
+obj 6 0
+<< /Type /XObject /Subtype /Image /Width 1772 /Height 827 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length * >>
+binary stream (4396332 bytes) sha256 4BD8A3AD0DA7D1F6C774452BE86F5FEBD904C774BA1B248C5BC8EF402DAD4678
+obj 8 0
+<< /Length * >>
+stream (41 bytes)
+q 425.25 0 0 198.75 0 -0.27 cm /Im1 Do Q
+endstream
+obj 5 0
+<< /Type /XObject /Subtype /Form /BBox [0 0 425.28 198.48] /Matrix [1 0 0 1 0 0] /Resources << /Font << /OCR 9 0 R >> >> /Filter /FlateDecode /Length * >>
+stream (1902 bytes)
+q
+3 Tr
+BT
+/OCR 14.1423 Tf 70.6365 Tz -1 0.0033 -0.0033 -1 394.7398 42.3 Tm <00010002000300040005> Tj
+/OCR 14.1089 Tf 78.9061 Tz -1 0.0033 -0.0033 -1 370.8457 42.3708 Tm <00060007000800090005> Tj
+/OCR 14.0772 Tf 82.5245 Tz -1 0.0033 -0.0033 -1 344.6863 42.4473 Tm <000A000700040005> Tj
+/OCR 14.0378 Tf 78.4383 Tz -1 0.0033 -0.0033 -1 325.7424 42.5059 Tm <0004000B0007000C000C0009000D0005> Tj
+/OCR 13.986 Tf 74.4477 Tz -1 0.0033 -0.0033 -1 283.3662 42.6299 Tm <000E000600040003000D00090005> Tj
+/OCR 13.9404 Tf 84.5351 Tz -1 0.0033 -0.0033 -1 248.3124 42.733 Tm <000D000F000A000C0010> Tj
+ET
+BT
+/OCR 13.2015 Tf 80.5113 Tz -1 0.0087 -0.0087 -1 394.9054 58.8258 Tm <0001000200090005> Tj
+/OCR 13.2011 Tf 79.0003 Tz -1 0.0087 -0.0087 -1 375.1622 58.9976 Tm <001100090007000D000900110005> Tj
+/OCR 13.2007 Tf 74.8719 Tz -1 0.0087 -0.0087 -1 342.2584 59.2838 Tm <0012000E0011000C00040005> Tj
+/OCR 13.2005 Tf 70.9448 Tz -1 0.0087 -0.0087 -1 315.9369 59.5127 Tm <000300120005> Tj
+/OCR 13.2002 Tf 73.4604 Tz -1 0.0087 -0.0087 -1 304.97 59.6081 Tm <001300090014000F001100090005> Tj
+/OCR 13.1998 Tf 75.2785 Tz -1 0.0087 -0.0087 -1 272.0706 59.8943 Tm <001100090007000D0003000C00080010> Tj
+ET
+BT
+/OCR 14.1599 Tf 76.6807 Tz -1 0.0048 -0.0048 -1 394.8848 78.0637 Tm <00150007000800090005> Tj
+/OCR 14.1601 Tf 74.01 Tz -1 0.0048 -0.0048 -1 369.0146 78.1874 Tm <00160005> Tj
+/OCR 14.1602 Tf 70.2506 Tz -1 0.0048 -0.0048 -1 359.6072 78.2324 Tm <000F00140005> Tj
+/OCR 14.1603 Tf 78.8264 Tz -1 0.0048 -0.0048 -1 347.8477 78.2886 Tm <0017001800190005> Tj
+/OCR 14.1604 Tf 60.5947 Tz -1 0.0048 -0.0048 -1 331.1181 78.3687 Tm <00140003001A0009000D0005> Tj
+/OCR 14.1606 Tf 86.8758 Tz -1 0.0048 -0.0048 -1 305.5123 78.4911 Tm <000F000C0005> Tj
+/OCR 14.1607 Tf 70.2532 Tz -1 0.0048 -0.0048 -1 289.048 78.5699 Tm <001800170005> Tj
+/OCR 14.1609 Tf 64.2406 Tz -1 0.0048 -0.0048 -1 274.9355 78.6374 Tm <001B000600110003001A0010> Tj
+ET
+Q
+endstream
+obj 9 0
+<< /Type /Font /Subtype /Type0 /BaseFont /OcrGlyphless /Encoding /Identity-H /DescendantFonts [10 0 R] /ToUnicode 11 0 R >>
+obj 10 0
+<< /Type /Font /Subtype /CIDFontType2 /BaseFont /OcrGlyphless /CIDSystemInfo << /Registry <41646f6265> /Ordering <4964656e74697479> /Supplement 0 >> /FontDescriptor 12 0 R /DW 500 /CIDToGIDMap 13 0 R >>
+obj 11 0
+<< /Filter /FlateDecode /Length * >>
+stream (703 bytes)
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+27 beginbfchar
+<0001> <0054>
+<0002> <0068>
+<0003> <0069>
+<0004> <0073>
+<0005> <0020>
+<0006> <0070>
+<0007> <0061>
+<0008> <0067>
+<0009> <0065>
+<000A> <0077>
+<000B> <0063>
+<000C> <006E>
+<000D> <0064>
+<000E> <0075>
+<000F> <006F>
+<0010> <002E>
+<0011> <0072>
+<0012> <0074>
+<0013> <0062>
+<0014> <0066>
+<0015> <0050>
+<0016> <0037>
+<0017> <0031>
+<0018> <0032>
+<0019> <002C>
+<001A> <006C>
+<001B> <0041>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
+obj 12 0
+<< /Type /FontDescriptor /FontName /OcrGlyphless /Flags 5 /FontBBox [0 -200 500 800] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 14 0 R >>
+obj 13 0
+<< /Filter /FlateDecode /Length * >>
+binary stream (56 bytes) sha256 DC59A5FBC0780DAB0925A59F1B7A1390A81026FB6A9096CF3E47C0BCC20AC95C
+obj 14 0
+<< /Filter /FlateDecode /Length1 696 /Length * >>
+binary stream (696 bytes) sha256 EC1F2B7B61319A035D2D913A70BEAA03CBE3F2455F740DB8513C1148A8BB38E2
+trailer
+<< /Size 15 /Root 1 0 R /Info 2 0 R >>
+extracted text
+page 1 425.3x198.5
+line 218.9,153.4 175.9x14.1 angle 180 | This page was scanned upside down.
+  word 374.8,153.4 20.0x14.1 | This
+  word 348.6,153.3 22.3x14.1 | page
+  word 327.3,153.2 17.4x14.1 | was
+  word 287.2,153.2 38.5x14.0 | scanned
+  word 252.1,153.1 31.2x14.0 | upside
+  word 218.9,153.0 29.5x13.9 | down.
+line 232.3,137.0 162.6x13.2 angle 180 | The reader turns it before reading.
+  word 379.0,137.0 15.9x13.2 | The
+  word 343.9,136.8 31.3x13.2 | reader
+  word 317.5,136.6 24.7x13.2 | turns
+  word 306.6,136.3 9.4x13.2 | it
+  word 275.9,136.2 29.1x13.2 | before
+  word 232.3,135.9 39.7x13.2 | reading.
+line 247.6,117.0 147.2x14.2 angle 180 | Page 7 of 12,f iled on 21 April.
+  word 373.2,117.6 21.7x14.2 | Page
+  word 363.8,117.5 5.2x14.2 | 7
+  word 349.7,117.4 9.9x14.2 | of
+  word 326.8,117.3 21.0x14.2 | 12,f
+  word 309.7,117.3 17.2x14.2 | iled
+  word 293.2,117.2 12.3x14.2 | on
+  word 279.1,117.1 9.9x14.2 | 21
+  word 247.6,117.0 27.3x14.2 | April.

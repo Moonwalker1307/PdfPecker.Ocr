@@ -1,0 +1,34 @@
+page 1772x827 dpi 300 lines 5 confidence 0.98
+line 101,106 355x52 angle -1 conf 0.98 | int total = 0;
+  word 109,106 74x49 conf 1.00 | int
+  word 205,107 132x50 conf 1.00 | total
+  word 360,108 26x49 conf 1.00 | =
+  word 410,109 46x49 conf 1.00 | 0;
+line 102,172 703x50 angle -0 conf 0.97 | for (int i = 0; i < 10; i++)
+  word 110,172 75x50 conf 1.00 | for
+  word 210,172 100x50 conf 1.00 | (int
+  word 335,172 25x50 conf 1.00 | i
+  word 385,172 25x50 conf 1.00 | =
+  word 435,172 50x50 conf 1.00 | 0;
+  word 510,172 25x50 conf 1.00 | i
+  word 560,172 25x50 conf 1.00 | <
+  word 610,172 75x50 conf 1.00 | 10;
+  word 710,172 95x50 conf 1.00 | i++)
+line 198,230 585x58 angle -0 conf 0.97 | total += values[i] * 2;
+  word 210,230 131x58 conf 1.00 | total
+  word 364,230 44x58 conf 1.00 | +=
+  word 431,230 227x58 conf 1.00 | values[i]
+  word 682,230 25x58 conf 1.00 | *
+  word 730,230 53x58 conf 1.00 | 2;
+line 103,296 955x48 angle 0 conf 0.99 | return total; // sum of doubled values
+  word 110,297 151x47 conf 1.00 | return
+  word 282,297 151x47 conf 1.00 | total;
+  word 454,297 57x47 conf 1.00 | //
+  word 533,296 72x47 conf 1.00 | sum
+  word 634,296 49x47 conf 1.00 | of
+  word 705,296 174x47 conf 1.00 | doubled
+  word 908,296 150x47 conf 1.00 | values
+line 103,362 782x42 angle -0 conf 1.00 | id=0x7F3A status=0K count=128
+  word 108,362 220x42 conf 1.00 | id=0x7F3A
+  word 381,362 227x42 conf 1.00 | status=0K
+  word 660,362 220x42 conf 1.00 | count=128

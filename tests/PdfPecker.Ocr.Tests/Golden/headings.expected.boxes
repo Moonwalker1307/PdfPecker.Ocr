@@ -1,0 +1,46 @@
+page 1772x1299 dpi 300 lines 7 confidence 1.00
+line 98,110 879x105 angle -0 conf 1.00 | Annual Report 2026
+  word 115,110 315x105 conf 1.00 | Annual
+  word 448,110 315x105 conf 1.00 | Report
+  word 763,110 210x105 conf 1.00 | 2026
+line 97,241 754x84 angle 0 conf 1.00 | 1. Summary of the Year
+  word 113,244 63x81 conf 1.00 | 1.
+  word 194,242 292x82 conf 1.00 | Summary
+  word 504,242 76x81 conf 1.00 | of
+  word 585,242 103x81 conf 1.00 | the
+  word 706,241 144x82 conf 1.00 | Year
+line 102,360 819x53 angle -0 conf 0.99 | Sales grew in every region, led by the north.
+  word 115,360 98x53 conf 1.00 | Sales
+  word 230,360 80x53 conf 1.00 | grew
+  word 327,360 27x53 conf 1.00 | in
+  word 371,360 98x53 conf 1.00 | every
+  word 486,360 133x53 conf 1.00 | region,
+  word 619,360 53x53 conf 1.00 | led
+  word 698,360 36x53 conf 1.00 | by
+  word 742,360 62x53 conf 1.00 | the
+  word 821,360 100x53 conf 1.00 | north.
+line 102,448 362x61 angle -0 conf 1.00 | 1.1 Highlights
+  word 116,448 64x61 conf 1.00 | 1.1
+  word 207,448 257x61 conf 1.00 | Highlights
+line 104,534 882x49 angle -0 conf 1.00 | Bold figures and italic remarks sit side by side.
+  word 115,534 84x49 conf 1.00 | Bold
+  word 213,534 133x49 conf 1.00 | figures
+  word 368,534 60x49 conf 1.00 | and
+  word 442,534 84x49 conf 1.00 | italic
+  word 540,534 149x49 conf 1.00 | remarks
+  word 703,534 43x49 conf 1.00 | sit
+  word 752,534 76x49 conf 1.00 | side
+  word 842,534 43x49 conf 1.00 | by
+  word 899,534 84x49 conf 1.00 | side.
+line 100,617 341x70 angle -0 conf 0.98 | 2. Outlook
+  word 115,617 52x70 conf 1.00 | 2.
+  word 196,617 239x70 conf 1.00 | Outlook
+line 99,725 880x57 angle -0 conf 1.00 | We expect steady demand for the coming year.
+  word 111,725 58x54 conf 1.00 | We
+  word 183,725 130x55 conf 1.00 | expect
+  word 319,725 122x55 conf 1.00 | steady
+  word 455,726 141x55 conf 1.00 | demand
+  word 611,726 50x55 conf 1.00 | for
+  word 666,726 59x55 conf 1.00 | the
+  word 740,726 133x55 conf 1.00 | coming
+  word 889,727 90x55 conf 1.00 | year.
