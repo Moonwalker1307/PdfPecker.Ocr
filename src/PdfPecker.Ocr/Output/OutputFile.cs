@@ -18,7 +18,8 @@ internal static class OutputFile
         }
         catch
         {
-            File.Delete(temp);
+            // File.Exists never throws, so the original failure is the one the caller sees.
+            if (File.Exists(temp)) File.Delete(temp);
             throw;
         }
     }

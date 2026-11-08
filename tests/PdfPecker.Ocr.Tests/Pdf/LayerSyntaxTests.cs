@@ -157,6 +157,22 @@ public sealed class LayerSyntaxTests
     }
 
     [Fact]
+    public void PixelsMapToDisplayedPoints()
+    {
+        var page = new OcrPage(0, 1000, 1300, 120, Array.Empty<OcrLine>());
+        var g = new PageGeometry(600, 780, page);
+        Assert.Equal((0.0, 780.0), g.ToPoints(new OcrPoint(0, 0)));
+        Assert.Equal((600.0, 0.0), g.ToPoints(new OcrPoint(1000, 1300)));
+        Assert.Equal((300.0, 390.0), g.ToPoints(new OcrPoint(500, 650)));
+        // By resolution from the top-left corner, for an image smaller than its page: 120 dpi is 0.6 points per pixel.
+        var byDpi = new PageGeometry(600, 900, page, byDpi: true);
+        Assert.Equal((60.0, 840.0), byDpi.ToPoints(new OcrPoint(100, 100)));
+        // A stamp page drawn half size takes half the points.
+        Assert.Equal((150.0, 195.0), new PageGeometry(300, 390, page, shrink: 2).ToPoints(new OcrPoint(500, 650)));
+        Assert.Equal((30.0, 420.0), new PageGeometry(300, 450, page, byDpi: true, shrink: 2).ToPoints(new OcrPoint(100, 100)));
+    }
+
+    [Fact]
     public void NumbersAreWrittenWithoutExponentsAndWithinRange()
     {
         var b = new PdfBuffer();

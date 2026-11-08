@@ -16,14 +16,15 @@ internal readonly struct PageGeometry
     /// <summary>
     /// Makes the mapping for a page of <paramref name="widthPt"/> × <paramref name="heightPt"/> points read as
     /// <paramref name="page"/>: the pixels cover the page, or with <paramref name="byDpi"/> they are placed at the
-    /// page's resolution from its top-left corner.
+    /// page's resolution from its top-left corner. A stamp page drawn <paramref name="shrink"/> times smaller than the
+    /// page takes points that much smaller.
     /// </summary>
-    public PageGeometry(double widthPt, double heightPt, OcrPage page, bool byDpi = false)
+    public PageGeometry(double widthPt, double heightPt, OcrPage page, bool byDpi = false, double shrink = 1)
     {
         WidthPt = widthPt;
         HeightPt = heightPt;
         bool dpiKnown = float.IsFinite(page.Dpi) && page.Dpi > 0;
-        double perPixel = dpiKnown ? 72.0 / page.Dpi : 72.0 / 300;
+        double perPixel = (dpiKnown ? 72.0 / page.Dpi : 72.0 / 300) / shrink;
         ScaleX = page.Width > 0 && !(byDpi && dpiKnown) ? widthPt / page.Width : perPixel;
         ScaleY = page.Height > 0 && !(byDpi && dpiKnown) ? heightPt / page.Height : perPixel;
     }

@@ -74,7 +74,7 @@ internal static class SearchableLayer
         for (int i = 0; i < pages.Count; i++)
         {
             int pageId = firstPageId + 2 * i, contentId = pageId + 1;
-            var (w, h) = Size(pages[i]);
+            var (w, h, _) = Size(pages[i]);
             Begin(pdf, offsets, pageId).Ascii("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ").Real(w).Space().Real(h).Ascii("] /Resources <<");
             if (contents[i] != null && fontId != 0) pdf.Ascii(" /Font << /").Ascii(FontResource).Ascii(" 3 0 R >>");
             pdf.Ascii(" >> /Contents ").Int(contentId).Ascii(" 0 R >>");
@@ -93,18 +93,25 @@ internal static class SearchableLayer
         return pdf.ToArray();
     }
 
-    /// <summary>The page size, with a letter page for a size that is not a usable number.</summary>
-    private static (double W, double H) Size(LayerPage page)
+    /// <summary>The largest page side written, PDF's own limit.</summary>
+    private const double MaxSide = 14_400;
+
+    /// <summary>
+    /// The stamp page's size, and the factor it was shrunk by: a page larger than PDF allows (a page with a user unit,
+    /// for example) gets a stamp of the same shape within the limit, which <see cref="PdfStamper"/> scales up to fit it.
+    /// A size that is not a usable number gives a letter page.
+    /// </summary>
+    private static (double W, double H, double Shrink) Size(LayerPage page)
     {
-        bool ok = double.IsFinite(page.Width) && double.IsFinite(page.Height) && page.Width >= 1 && page.Height >= 1
-            && page.Width <= PdfBuffer.MaxNumber && page.Height <= PdfBuffer.MaxNumber;
-        return ok ? (page.Width, page.Height) : (612, 792);
+        if (!(double.IsFinite(page.Width) && double.IsFinite(page.Height) && page.Width > 0.01 && page.Height > 0.01)) return (612, 792, 1);
+        double shrink = Math.Max(1, Math.Max(page.Width, page.Height) / MaxSide);
+        return (Math.Max(0.02, page.Width / shrink), Math.Max(0.02, page.Height / shrink), shrink);
     }
 
     /// <summary>The content stream of one page, deflated, or null when no word could be placed.</summary>
-    private static byte[]? PageContent(OcrPage page, (double W, double H) size, bool scaleByDpi, CidMap cids)
+    private static byte[]? PageContent(OcrPage page, (double W, double H, double Shrink) size, bool scaleByDpi, CidMap cids)
     {
-        var geometry = new PageGeometry(size.W, size.H, page, scaleByDpi);
+        var geometry = new PageGeometry(size.W, size.H, page, scaleByDpi, size.Shrink);
         var content = new PdfBuffer(64 + 96 * page.Lines.Count * 4);
         var codes = new List<int>(32);
         bool any = false;

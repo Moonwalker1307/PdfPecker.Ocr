@@ -219,6 +219,21 @@ public sealed class SearchableLayerTests
     }
 
     [Fact]
+    public void PagesLargerThanPdfAllowsStillGetTheirWordsInPlace()
+    {
+        // A page of 20,000 by 10,000 points, beyond PDF's 14,400: the stamp page is drawn smaller and scaled up.
+        var scan = RawPdf.Build(new RawPdf.Page(new double[] { 0, 0, 20_000, 10_000 }, Content: RawPdf.Shapes(20_000, 10_000)));
+        var words = new[] { new[] { new WordSpec("Poster", 1000, 500, 2000, 400), new WordSpec("text", 3500, 500, 1500, 400) } };
+        var result = SearchablePdf.MakeSearchable(scan, new OcrOptions { Dpi = 10, PageMode = OcrPageMode.Force }, new FakeRecognizer(words), default);
+        var found = PdfText.ExtractPages(result)[0].Lines.SelectMany(l => l.Words).ToList();
+        Assert.Equal(new[] { "Poster", "text" }, found.Select(w => w.Text));
+        Assert.InRange(found[0].X, 990, 1010);
+        Assert.InRange(found[0].Y, 490, 510);
+        Assert.InRange(found[1].X, 3490, 3510);
+        Assert.InRange(found[1].Width, 1490, 1510);
+    }
+
+    [Fact]
     public void SmallImagesKeepTheirWordsInTheirCorner()
     {
         // A 40 x 12 pixel image at 96 dpi is 30 x 9 points, but a page is at least 10 points high, so the image sits at
