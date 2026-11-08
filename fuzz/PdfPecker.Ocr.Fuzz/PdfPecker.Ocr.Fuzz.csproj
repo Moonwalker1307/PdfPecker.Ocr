@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A dependency-free mutation fuzzer for the OCR package's handling of untrusted input. It references the package as a
+       project and, through it, the released PdfPecker package, and nothing else; see README.md in the fuzz folder. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>PdfPecker.Ocr.Fuzz</RootNamespace>
+    <!-- Non-concurrent workstation GC keeps the heap size honest for the memory watch. -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- A hard heap limit turns a runaway allocation into an OutOfMemoryException the fuzzer can classify, instead of the
+         kernel killing the process. It sits above the 1.5 GB ceiling the watchdog enforces. -->
+    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="2684354560" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PdfPecker.Ocr/PdfPecker.Ocr.csproj" />
+  </ItemGroup>
+
+</Project>
