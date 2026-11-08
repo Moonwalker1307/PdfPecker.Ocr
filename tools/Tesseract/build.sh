@@ -21,11 +21,12 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 
-# Pins. Tags move rarely, but a commit does not: the script checks the commit each tag resolves to.
+# Pins. Tags move rarely, but a commit does not: the script checks the commit each tag resolves to (for an annotated
+# tag, the commit it points at, not the tag object).
 LEPTONICA_TAG=1.85.0
 LEPTONICA_COMMIT=63aef18d98432b8582a1565e241f7bd2ee9cc8d9
 TESSERACT_TAG=5.5.1
-TESSERACT_COMMIT=0995615022dc368f65c6b88f31784d8bc384f855
+TESSERACT_COMMIT=3b7c70e34dea179549ed3e995872e2e019eb8477
 
 # tessdata_fast and tessdata_best commits, and the SHA-256 of every file taken from them.
 TESSDATA_FAST_COMMIT=87416418657359cb625c412a48b6e1d6d41c29bd
