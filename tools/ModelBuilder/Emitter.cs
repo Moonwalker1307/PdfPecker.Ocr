@@ -5,16 +5,34 @@ namespace ModelBuilder;
 /// <summary>Turns the simplified graph into the runtime's model definition.</summary>
 internal static class Emitter
 {
+    /// <summary>
+    /// The input shape the runtime accepts. A dimension the ONNX graph leaves open but every sample shape gives the same
+    /// size (the recogniser's and classifier's height of 48) was a constant to the folding passes, so the folded graph
+    /// is only right for that size, and the runtime must refuse others.
+    /// </summary>
+    private static int[] InputShape(long[] dims, long[][] samples)
+    {
+        var shape = new int[dims.Length];
+        for (int i = 0; i < dims.Length; i++)
+        {
+            long first = samples[0][i];
+            bool varies = samples.Any(s => s[i] != first);
+            if (dims[i] > 0 && (varies || first != dims[i])) throw new NotSupportedException($"Sample shapes disagree with input dimension {i}.");
+            shape[i] = dims[i] > 0 ? (int)dims[i] : varies ? -1 : (int)first;
+        }
+        return shape;
+    }
+
     /// <summary>Weights with at most this many values (biases, norms) are kept in full precision; they cost nothing.</summary>
     private const int SmallWeight = 1024;
 
-    public static ModelDefinition Emit(Graph g, string name, string notice, WeightStorage precision, string[] characters)
+    public static ModelDefinition Emit(Graph g, string name, string notice, WeightStorage precision, string[] characters, long[][] samples)
     {
         var model = new ModelDefinition
         {
             Name = name,
             Notice = notice,
-            InputShape = g.InputDims.Select(d => d > 0 ? (int)d : -1).ToArray(),
+            InputShape = InputShape(g.InputDims, samples),
             Characters = characters,
         };
         var ids = new Dictionary<string, int>(StringComparer.Ordinal) { [g.Input] = 0 };

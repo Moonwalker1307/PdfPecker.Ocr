@@ -87,7 +87,7 @@ foreach (var source in models)
     }
 
     string notice = $"{source.Upstream}, from rapidocr 3.10.0 ({source.Entry}, SHA-256 {source.Sha256}). {LicenceNotice}";
-    var definition = Emitter.Emit(graph, source.Upstream, notice, precision, characters);
+    var definition = Emitter.Emit(graph, source.Upstream, notice, precision, characters, source.Samples);
     byte[] data = definition.Serialize();
     byte[] packed = Compress(data);
     string target = Path.Combine(outDir, source.Name + ".bin.br");

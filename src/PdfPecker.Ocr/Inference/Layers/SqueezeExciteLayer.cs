@@ -31,9 +31,10 @@ internal sealed unsafe class SqueezeExciteLayer : Layer
         _b1 = Weight(node, model, 1).Data;
         _w2 = w2.Data;
         _b2 = Weight(node, model, 3).Data;
+        if (w1.Shape.Length != 2 || w2.Shape.Length != 2) throw new InvalidDataException("Squeeze-excitation weights must be matrices.");
         _hidden = w1.Shape[0];
         _channels = w2.Shape[0];
-        if (w1.Shape.Length != 2 || w2.Shape.Length != 2 || w1.Shape[1] != _channels || w2.Shape[1] != _hidden || _b1.Length != _hidden || _b2.Length != _channels)
+        if (w1.Shape[1] != _channels || w2.Shape[1] != _hidden || _b1.Length != _hidden || _b2.Length != _channels)
             throw new InvalidDataException("Squeeze-excitation weights do not match.");
     }
 

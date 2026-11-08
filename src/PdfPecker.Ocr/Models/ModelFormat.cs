@@ -239,7 +239,8 @@ internal sealed class ModelDefinition
             foreach (int d in shape)
             {
                 if (d < 0) throw new InvalidDataException("Negative weight dimension.");
-                expected *= d;
+                // Stopping at int.MaxValue keeps the product of many large dimensions from wrapping around.
+                expected = Math.Min(expected * d, (long)int.MaxValue + 1);
             }
             if (expected != length) throw new InvalidDataException("Weight size does not match its shape.");
             model.Weights.Add(new WeightDefinition(shape, ReadWeightData(ref r, storage, length), storage));

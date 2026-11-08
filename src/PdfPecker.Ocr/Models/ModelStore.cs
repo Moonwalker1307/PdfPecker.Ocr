@@ -20,7 +20,7 @@ internal static class ModelStore
     /// <summary>The line recogniser: input [N, 3, 48, W], output [N, W / 8, classes], a softmax over <see cref="Characters"/>.</summary>
     public static OcrModel Recognition => s_recognition.Value;
 
-    /// <summary>The 0/180 degree line classifier: input [N, 3, 48, 192], output [N, 2] probabilities.</summary>
+    /// <summary>The 0/180 degree line classifier: input [N, 3, 48, W] (rapidocr uses W = 192), output [N, 2] probabilities.</summary>
     public static OcrModel Classifier => s_classifier.Value;
 
     /// <summary>
