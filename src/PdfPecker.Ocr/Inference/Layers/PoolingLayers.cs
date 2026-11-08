@@ -44,12 +44,19 @@ internal sealed unsafe class PoolLayer : Layer
     /// Windows without padding and a horizontal stride of 1 or 2 take the vector path; the rest, and the edges the
     /// vectors cannot reach, the generic one.
     /// </summary>
-    private bool Vectorised => _pt == 0 && _pl == 0 && _pb == 0 && _pr == 0 && _sw <= 2 && !(_max && _kh == 2 && _kw == 2 && _sh == 1 && _sw == 1);
+    private bool Vectorised => _pt == 0 && _pl == 0 && _pb == 0 && _pr == 0 && _sw <= 2 && !IsMax2x2Stride1;
 
     // The slack after a de-interleaved row, enough for a vector read that starts at its last value.
     private const int Slack = 16;
 
     private static int HalfLength(int w) => (w + 1) / 2 + Slack;
+
+    // The stem's 2x2, stride 1 maximum may write over its input: each output row reads only its own row and the next,
+    // rows go in order, and within a row a value or vector is stored only after every input it reads was loaded, so no
+    // input is overwritten before its last reader. Writing in place lets the stem's input share memory with its output.
+    public override int InPlaceInput(int[][] inputs, int[] output) => IsMax2x2Stride1 ? 0 : -1;
+
+    private bool IsMax2x2Stride1 => _max && _kh == 2 && _kw == 2 && _sh == 1 && _sw == 1 && _pt == 0 && _pl == 0;
 
     public override long ScratchPerWorker(Step step, InferenceContext context) =>
         Vectorised && _sw == 2 ? (long)_kh * 2 * HalfLength(step.InputShapes[0][3]) : 0;
@@ -66,7 +73,7 @@ internal sealed unsafe class PoolLayer : Layer
         int[] o = step.OutputShape;
         float* input = step.Input(0) + (long)plane * x[2] * x[3];
         float* output = step.Output + (long)plane * o[2] * o[3];
-        if (layer._max && layer._kh == 2 && layer._kw == 2 && layer._sh == 1 && layer._sw == 1 && layer._pt == 0 && layer._pl == 0)
+        if (layer.IsMax2x2Stride1)
             MaxPool2x2Stride1(input, x[2], x[3], output, o[2], o[3]);
         else if (layer.Vectorised)
             layer.Windows(input, x[2], x[3], output, o[2], o[3], step.Context.Scratch(worker));

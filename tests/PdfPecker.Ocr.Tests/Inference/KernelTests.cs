@@ -413,6 +413,52 @@ public sealed class KernelTests
     }
 
     [Fact]
+    public void StemPoolWritesOverItsInputInsideAConcatenation()
+    {
+        // The detector's stem: a 2x2, stride 1 maximum with bottom and right padding writes over the convolution it
+        // reads, and that memory and a second branch become slices of the concatenation without copies. An upsampled
+        // input before them checks that the slices after it start where its enlarged slice ends.
+        var x = RandomTensor(31, 1, 3, 10, 36);
+        var wa = Weight([4, 3, 1, 1], 1);
+        var ba = Weight([4], 2);
+        var wb = Weight([2, 4, 1, 1], 3);
+        var bb = Weight([2], 4);
+        var wc = Weight([4, 2, 1, 1], 5);
+        var bc = Weight([4], 6);
+        var ws = Weight([3, 3, 3, 3], 7);
+        var bs = Weight([3], 8);
+        var wf = Weight([5, 11, 1, 1], 9);
+        var bf = Weight([5], 10);
+        var graph = new GraphBuilder(4);
+        int a = graph.Add(OpKind.Conv, [0], ConvInts(1, 1), [0, 0], wa, ba);
+        int b = graph.Add(OpKind.Conv, [a], ConvInts(1, 1), [0, 0], wb, bb);
+        int c = graph.Add(OpKind.Conv, [b], ConvInts(1, 1), [0, 0], wc, bc);
+        int d = graph.Add(OpKind.MaxPool, [a], [2, 2, 1, 1, 0, 0, 1, 1, 0]);
+        int small = graph.Add(OpKind.Conv, [0], ConvInts(3, 3, 2, 2, pt: 1, pl: 1, pb: 1, pr: 1), [0, 0], ws, bs);
+        int concat = graph.Add(OpKind.Concat, [small, d, c], [1, 2, 2, 1, 1, 1, 1]);
+        graph.Add(OpKind.Conv, [concat], ConvInts(1, 1), [0, 0], wf, bf);
+
+        static Tensor ToTensor(double[] values, params int[] shape) => Tensor.FromBuffer(values.Select(v => (float)v).ToArray(), shape);
+        var ea = ToTensor(Conv(x, wa.Data, ba.Data, 4, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, ActivationKind.None, 0, 0, out _), 1, 4, 10, 36);
+        var eb = ToTensor(Conv(ea, wb.Data, bb.Data, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, ActivationKind.None, 0, 0, out _), 1, 2, 10, 36);
+        var ec = Conv(eb, wc.Data, bc.Data, 4, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, ActivationKind.None, 0, 0, out _);
+        var ed = Pool(ea, true, 2, 2, 1, 1, 0, 0, 1, 1, false);
+        var es = Conv(x, ws.Data, bs.Data, 3, 3, 3, 2, 2, 1, 1, 1, 1, 1, 1, 1, ActivationKind.None, 0, 0, out _);
+        var joined = new double[11 * 360];
+        for (int ch = 0; ch < 11; ch++)
+            for (int y = 0; y < 10; y++)
+                for (int xx = 0; xx < 36; xx++)
+                    joined[(ch * 10 + y) * 36 + xx] = ch < 3 ? es[(ch * 5 + y / 2) * 18 + xx / 2]
+                        : ch < 7 ? ed[((ch - 3) * 10 + y) * 36 + xx]
+                        : ec[((ch - 7) * 10 + y) * 36 + xx];
+        var expected = Conv(ToTensor(joined, 1, 11, 10, 36), wf.Data, bf.Data, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, ActivationKind.None, 0, 0, out _);
+
+        var one = graph.Run(x, degree: 1);
+        AssertClose(expected, one.Span, Tolerance, "stem");
+        Assert.True(one.Span.SequenceEqual(graph.Run(x, degree: 3).Span), "threads");
+    }
+
+    [Fact]
     public void ShapeOperatorsMoveValues()
     {
         var x = RandomTensor(2, 2, 3, 4, 5);
