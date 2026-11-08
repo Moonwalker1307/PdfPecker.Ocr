@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Timing and allocation harness for PdfPecker.Ocr, modelled on the library's bench/PdfPecker.Benchmarks and
+       PdfPecker.Versions: no BenchmarkDotNet, one fresh process per measurement round, and a version comparison that
+       bench/compare-versions.sh runs. Usage is at the top of Program.cs.
+
+       The cases that need the OCR API are behind two feature switches, so that the project builds against OcrInfo alone and
+       the switches are turned on as the code arrives:
+         -p:OcrApi=true        ImageOcr and PdfOcr cases (pages, searchable PDFs); defines OCR_API
+         -p:OcrInternals=true  detection, recognition and kernel cases on the internal contracts; defines OCR_INTERNALS -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TieredPGO>true</TieredPGO>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(OcrApi)' == 'true'">
+    <DefineConstants>$(DefineConstants);OCR_API</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OcrInternals)' == 'true'">
+    <DefineConstants>$(DefineConstants);OCR_INTERNALS</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PdfPecker.Ocr/PdfPecker.Ocr.csproj" />
+    <!-- The corpus reader (PNG decoder and manifest) is shared with the Tesseract comparison. -->
+    <Compile Include="../TesseractComparison/CorpusData.cs" Link="CorpusData.cs" />
+  </ItemGroup>
+
+</Project>
