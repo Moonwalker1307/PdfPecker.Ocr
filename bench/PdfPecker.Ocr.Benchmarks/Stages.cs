@@ -51,6 +51,7 @@ static class Stages
 
         double allocEndToEnd = (GC.GetTotalAllocatedBytes(true) - alloc0) / (double)runs / 1048576;
         double rssWarm = Runner.PeakRssMb();
+        var gc = GC.GetGCMemoryInfo();
 
         // Warm OCR alone on pixels already in memory, through the public API.
         var raster = PageRaster.Render(PdfRenderer.Open(pdf), 0, 300, options.MaxPixels, default);
@@ -97,7 +98,42 @@ static class Stages
         Console.WriteLine();
         Console.WriteLine(string.Create(inv, $"Model load alone: det {load["det"]:F0} ms, rec {load["rec"]:F0} ms, cls {load["cls"]:F0} ms"));
         Console.WriteLine(string.Create(inv, $"Peak resident memory: {rssStart:F0} MB before the first call, {rssCold:F0} MB after it, {rssWarm:F0} MB peak over the warm calls{(reset ? " (peak reset after the cold call)" : " (running peak: reset refused)")}"));
+        Console.WriteLine(string.Create(inv, $"Managed heap after the warm calls: {gc.HeapSizeBytes / 1048576.0:F0} MB in use, {gc.TotalCommittedBytes / 1048576.0:F0} MB committed; after the last GC, large objects {gc.GenerationInfo[3].SizeAfterBytes / 1048576.0:F0} MB and pinned ones (arenas, outputs) {gc.GenerationInfo[4].SizeAfterBytes / 1048576.0:F0} MB"));
         Console.WriteLine(string.Create(inv, $"Engine worker arena: {arena / 1048576.0:F0} MB"));
+    }
+
+    /// <summary>
+    /// The memory of OCR alone: the page is rendered to gray pixels first and the renderer's garbage collected, then
+    /// the resident peak is reset, so the peaks below are those of reading the page through ImageOcr.RecognizeGray,
+    /// cold (models loaded, worker built) and warm. Run it in a fresh process: dotnet ... stages --memory --threads n
+    /// </summary>
+    public static void Memory(int threads, int runs)
+    {
+        byte[] pdf = HtmlToPdf.Convert(InvoiceHtml());
+        var raster = PageRaster.Render(PdfRenderer.Open(pdf), 0, 300, 100_000_000, default);
+        byte[] gray = raster.Pixels.Pixels.ToArray();
+        int width = raster.Pixels.Width, height = raster.Pixels.Height;
+        raster.Pixels.Dispose();
+        pdf = [];
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+        bool reset = ResetPeak();
+        double before = Runner.PeakRssMb();
+        var options = new OcrOptions { MaxDegreeOfParallelism = threads };
+        long alloc0 = GC.GetTotalAllocatedBytes(true);
+        ImageOcr.RecognizeGray(gray, width, height, options);
+        double coldAlloc = (GC.GetTotalAllocatedBytes(true) - alloc0) / 1048576.0;
+        double cold = Runner.PeakRssMb();
+        for (int i = 0; i < runs; i++) ImageOcr.RecognizeGray(gray, width, height, options);
+        double warm = Runner.PeakRssMb();
+        var gc = GC.GetGCMemoryInfo();
+        var inv = CultureInfo.InvariantCulture;
+        Console.WriteLine($"PdfPecker.Ocr {OcrInfo.Version}, .NET {Environment.Version}, MaxDegreeOfParallelism {threads}, GC gen0 budget {Environment.GetEnvironmentVariable("DOTNET_GCgen0size") ?? "default"}");
+        Console.WriteLine(string.Create(inv, $"OCR alone on a {width} x {height} gray page (held by the caller, {gray.Length / 1048576.0:F1} MB):"));
+        Console.WriteLine(string.Create(inv, $"  resident before the first call {before:F0} MB{(reset ? "" : " (peak reset refused: running peak)")}"));
+        Console.WriteLine(string.Create(inv, $"  peak during the cold call {cold:F0} MB (it allocated {coldAlloc:F0} MB: models, plans, buffers)"));
+        Console.WriteLine(string.Create(inv, $"  peak over {runs} warm calls {warm:F0} MB"));
+        Console.WriteLine(string.Create(inv, $"  managed heap {gc.HeapSizeBytes / 1048576.0:F0} MB, committed {gc.TotalCommittedBytes / 1048576.0:F0} MB, pinned (arenas, outputs) {gc.GenerationInfo[4].SizeAfterBytes / 1048576.0:F0} MB, worker arena {PeekArena(threads) / 1048576.0:F0} MB"));
     }
 
     static List<(string Stage, List<double> Times)> StageSplit(byte[] pdf, int threads, int runs)
