@@ -9,12 +9,15 @@ using TesseractComparison;
 //                              [--out dir] [--lib libtesseract.so] [--tessdata dir] [--tess-lang auto|eng|multi|<codes>]
 //                              [--tess-psm auto|1|3|...] [--python path] [--only id,id] [--title text]
 //   TesseractComparison report --in dir          (writes results.md again from results.csv)
+//   TesseractComparison selftest                 (checks the metrics and the PNG decoder)
 //   TesseractComparison child ...                (internal: measures one engine at one thread count in this process)
 //
 // "run" starts one child process per engine and thread count, so every engine's peak memory is its own and a crash cannot
 // take the others down, then merges the children's CSV files into results.csv and results.md in the output folder.
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+
+if (args.Length > 0 && args[0] == "selftest") return SelfTest.Run();
 
 if (args.Length == 0 || args[0] is "-h" or "--help")
 {

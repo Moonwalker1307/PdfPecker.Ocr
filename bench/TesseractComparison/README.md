@@ -46,7 +46,7 @@ as the AOT build; `dotnet publish -r linux-x64` needs the ILCompiler package fro
   resident. The report gives the median and the maximum over pages, and the resident size after the first model load.
   If the kernel refuses the reset, `peak_reset` is False in the `.meta` file and the peak is the process's running maximum.
 - **Managed allocations** (`alloc_mb`, only for managed engines): `GC.GetTotalAllocatedBytes` per run, all threads.
-- **Normalisation** (ground truth and output alike, `Metrics.Normalize`): Unicode form C; typographic single and double quotes,
+- **Normalisation** (ground truth and output alike, `Metrics.Normalize`): Latin letters with combining accents composed (form C for the common marks); typographic single and double quotes,
   dashes and minus folded to ASCII; no-break and narrow spaces count as spaces; every whitespace run, line breaks included,
   becomes one space; the ends are trimmed. Case, accents and punctuation are kept. Reading order is therefore the order of the
   text, line by line.

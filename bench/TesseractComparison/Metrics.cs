@@ -10,7 +10,7 @@ namespace TesseractComparison;
 static class Metrics
 {
     /// <summary>
-    /// The normalisation applied to ground truth and engine output alike: Unicode form C, typographic quotes, dashes and the
+    /// The normalisation applied to ground truth and engine output alike: Latin letters with combining marks composed (Unicode form C for the marks above), typographic quotes, dashes and the
     /// ellipsis folded to their ASCII forms, the no-break and narrow spaces treated as spaces, every run of whitespace
     /// (including line breaks) collapsed to one space, and the ends trimmed. Case, accents and punctuation are kept.
     /// </summary>
@@ -18,7 +18,7 @@ static class Metrics
     {
         var sb = new StringBuilder(text.Length);
         bool space = true;
-        foreach (char ch in text.Normalize(NormalizationForm.FormC))
+        foreach (char ch in Compose(text))
         {
             char c = ch switch
             {
@@ -39,6 +39,43 @@ static class Metrics
             }
         }
         if (sb.Length > 0 && sb[^1] == ' ') sb.Length--;
+        return sb.ToString();
+    }
+
+    // string.Normalize does nothing for non-ASCII text when globalization is invariant (the app is, so that it needs no ICU), so
+    // the combining marks Latin text uses are composed here: grave, acute, circumflex, tilde, diaeresis, ring and cedilla.
+    static readonly (char Mark, string Bases, string Composed)[] Compositions =
+    [
+        ('\u0300', "AEIOUaeiou", "ÀÈÌÒÙàèìòù"),
+        ('\u0301', "AEIOUYaeiouy", "ÁÉÍÓÚÝáéíóúý"),
+        ('\u0302', "AEIOUaeiou", "ÂÊÎÔÛâêîôû"),
+        ('\u0303', "ANOano", "ÃÑÕãñõ"),
+        ('\u0308', "AEIOUaeiouy", "ÄËÏÖÜäëïöüÿ"),
+        ('\u030A', "Aa", "Åå"),
+        ('\u0327', "Cc", "Çç"),
+    ];
+
+    static string Compose(string text)
+    {
+        if (text.AsSpan().IndexOfAnyInRange('\u0300', '\u036F') < 0) return text;
+        var sb = new StringBuilder(text.Length);
+        foreach (char c in text)
+        {
+            if (sb.Length > 0 && c >= '\u0300' && c <= '\u036F')
+            {
+                bool done = false;
+                foreach (var (mark, bases, composed) in Compositions)
+                {
+                    int i = mark == c ? bases.IndexOf(sb[^1]) : -1;
+                    if (i < 0) continue;
+                    sb[^1] = composed[i];
+                    done = true;
+                    break;
+                }
+                if (done) continue;
+            }
+            sb.Append(c);
+        }
         return sb.ToString();
     }
 
