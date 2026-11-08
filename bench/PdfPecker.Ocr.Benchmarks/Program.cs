@@ -15,6 +15,8 @@ using OcrBench;
 //                                                   an A4 invoice page at 300 dpi end to end, cold and warm, and its time
 //                                                   by stage (or, with --memory, the resident peak of OCR alone); run it
 //                                                   in a fresh process per thread count
+//        dotnet run -c Release -p:OcrInternals=true -- layers [--threads n] [--runs n] [--top n]
+//                                                   each network's time on that page layer by layer
 //        the API cases are on by default (-p:OcrApi=false turns them off); -p:OcrInternals=true adds the stage cases.
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
@@ -35,6 +37,20 @@ if (args.Length > 0 && args[0] == "stages")
     return 0;
 #else
     Console.Error.WriteLine("The stages command needs a build with -p:OcrInternals=true.");
+    return 2;
+#endif
+}
+
+if (args.Length > 0 && args[0] == "layers")
+{
+#if OCR_INTERNALS
+    int lt = int.TryParse(ArgValue("--threads"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var t2) ? t2 : Environment.ProcessorCount;
+    int lr = int.TryParse(ArgValue("--runs"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var r2) ? r2 : 3;
+    int top = int.TryParse(ArgValue("--top"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n2) ? n2 : 15;
+    LayerProfile.Run(lt, lr, top);
+    return 0;
+#else
+    Console.Error.WriteLine("The layers command needs a build with -p:OcrInternals=true.");
     return 2;
 #endif
 }

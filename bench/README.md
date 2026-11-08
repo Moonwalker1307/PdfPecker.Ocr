@@ -2,8 +2,9 @@
 
 - `PdfPecker.Ocr.Benchmarks` – timing, allocation and peak memory of PdfPecker.Ocr itself: a page at 300 and 150 dpi, one thread and
   all cores, and a searchable PDF, through the public API (`-p:OcrApi=false` lists them as pending, for comparisons with a
-  version from before the API). Behind `-p:OcrInternals=true`: detection and recognition on their own, and the `stages`
-  command, which reads an A4 invoice page at 300 dpi cold and warm and splits its time by stage. Run `dotnet run -c Release
+  version from before the API). Behind `-p:OcrInternals=true`: detection and recognition on their own, the `stages`
+  command, which reads an A4 invoice page at 300 dpi cold and warm and splits its time by stage, and the `layers` command,
+  which times each network on that page layer by layer (`--threads n --runs n --top n`). Run `dotnet run -c Release
   --project bench/PdfPecker.Ocr.Benchmarks`. Optional `--corpus bench/TesseractComparison/corpus` adds corpus pages, `--threads n`
   and `--filter text` select cases.
 - `compare-versions.sh [git-ref] [rounds]` – the working tree against another version on this machine, in turns, each in a fresh
