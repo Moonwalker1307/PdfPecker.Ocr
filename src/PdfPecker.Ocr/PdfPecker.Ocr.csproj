@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>PdfPecker.Ocr</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PackageId>PdfPecker.Ocr</PackageId>
+    <Authors>Moonwalker1307</Authors>
+    <Description>Dependency-free OCR for .NET: reads text from scanned PDFs and images and makes scanned PDFs searchable. Its own neural network runtime in C#, no native binaries.</Description>
+    <Copyright>Copyright (c) 2026 Moonwalker1307</Copyright>
+    <RepositoryUrl>https://github.com/Moonwalker1307/PdfPecker.Ocr</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PdfPecker" Version="$(PdfPeckerVersion)" />
+    <InternalsVisibleTo Include="PdfPecker.Ocr.Tests" />
+    <InternalsVisibleTo Include="PdfPecker.Ocr.Fuzz" />
+    <InternalsVisibleTo Include="PdfPecker.Ocr.Benchmarks" />
+    <InternalsVisibleTo Include="ModelBuilder" />
+  </ItemGroup>
+
+</Project>

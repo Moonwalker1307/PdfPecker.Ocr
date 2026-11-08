@@ -1,0 +1,15 @@
+<Project>
+  <!-- Settings every project in the repository shares, so the tests, fuzzer, benchmarks and generators are held to the
+       library's standard: nullable reference types on, and a warning breaks the build. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Local builds pack as a pre-release; CI passes the real version. -->
+  <PropertyGroup>
+    <Version>0.1.0-dev</Version>
+    <!-- The PdfPecker release the package builds against and depends on at least. -->
+    <PdfPeckerVersion>1.23.0</PdfPeckerVersion>
+  </PropertyGroup>
+</Project>
