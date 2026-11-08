@@ -56,6 +56,13 @@ public sealed class HostileInputTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ImageOcr.RecognizeGray(new byte[100], 10, 10, new OcrOptions { MinConfidence = 2 }));
         Assert.Throws<ArgumentOutOfRangeException>(() => ImageOcr.RecognizeRgba(new byte[400], 10, 10, new OcrOptions { MaxDegreeOfParallelism = 0 }));
         Assert.Throws<ArgumentOutOfRangeException>(() => ImageOcr.Recognize(TestPages.Small.Png, new OcrOptions { Dpi = 0 }));
+        using (var unreadable = new UnreadableStream())
+        {
+            Assert.Throws<ArgumentException>(() => ImageOcr.Recognize(unreadable));
+            Assert.Throws<ArgumentException>(() => PdfOcr.Recognize(unreadable));
+            Assert.Throws<ArgumentException>(() => PdfOcr.MakeSearchable(unreadable, new MemoryStream()));
+        }
+
         Assert.Throws<FileNotFoundException>(() => ImageOcr.RecognizeFile(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".png")));
     }
 
@@ -120,5 +127,10 @@ public sealed class HostileInputTests
         OcrPage page = ImageOcr.RecognizeGray(gray, width, height, new OcrOptions { MinConfidence = 0 });
         Assert.True(watch.Elapsed < Bound, watch.Elapsed.ToString());
         Assert.Equal((width, height), (page.Width, page.Height));
+    }
+
+    private sealed class UnreadableStream : MemoryStream
+    {
+        public override bool CanRead => false;
     }
 }

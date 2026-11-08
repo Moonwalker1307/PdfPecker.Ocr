@@ -33,11 +33,13 @@ public static partial class PdfOcr
     /// <param name="options">Resolution, pages, password, rotation, confidence, threads and limits; null for the defaults.</param>
     /// <param name="cancellationToken">Stops the work.</param>
     /// <exception cref="ArgumentNullException"><paramref name="pdf"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="pdf"/> is not readable.</exception>
     /// <exception cref="IOException">Reading the stream fails.</exception>
     /// <inheritdoc cref="Recognize(byte[], OcrOptions?, CancellationToken)"/>
     public static OcrDocument Recognize(Stream pdf, OcrOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(pdf);
+        if (!pdf.CanRead) throw new ArgumentException("The stream is not readable.", nameof(pdf));
         return Recognize(ReadAll(pdf), options, cancellationToken);
     }
 

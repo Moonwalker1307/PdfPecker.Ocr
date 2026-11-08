@@ -32,11 +32,13 @@ public static partial class ImageOcr
     /// <param name="options">Rotation, confidence, threads and limits; null for the defaults.</param>
     /// <param name="cancellationToken">Stops the work.</param>
     /// <exception cref="ArgumentNullException"><paramref name="image"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="image"/> is not readable.</exception>
     /// <exception cref="IOException">Reading the stream fails.</exception>
     /// <inheritdoc cref="Recognize(byte[], OcrOptions?, CancellationToken)"/>
     public static OcrPage Recognize(Stream image, OcrOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(image);
+        if (!image.CanRead) throw new ArgumentException("The stream is not readable.", nameof(image));
         return Recognize(PdfOcr.ReadAll(image), options, cancellationToken);
     }
 

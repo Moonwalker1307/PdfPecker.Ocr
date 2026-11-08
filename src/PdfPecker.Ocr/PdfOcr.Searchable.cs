@@ -42,13 +42,14 @@ public static partial class PdfOcr
     /// <param name="options">Resolution, pages, password and limits; null for the defaults.</param>
     /// <param name="cancellationToken">Stops the work.</param>
     /// <exception cref="ArgumentNullException"><paramref name="pdf"/> or <paramref name="output"/> is null.</exception>
-    /// <exception cref="ArgumentException"><paramref name="output"/> is not writable.</exception>
+    /// <exception cref="ArgumentException"><paramref name="pdf"/> is not readable, or <paramref name="output"/> is not writable.</exception>
     /// <exception cref="IOException">Reading or writing a stream fails.</exception>
     /// <inheritdoc cref="MakeSearchable(byte[], OcrOptions?, CancellationToken)"/>
     public static void MakeSearchable(Stream pdf, Stream output, OcrOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(pdf);
         ArgumentNullException.ThrowIfNull(output);
+        if (!pdf.CanRead) throw new ArgumentException("The stream is not readable.", nameof(pdf));
         if (!output.CanWrite) throw new ArgumentException("The output stream is not writable.", nameof(output));
         var result = MakeSearchable(ReadAll(pdf), options, cancellationToken);
         output.Write(result);
