@@ -261,15 +261,17 @@ public sealed class KernelTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void SqueezeExciteMatchesNaive(bool addInput)
+    [InlineData(false, 16, 4)]
+    [InlineData(true, 16, 4)]
+    [InlineData(false, 21, 5)]
+    [InlineData(true, 37, 10)]
+    public void SqueezeExciteMatchesNaive(bool addInput, int channels, int hidden)
     {
-        var x = RandomTensor(9, 2, 16, 9, 11);
-        var w1 = Weight([4, 16], 1);
-        var b1 = Weight([4], 2);
-        var w2 = Weight([16, 4], 3);
-        var b2 = Weight([16], 4);
+        var x = RandomTensor(9, 2, channels, 9, 11);
+        var w1 = Weight([hidden, channels], 1);
+        var b1 = Weight([hidden], 2);
+        var w2 = Weight([channels, hidden], 3);
+        var b2 = Weight([channels], 4);
         var graph = new GraphBuilder(4);
         graph.Add(OpKind.SqueezeExcite, [0], [(int)ActivationKind.Relu, (int)ActivationKind.HardSigmoid, addInput ? 1 : 0], [0, 0, 0.2f, 0.5f], w1, b1, w2, b2);
         var expected = TestModels.SqueezeExcite(x, w1.Data, b1.Data, w2.Data, b2.Data, ActivationKind.Relu, ActivationKind.HardSigmoid, 0.2f, 0.5f, addInput);
