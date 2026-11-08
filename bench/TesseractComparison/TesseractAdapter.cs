@@ -7,13 +7,13 @@ namespace TesseractComparison;
 /// Leptonica file reading), and the word iterator for boxes and confidences. The thread count is not an API setting: Tesseract's
 /// OpenMP build takes it from OMP_THREAD_LIMIT, which the parent process sets in the child's environment.
 /// </summary>
-sealed unsafe class TesseractAdapter(string tessdata, string languageMode, string psmMode) : IOcrEngineAdapter
+sealed unsafe class TesseractAdapter(string name, string tessdata, string languageMode, string psmMode) : IOcrEngineAdapter
 {
     IntPtr _api;
     string? _language;
     int _threads;
 
-    public string Name => "tesseract";
+    public string Name => name;
     public bool InProcess => true;
     public bool Managed => false;
 

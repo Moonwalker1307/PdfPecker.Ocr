@@ -29,6 +29,12 @@ static class SelfTest
         Near("bag f1 half", Metrics.BagF1(["a", "b"], ["a", "c"]), 0.5);
         Near("bag f1 counts duplicates", Metrics.BagF1(["a", "a"], ["a"]), 2.0 / 3.0);
 
+        var (bp, br) = Metrics.BagPrecisionRecall(["a", "b", "c", "d"], ["a", "b", "x"]);
+        Near("bag precision", bp, 2.0 / 3.0);
+        Near("bag recall", br, 0.5);
+        Check("sorted words", Metrics.SortedWords(["b", "a", "c"]) == "a b c");
+        Check("sorted words ignore order", Metrics.Distance<char>(Metrics.SortedWords(["left", "column", "right"]), Metrics.SortedWords(["right", "left", "column"])) == 0);
+
         var a = new Box("", 0, 0, 10, 10, 1);
         Near("iou same", Metrics.Iou(a, a), 1);
         Near("iou half", Metrics.Iou(a, new Box("", 5, 0, 10, 10, 1)), 50.0 / 150.0);

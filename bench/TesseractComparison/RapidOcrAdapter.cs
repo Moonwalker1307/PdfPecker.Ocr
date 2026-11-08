@@ -13,11 +13,14 @@ sealed class RapidOcrAdapter(string python, string script) : IOcrEngineAdapter
 {
     Process? _process;
     bool _resetNext;
+    long _rssAfterLoadKb;
 
     public string Name => "rapidocr";
     public bool InProcess => false;
     public bool Managed => false;
     public string Description => "rapidocr 3.10.0 (PP-OCRv6 small models) on ONNX Runtime, defaults of its config.yaml, word boxes on, in a Python child process";
+
+    public long ExternalRssAfterLoadKb => _rssAfterLoadKb;
 
     public void Initialize(int threads)
     {
@@ -34,7 +37,9 @@ sealed class RapidOcrAdapter(string python, string script) : IOcrEngineAdapter
         _process.BeginErrorReadLine();
         Send(Encoding.ASCII.GetBytes($"INIT {threads}\n"));
         string? line = ReadLine();
-        if (line != "READY") throw new InvalidOperationException($"rapidocr did not start: {line}");
+        if (line is null || !line.StartsWith("READY", StringComparison.Ordinal)) throw new InvalidOperationException($"rapidocr did not start: {line}");
+        var ready = line.Split(' ');
+        if (ready.Length > 1) _rssAfterLoadKb = long.Parse(ready[1], CultureInfo.InvariantCulture);
     }
 
     public void Prepare(CorpusPage page) { }
@@ -57,7 +62,7 @@ sealed class RapidOcrAdapter(string python, string script) : IOcrEngineAdapter
         var lines = new List<string>();
         var words = new List<Box>();
         double cpu = 0;
-        long peak = 0;
+        long peak = 0, processPeak = 0;
         while (true)
         {
             string? line = ReadLine() ?? throw new InvalidOperationException("rapidocr ended unexpectedly");
@@ -75,10 +80,11 @@ sealed class RapidOcrAdapter(string python, string script) : IOcrEngineAdapter
                 case "T":
                     cpu = double.Parse(f[2], CultureInfo.InvariantCulture);
                     peak = long.Parse(f[3], CultureInfo.InvariantCulture);
+                    if (f.Length > 4) processPeak = long.Parse(f[4], CultureInfo.InvariantCulture);
                     break;
             }
         }
-        return new OcrResult { Text = string.Join('\n', lines), Words = words, ExternalCpuMs = cpu, ExternalPeakKb = peak };
+        return new OcrResult { Text = string.Join('\n', lines), Words = words, ExternalCpuMs = cpu, ExternalPeakKb = peak, ExternalProcessPeakKb = processPeak };
     }
 
     static (double X, double Y, double W, double H) Bounds(string quad)

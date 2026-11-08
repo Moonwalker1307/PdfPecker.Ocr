@@ -19,6 +19,9 @@ sealed class ChildOptions
     public string[]? Only;
     public string TesseractLib = "";
     public string Tessdata = "";
+
+    /// <summary>The folder with tessdata_best's English model (and the orientation model), for the "tesseract-best" engine.</summary>
+    public string TessdataBest = "";
     public string TessLang = "auto";
     public string TessPsm = "auto";
     public string Python = "python3";
@@ -38,6 +41,7 @@ static class Child
         "engine", "threads", "page", "category", "lang", "dpi", "degradation", "rotation", "width", "height", "channels", "runs",
         "wall_ms_median", "wall_ms_min", "wall_ms_max", "cpu_ms_median", "peak_rss_mb", "alloc_mb",
         "ref_chars", "hyp_chars", "char_edits", "cer", "ref_words", "hyp_words", "word_edits", "wer", "bag_f1",
+        "bag_precision", "bag_recall", "sorted_char_edits", "sorted_cer",
         "gt_boxes", "hyp_boxes", "box_recall_iou50", "box_precision_iou50", "mean_iou", "mean_conf", "error",
     ];
 
@@ -45,9 +49,15 @@ static class Child
     {
         using var engine = Create(o);
         var pages = CorpusPage.Load(o.CorpusDir, o.Only);
+        // tessdata_best is fetched for English only, so that engine reads only the English pages.
+        if (o.Engine == "tesseract-best") pages = pages.Where(p => p.Lang == "en").ToList();
         var init = Stopwatch.StartNew();
         engine.Initialize(o.Threads);
         double initMs = init.Elapsed.TotalMilliseconds;
+        // The peak counter is reset before every page, so the process's own peak is kept here as the maximum of the readings
+        // taken just before each reset and at the end; otherwise the end reading would be the last page's peak only.
+        long processPeakKb = ProcMem.PeakKb();
+        long externalProcessPeakKb = 0;
         bool canReset = ProcMem.ResetPeak();
         var rows = new List<string>();
         int firstPrepareDone = 0;
@@ -68,6 +78,7 @@ static class Child
                 var (pixels, w, h, c) = PngDecoder.Decode(File.ReadAllBytes(page.ImagePath));
                 var format = c == 1 ? PixelFormat.Gray8 : PixelFormat.Rgb24;
                 for (int i = 0; i < o.Warmup; i++) engine.Recognize(pixels, w, h, format);
+                processPeakKb = Math.Max(processPeakKb, ProcMem.PeakKb());
                 if (canReset) ProcMem.ResetPeak();
                 engine.BeginMeasurement();
                 long alloc0 = GC.GetTotalAllocatedBytes(true);
@@ -83,6 +94,7 @@ static class Child
                 }
                 allocBytes = (GC.GetTotalAllocatedBytes(true) - alloc0) / o.Runs;
                 peakKb = last!.ExternalPeakKb ?? ProcMem.PeakKb();
+                externalProcessPeakKb = Math.Max(externalProcessPeakKb, last.ExternalProcessPeakKb ?? 0);
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
@@ -102,8 +114,8 @@ static class Child
         File.WriteAllLines(o.OutFile + ".meta", new[]
         {
             $"engine\t{engine.Name}", $"threads\t{o.Threads}", $"description\t{engine.Description}",
-            $"init_ms\t{initMs:F0}", $"first_prepare_ms\t{firstPrepareMs:F0}", $"rss_after_load_mb\t{(engine.InProcess ? (rssAfterInit / 1024.0).ToString("F0", CultureInfo.InvariantCulture) : "n/a")}",
-            $"process_peak_mb\t{ProcMem.PeakKb() / 1024.0:F0}", $"peak_reset\t{canReset}", $"runs\t{o.Runs}", $"warmup\t{o.Warmup}",
+            $"init_ms\t{initMs:F0}", $"first_prepare_ms\t{firstPrepareMs:F0}", $"rss_after_load_mb\t{((engine.InProcess ? rssAfterInit : engine.ExternalRssAfterLoadKb) / 1024.0).ToString("F0", CultureInfo.InvariantCulture)}",
+            $"process_peak_mb\t{(engine.InProcess ? Math.Max(processPeakKb, ProcMem.PeakKb()) : externalProcessPeakKb) / 1024.0:F0}", $"peak_reset\t{canReset}", $"runs\t{o.Runs}", $"warmup\t{o.Warmup}",
         });
         return 0;
     }
@@ -115,7 +127,11 @@ static class Child
             case "tesseract":
                 if (!File.Exists(o.TesseractLib)) throw new FileNotFoundException($"libtesseract not found at {o.TesseractLib}: run tools/Tesseract/build.sh or pass --lib");
                 TesseractNative.SetLibraryPath(o.TesseractLib);
-                return new TesseractAdapter(o.Tessdata, o.TessLang, o.TessPsm);
+                return new TesseractAdapter("tesseract", o.Tessdata, o.TessLang, o.TessPsm);
+            case "tesseract-best":
+                if (!File.Exists(o.TesseractLib)) throw new FileNotFoundException($"libtesseract not found at {o.TesseractLib}: run tools/Tesseract/build.sh or pass --lib");
+                TesseractNative.SetLibraryPath(o.TesseractLib);
+                return new TesseractAdapter("tesseract-best", o.TessdataBest, "eng", o.TessPsm);
             case "rapidocr":
                 return new RapidOcrAdapter(o.Python, o.RapidScript);
             case "pdfpecker-ocr":
@@ -158,6 +174,11 @@ static class Child
         f.Add(refWords.Length.ToString(CultureInfo.InvariantCulture)); f.Add(hypWords.Length.ToString(CultureInfo.InvariantCulture)); f.Add(wordEdits.ToString(CultureInfo.InvariantCulture));
         f.Add(F(wordEdits / (double)Math.Max(1, refWords.Length)));
         f.Add(F(Metrics.BagF1(refWords, hypWords)));
+        var (bagPrecision, bagRecall) = Metrics.BagPrecisionRecall(refWords, hypWords);
+        f.Add(F(bagPrecision)); f.Add(F(bagRecall));
+        string sortedRef = Metrics.SortedWords(refWords), sortedHyp = Metrics.SortedWords(hypWords);
+        int sortedEdits = Metrics.Distance<char>(sortedRef, sortedHyp);
+        f.Add(sortedEdits.ToString(CultureInfo.InvariantCulture)); f.Add(F(sortedEdits / (double)Math.Max(1, sortedRef.Length)));
         f.Add(page.LoadBoxes().Count.ToString(CultureInfo.InvariantCulture)); f.Add(result.Words.Count.ToString(CultureInfo.InvariantCulture));
         f.Add(F(recall)); f.Add(F(precision)); f.Add(F(meanIou)); f.Add(F(meanConf));
         f.Add(Csv(error));

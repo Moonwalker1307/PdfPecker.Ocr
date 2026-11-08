@@ -6,8 +6,8 @@ using TesseractComparison;
 // Compares OCR engines on the synthetic corpus. Run with Native AOT (dotnet publish -r linux-x64 -c Release) or dotnet run.
 //
 //   TesseractComparison run    [--engines tesseract,rapidocr] [--threads 1,max] [--runs 5] [--warmup 1] [--corpus dir]
-//                              [--out dir] [--lib libtesseract.so] [--tessdata dir] [--tess-lang auto|eng|multi|<codes>]
-//                              [--tess-psm auto|1|3|...] [--python path] [--only id,id] [--title text]
+//                              [--out dir] [--lib libtesseract.so] [--tessdata dir] [--tessdata-best dir] [--tess-lang auto|eng|multi|<codes>]
+//                              [--tess-psm auto|1|3|...] [--python path] [--only id,=exact-id] [--title text]
 //   TesseractComparison report --in dir          (writes results.md again from results.csv)
 //   TesseractComparison selftest                 (checks the metrics and the PNG decoder)
 //   TesseractComparison child ...                (internal: measures one engine at one thread count in this process)
@@ -48,6 +48,7 @@ var childOptions = new ChildOptions
     Only = opts.TryGetValue("only", out var only) ? only.Split(',') : null,
     TesseractLib = Opt("lib", Path.Combine(root, "tools", "Tesseract", "out", "linux-x64", "libtesseract.so")),
     Tessdata = Opt("tessdata", Path.Combine(root, "tools", "Tesseract", "out", "tessdata")),
+    TessdataBest = Opt("tessdata-best", Path.Combine(root, "tools", "Tesseract", "out", "tessdata-best")),
     TessLang = Opt("tess-lang", "auto"),
     TessPsm = Opt("tess-psm", "auto"),
     Python = Opt("python", Environment.GetEnvironmentVariable("PDFPECKER_PYTHON") ?? "python3"),
@@ -76,7 +77,7 @@ int RunAll()
 {
     string outDir = Opt("out", Path.Combine(root, "bench", "TesseractComparison", "results", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)));
     Directory.CreateDirectory(outDir);
-    var engines = Opt("engines", PdfPeckerOcrAdapter.Available ? "tesseract,rapidocr,pdfpecker-ocr" : "tesseract,rapidocr").Split(',');
+    var engines = Opt("engines", PdfPeckerOcrAdapter.Available ? "tesseract,tesseract-best,rapidocr,pdfpecker-ocr" : "tesseract,tesseract-best,rapidocr").Split(',');
     var threadList = Opt("threads", "1,max").Split(',').Select(t => t == "max" ? Environment.ProcessorCount : int.Parse(t, CultureInfo.InvariantCulture)).Distinct().ToArray();
     string self = Environment.ProcessPath ?? throw new InvalidOperationException("no process path");
     bool viaDotnet = Path.GetFileNameWithoutExtension(self) == "dotnet";
@@ -91,7 +92,7 @@ int RunAll()
             Add("engine", engine); Add("threads", threads.ToString(CultureInfo.InvariantCulture)); Add("out", csv);
             Add("dump", Path.Combine(outDir, "hyp", $"{engine}-t{threads}"));
             Add("corpus", childOptions.CorpusDir); Add("runs", childOptions.Runs.ToString(CultureInfo.InvariantCulture)); Add("warmup", childOptions.Warmup.ToString(CultureInfo.InvariantCulture));
-            Add("lib", childOptions.TesseractLib); Add("tessdata", childOptions.Tessdata); Add("tess-lang", childOptions.TessLang); Add("tess-psm", childOptions.TessPsm);
+            Add("lib", childOptions.TesseractLib); Add("tessdata", childOptions.Tessdata); Add("tessdata-best", childOptions.TessdataBest); Add("tess-lang", childOptions.TessLang); Add("tess-psm", childOptions.TessPsm);
             Add("python", childOptions.Python);
             if (childOptions.Only is not null) Add("only", string.Join(',', childOptions.Only));
             // Tesseract's OpenMP runtime reads its thread limit once, at load, so it has to be in the environment of the process.
@@ -120,7 +121,15 @@ int WriteReport(string dir, string title)
         if (File.Exists(csv + ".meta"))
         {
             var m = File.ReadAllLines(csv + ".meta").Select(l => l.Split('\t', 2)).Where(a => a.Length == 2).ToDictionary(a => a[0], a => a[1]);
-            meta[$"{m.GetValueOrDefault("engine")}/{m.GetValueOrDefault("threads")}"] = m;
+            // A configuration can be measured in several children (pages split into parts, as in a run under a time limit):
+            // the first part's start-up figures are kept, and the process peak is the highest of the parts.
+            string key = $"{m.GetValueOrDefault("engine")}/{m.GetValueOrDefault("threads")}";
+            if (meta.TryGetValue(key, out var first))
+            {
+                double Peak(Dictionary<string, string> d) => double.TryParse(d.GetValueOrDefault("process_peak_mb"), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
+                first["process_peak_mb"] = Math.Max(Peak(first), Peak(m)).ToString("0", CultureInfo.InvariantCulture);
+            }
+            else meta[key] = m;
         }
     }
     if (all.Count == 0) { Console.Error.WriteLine("no result rows found"); return 1; }
