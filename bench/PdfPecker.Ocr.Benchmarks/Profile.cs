@@ -83,7 +83,7 @@ static class Profile
             if (shape.Length == 4) _contentSteps += ContentSteps(input, shape);
             long start = Stopwatch.GetTimestamp();
             var plan = context.GetPlan(model, shape);
-            context.EnsureScratch(plan.ScratchPerWorker, plan.SharedScratch);
+            context.EnsureScratch(plan.ScratchPerWorker);
             float* arena = context.Arena(plan.ArenaFloats);
             float[] output = context.OutputBuffer(model, plan.OutputLength, out int offset);
             fixed (float* inputPointer = input)

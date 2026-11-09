@@ -32,7 +32,10 @@ internal abstract class Layer
     /// <summary>Floats of scratch each worker needs for this step.</summary>
     public virtual long ScratchPerWorker(Step step, InferenceContext context) => 0;
 
-    /// <summary>Floats of scratch shared by the workers of this step.</summary>
+    /// <summary>
+    /// Floats of scratch shared by the workers of this step (<see cref="Step.SharedScratch"/>). The plan places it in
+    /// the arena for the duration of the step, so it costs memory only where it is larger than what other steps need.
+    /// </summary>
     public virtual long SharedScratch(Step step) => 0;
 
     /// <summary>Runs the layer for one step of a plan.</summary>

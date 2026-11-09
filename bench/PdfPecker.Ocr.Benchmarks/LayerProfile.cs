@@ -82,7 +82,7 @@ static unsafe class LayerProfile
             foreach (var (input, shape) in net.Inputs)
             {
                 var plan = context.GetPlan(model, shape);
-                context.EnsureScratch(plan.ScratchPerWorker, plan.SharedScratch);
+                context.EnsureScratch(plan.ScratchPerWorker);
                 float* arena = context.Arena(plan.ArenaFloats);
                 float[] output = context.OutputBuffer(model, plan.OutputLength, out int offset);
                 fixed (float* x = input, y = output)

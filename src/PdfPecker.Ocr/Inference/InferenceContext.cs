@@ -5,13 +5,13 @@ namespace PdfPecker.Ocr.Inference;
 
 /// <summary>
 /// The working memory and the threads of one inference worker. A context runs one model at a time: it owns the
-/// activation arena, per-worker scratch buffers, the execution plans, the output buffers and, for a degree of
+/// activation arena (which also holds each step's shared scratch), per-worker scratch buffers, the execution plans, the output buffers and, for a degree of
 /// parallelism above one, that many threads less one (the caller's thread is the first worker), and reuses them across
 /// runs, so a steady stream of runs of similar sizes allocates nothing. It is not thread-safe; give each concurrent
 /// worker its own context, and dispose it to stop its threads. Models are shared.
 /// </summary>
 /// <remarks>
-/// The arena and the shared scratch, the two large buffers, are native memory rather than pinned arrays. When a page
+/// The arena, the large buffer, is native memory rather than a pinned array. When a page
 /// needs a larger arena than the last one, the old one is freed at once and its pages go back to the system; a pinned
 /// array would stay resident until a full garbage collection and then often in the collector's free regions, so a run
 /// of growing pages left several arenas resident. The finalizer frees them if a context is never disposed.
@@ -24,8 +24,6 @@ internal sealed unsafe class InferenceContext : IDisposable
     private float* _arena;
     private long _arenaFloats;
     private float[]?[] _scratch;
-    private float* _shared;
-    private long _sharedFloats;
     private bool _disposed;
 
     /// <summary>Creates a context that uses at most the given number of threads for one run.</summary>
@@ -60,11 +58,7 @@ internal sealed unsafe class InferenceContext : IDisposable
 
     ~InferenceContext() => FreeNative();
 
-    private void FreeNative()
-    {
-        Free(ref _arena, ref _arenaFloats);
-        Free(ref _shared, ref _sharedFloats);
-    }
+    private void FreeNative() => Free(ref _arena, ref _arenaFloats);
 
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -96,18 +90,14 @@ internal sealed unsafe class InferenceContext : IDisposable
         return buffer;
     }
 
-    /// <summary>Makes sure each worker has at least the given scratch, and the shared scratch its size.</summary>
-    internal void EnsureScratch(long perWorker, long shared)
+    /// <summary>Makes sure each worker has at least the given scratch.</summary>
+    internal void EnsureScratch(long perWorker)
     {
         for (int i = 0; i < _scratch.Length; i++) Pointer(ref _scratch[i], perWorker);
-        Native(ref _shared, ref _sharedFloats, shared);
     }
 
     /// <summary>The scratch of one worker, as sized by <see cref="EnsureScratch"/>.</summary>
     internal float* Scratch(int worker) => Aligned(_scratch[worker]!);
-
-    /// <summary>The scratch shared by all workers of one operator, as sized by <see cref="EnsureScratch"/>.</summary>
-    internal float* SharedScratch => _shared;
 
     /// <summary>
     /// Runs body(state, i, worker) for i in [0, count), on up to <see cref="MaxDegreeOfParallelism"/> threads. Each i

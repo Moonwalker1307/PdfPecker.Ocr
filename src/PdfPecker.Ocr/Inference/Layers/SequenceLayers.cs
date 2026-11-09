@@ -162,7 +162,7 @@ internal sealed unsafe class LinearLayer : Layer
     public override void Execute(Step step, InferenceContext context)
     {
         int rows = Rows.Count(step.OutputShape);
-        _gemm.PackARows(step.Input(0), _k, rows, _k, context.SharedScratch);
+        _gemm.PackARows(step.Input(0), _k, rows, _k, step.SharedScratch);
         step.Tiling ??= Tiling.For(1, _n, TileColumns(), rows, _gemm.MR);
         context.For(step.Tiling.Count, step, &Tile);
     }
@@ -177,7 +177,7 @@ internal sealed unsafe class LinearLayer : Layer
         long offset = (long)m0 * n + n0;
         var epilogue = new Epilogue(layer._activation, layer._alpha, layer._beta, layer._hasResidual ? step.Input(1) + offset : null);
         fixed (float* weights = layer._weights, bias = layer._bias)
-            layer._gemm.Multiply(k, step.Context.SharedScratch + (long)m0 * k, rows, weights + (long)n0 * k, columns, step.Output + offset, n, null, bias + n0, epilogue);
+            layer._gemm.Multiply(k, step.SharedScratch + (long)m0 * k, rows, weights + (long)n0 * k, columns, step.Output + offset, n, null, bias + n0, epilogue);
     }
 }
 
@@ -373,9 +373,9 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
     {
         int rows = Rows.Count(step.OutputShape);
         var gemm = _linear.Gemm;
-        gemm.PackARows(step.Input(0), _linear.InputFeatures, rows, _linear.InputFeatures, context.SharedScratch);
+        gemm.PackARows(step.Input(0), _linear.InputFeatures, rows, _linear.InputFeatures, step.SharedScratch);
         var chunk = step.State as Chunk ?? (Chunk)(step.State = new Chunk(step));
-        chunk.Logits = context.SharedScratch + PackedSize(rows);
+        chunk.Logits = step.SharedScratch + PackedSize(rows);
         for (int m0 = 0; m0 < rows; m0 += ChunkRows)
         {
             chunk.First = m0;
@@ -394,7 +394,7 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         var linear = layer._linear;
         int k = linear.InputFeatures;
         chunk.Tiling!.Decode(tile, out _, out int n0, out int columns, out int m0, out int rows);
-        float* a = chunk.Step.Context.SharedScratch + (long)(chunk.First + m0) * k;
+        float* a = chunk.Step.SharedScratch + (long)(chunk.First + m0) * k;
         fixed (float* weights = linear.PackedWeights, bias = linear.PaddedBias)
             linear.Gemm.Multiply(k, a, rows, weights + (long)n0 * k, columns, chunk.Logits + (long)m0 * layer._stride + n0, layer._stride, null, bias + n0);
     }
