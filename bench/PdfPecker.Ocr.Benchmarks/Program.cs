@@ -21,6 +21,9 @@ using OcrBench;
 //                                                   corpus pages with every network layer timed (Profile.cs)
 //        dotnet run -c Release -p:OcrInternals=true -- layers [--threads n] [--runs n] [--top n]
 //                                                   each network's time on that page layer by layer
+//        dotnet run -c Release -- fingerprint [--corpus dir] [--threads n] [--only id,=id]
+//                                                   a hash of every page's lines, words, quads and confidences, to show
+//                                                   that two versions give identical output
 //        dotnet run -c Release -p:OcrInternals=true -- int8-pairs [--threads n] [--runs n]
 //                                                   the float and the experimental 8-bit networks on that page, in turns
 //                                                   in one process
@@ -62,6 +65,13 @@ if (args.Length > 0 && args[0] == "stages")
     Console.Error.WriteLine("The stages command needs a build with -p:OcrInternals=true.");
     return 2;
 #endif
+}
+
+if (args.Length > 0 && args[0] == "fingerprint")
+{
+    int ft = int.TryParse(ArgValue("--threads"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var t3) ? t3 : Environment.ProcessorCount;
+    Fingerprint.Run(ArgValue("--corpus") ?? "bench/TesseractComparison/corpus", ArgValue("--only")?.Split(','), ft);
+    return 0;
 }
 
 if (args.Length > 0 && args[0] == "int8-pairs")
