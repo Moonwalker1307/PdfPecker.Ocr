@@ -9,6 +9,12 @@ internal readonly record struct RenderedPage(PagePixels Pixels, float Dpi);
 internal static class PageRaster
 {
     /// <summary>
+    /// The most pixels PdfPecker can hand a page over in: its RGBA bytes, four per pixel, must fit in one array. Above
+    /// it the renderer's int arithmetic overflows, so a page that would be larger fails with PdfLimitException first.
+    /// </summary>
+    public static long MaxRenderPixels => Array.MaxLength / 4;
+
+    /// <summary>
     /// The resolution at which a page of <paramref name="widthPt"/> × <paramref name="heightPt"/> points has at most
     /// <paramref name="maxPixels"/> pixels: <paramref name="dpi"/> itself when it fits.
     /// </summary>
@@ -37,10 +43,15 @@ internal static class PageRaster
 
     /// <summary>Renders a page at <paramref name="dpi"/>, or lower when it would have more than <paramref name="maxPixels"/> pixels.</summary>
     /// <exception cref="InvalidDataException">The page cannot be rendered.</exception>
+    /// <exception cref="PdfLimitException">The page needs more than <see cref="MaxRenderPixels"/> pixels at the resolution chosen.</exception>
     public static RenderedPage Render(PdfRenderer renderer, int pageIndex, float dpi, long maxPixels, CancellationToken cancellationToken)
     {
         var (w, h) = renderer.GetPageSize(pageIndex);
         float fit = FitDpi(w, h, dpi, maxPixels);
+        // MaxPixels has no upper bound of its own, and FitDpi gives up on pages it cannot bring within the budget.
+        long pixels = PixelCount(w, h, fit);
+        if (pixels > MaxRenderPixels)
+            throw new PdfLimitException(FormattableString.Invariant($"A page of {pixels} pixels at {fit} dpi needs more than 2 GB of pixels."));
         var options = new ImageOptions
         {
             Dpi = fit,

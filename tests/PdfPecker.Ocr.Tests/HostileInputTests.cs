@@ -509,6 +509,20 @@ public sealed class HostileInputTests
         Documented(mediaBox + ", searchable", ct => PdfOcr.MakeSearchable(pdf, new OcrOptions { MaxPixels = 4_000_000, PageMode = OcrPageMode.Force }, ct), [.. PdfFailures, typeof(InvalidOperationException)]);
     }
 
+    /// <summary>
+    /// A MaxPixels above what PdfPecker's renderer can hand over (2 GB of RGBA) on a page that needs it: the page must be
+    /// refused with PdfLimitException before rendering, not end in an OverflowException inside the renderer.
+    /// </summary>
+    [Fact]
+    public void PagesAboveTheRenderersLimitAreRefused()
+    {
+        // 200 by 200 inches at 150 dpi: 900 million pixels, brought down to 700 million by MaxPixels.
+        byte[] pdf = ManyPages(1, "0 0 14400 14400", "0 g 10 10 50 5 re f");
+        var options = new OcrOptions { MaxPixels = 700_000_000, Dpi = 150, PageMode = OcrPageMode.Force };
+        Assert.Throws<PdfLimitException>(() => Bounded(ct => PdfOcr.Recognize(pdf, options, ct), Quick));
+        Assert.Throws<PdfLimitException>(() => Bounded(ct => PdfOcr.MakeSearchable(pdf, options, ct), Quick));
+    }
+
     [Fact]
     public void HugePageAtTheDefaultLimitFinishes()
     {

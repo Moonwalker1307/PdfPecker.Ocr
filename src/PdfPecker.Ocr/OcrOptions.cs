@@ -53,7 +53,9 @@ public sealed class OcrOptions
     /// The most pixels a page is read at, which bounds the memory and time one page can take. A PDF page that would have
     /// more at <see cref="Dpi"/>, or an image that has more, is read at the highest resolution that stays within the
     /// limit, and its <see cref="OcrPage.Width"/>, <see cref="OcrPage.Height"/> and <see cref="OcrPage.Dpi"/> say so.
-    /// Must be at least 10,000. Default: 100,000,000 (a page of 84 by 119 cm at 300 dpi).
+    /// Must be at least 10,000. Default: 100,000,000 (a page of 84 by 119 cm at 300 dpi). A page is never rendered with
+    /// more than about 536 million pixels, 2 GB of RGBA, whatever the limit: a page that would need more within it fails
+    /// with <see cref="PdfLimitException"/>.
     /// </summary>
     public long MaxPixels { get; set; } = 100_000_000;
 

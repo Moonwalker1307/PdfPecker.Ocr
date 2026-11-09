@@ -65,7 +65,7 @@ internal static class ImageDecoder
         // the image pixel itself, so those centres give the image back unchanged.
         // The header's size is only a claim: PdfPecker decodes a BMP that wraps a PNG or JPEG, or a WebP frame, at the
         // size of the data, so the path is taken only when the page the renderer has is the one the header gives.
-        if (w > 0 && h > 0 && (w < MinPagePixels || h < MinPagePixels) && 16L * Math.Max(w, MinPagePixels) * Math.Max(h, MinPagePixels) <= maxPixels
+        if (w > 0 && h > 0 && (w < MinPagePixels || h < MinPagePixels) && 16L * Math.Max(w, MinPagePixels) * Math.Max(h, MinPagePixels) <= Math.Min(maxPixels, PageRaster.MaxRenderPixels)
             && PageMatches(renderer.GetPageSize(pageIndex), w, h))
             return new DecodedImage(SmallImage(renderer, pageIndex, w, h, cancellationToken), imageDpi);
         var page = PageRaster.Render(renderer, pageIndex, NativeDpi, maxPixels, cancellationToken);

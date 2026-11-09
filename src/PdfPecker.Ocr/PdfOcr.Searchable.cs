@@ -30,7 +30,9 @@ public static partial class PdfOcr
     /// <exception cref="InvalidDataException">The PDF is not readable, or a page cannot be rendered.</exception>
     /// <exception cref="InvalidOperationException">The PDF is digitally signed: adding text would break the signature.</exception>
     /// <exception cref="NotSupportedException">The PDF uses an encryption handler other than the standard one.</exception>
-    /// <exception cref="PdfLimitException">The PDF is larger than PdfPecker can rewrite.</exception>
+    /// <exception cref="PdfLimitException">
+    /// The PDF is larger than PdfPecker can rewrite, or a page needs more than 2 GB of pixels at the resolution it is read at.
+    /// </exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public static byte[] MakeSearchable(byte[] pdf, OcrOptions? options = null, CancellationToken cancellationToken = default)
         => SearchablePdf.MakeSearchable(pdf, options, PageRecognizer.Default, cancellationToken);
