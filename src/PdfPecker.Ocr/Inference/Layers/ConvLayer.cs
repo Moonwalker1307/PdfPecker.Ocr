@@ -201,11 +201,17 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     private const int ProductOffset = 16;
 
     /// <summary>
-    /// The fewest columns of a run worth leaving out: a gap splits a panel in two, whose pieces are copied, which costs
-    /// about as much per output channel as two thousand multiply-adds, while a skipped column saves k of them. The
-    /// stem's convolution of the three colour planes (k = 27) is cheaper to compute in full.
+    /// Whether the layer leaves out the columns of runs (<see cref="GatheredTile"/>): only with at least 32 values per
+    /// output, since the stem's convolution of the three colour planes (k = 27) is cheaper to compute in full.
     /// </summary>
-    private int MinimumGap => _k < 32 ? int.MaxValue : Math.Max(2, (2048 + _k - 1) / _k);
+    private bool Gathers => _k >= 32;
+
+    /// <summary>
+    /// The fewest columns of a run worth leaving out, for a layer that <see cref="Gathers"/>: a gap splits a panel in
+    /// two, whose pieces are copied, which costs about as much per output channel as two thousand multiply-adds, while
+    /// a skipped column saves k of them.
+    /// </summary>
+    private int MinimumGap => Math.Max(2, (2048 + _k - 1) / _k);
 
     // The output may take the residual's memory: each tile reads the residual only where it writes, and copies that
     // part to its scratch before writing, so a residual block, the largest value of the block, needs no memory of its own.
@@ -231,7 +237,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     private int WidestTile(int[] x, int[] output)
     {
         int plain = StepTileColumns(x, output);
-        return MinimumGap == int.MaxValue ? plain : Math.Max(plain, TileColumns(output[2] * output[3]));
+        return !Gathers ? plain : Math.Max(plain, TileColumns(output[2] * output[3]));
     }
 
     /// <summary>
@@ -254,7 +260,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
             work = Sw == 1 ? panel : panel + (long)SplitRows * 2 * HalfStride(ow);
         }
 
-        if (MinimumGap != int.MaxValue) work = Math.Max(work, _gemm.PackedBSize(_k, TileColumns(columns)) + ProductOffset + ((long)_gemm.MR * _gemm.NR));
+        if (Gathers) work = Math.Max(work, _gemm.PackedBSize(_k, TileColumns(columns)) + ProductOffset + ((long)_gemm.MR * _gemm.NR));
         return work;
     }
 
@@ -303,7 +309,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     {
         int ow = step.OutputShape[3];
         int columns = step.OutputShape[2] * ow;
-        if (step.OutputRuns.Any(3, MinimumGap + 1))
+        if (Gathers && step.OutputRuns.Any(3, MinimumGap + 1))
         {
             // Only the columns outside the runs and the first of each run are computed; the fill copies that one over
             // the rest of its run in every row.
