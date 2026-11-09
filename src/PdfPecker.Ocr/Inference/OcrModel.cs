@@ -150,6 +150,26 @@ internal sealed unsafe class OcrModel
     }
 
     /// <summary>
+    /// A block of the context's arena that a run of this model on <paramref name="shape"/> keeps for its input, for the
+    /// caller to build the input in and pass to <see cref="Run(ReadOnlySpan{float}, ReadOnlySpan{int}, InferenceContext, out int[])"/>,
+    /// which then reads it where it is. It saves the caller a buffer as large as the input (20 MB for a colour page at the
+    /// detector's default size) on top of the arena, which already has room for it. The block is valid until the context
+    /// runs a model again, and its contents are undefined until written.
+    /// </summary>
+    /// <param name="shape">The shape of the input the next run will read.</param>
+    /// <param name="context">The context of that run.</param>
+    public Span<float> InputBuffer(ReadOnlySpan<int> shape, InferenceContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.ThrowIfDisposed();
+        CheckInputShape(shape);
+        var plan = context.GetPlan(this, shape);
+        // Allocating the arena now means the run that follows, with the same plan, keeps it rather than growing it.
+        float* arena = context.Arena(plan.ArenaFloats);
+        return new Span<float>(arena + plan.InputOffset, Tensor.ElementCount(shape));
+    }
+
+    /// <summary>
     /// Runs the model on values the caller holds in a span, without copying them, and returns the output in the
     /// context's buffer for this model: it stays valid until the context runs this model again. This is the pipeline's
     /// path (see <see cref="ModelNetwork"/>), which saves a copy of each input and output and the tensor objects.
