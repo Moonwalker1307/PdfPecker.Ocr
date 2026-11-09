@@ -44,6 +44,36 @@ public sealed class OutputFileTests
     }
 
     [Fact]
+    public void ReplacedFilesKeepTheirModeAndLinks()
+    {
+        // Writing a private file in place must not make it readable by others, and a symbolic link must stay a link to
+        // the file it names, which gets the new bytes.
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Directory.CreateTempSubdirectory("ocr-output-");
+        try
+        {
+            var path = Path.Combine(dir.FullName, "secret.pdf");
+            File.WriteAllBytes(path, new byte[] { 1 });
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            OutputFile.WriteAllBytes(path, new byte[] { 2 });
+            Assert.Equal(new byte[] { 2 }, File.ReadAllBytes(path));
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+
+            var link = Path.Combine(dir.FullName, "link.pdf");
+            File.CreateSymbolicLink(link, path);
+            OutputFile.WriteAllBytes(link, new byte[] { 3 });
+            Assert.NotNull(new FileInfo(link).LinkTarget);
+            Assert.Equal(new byte[] { 3 }, File.ReadAllBytes(path));
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+            Assert.Equal(2, Directory.GetFiles(dir.FullName).Length);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void StreamsAreReadFromTheirPosition()
     {
         var ms = new MemoryStream(new byte[] { 1, 2, 3, 4 }) { Position = 1 };

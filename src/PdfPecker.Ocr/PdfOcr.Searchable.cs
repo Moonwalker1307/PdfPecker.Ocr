@@ -61,6 +61,7 @@ public static partial class PdfOcr
     /// <summary>
     /// Makes a scanned PDF file searchable and writes the result to <paramref name="outputPath"/>, which may be the same
     /// path. The output file appears only once it is complete, so a failure leaves any earlier file at that path as it was.
+    /// A file it replaces keeps its Unix permissions, and a symbolic link at the output path is followed.
     /// </summary>
     /// <param name="inputPath">The PDF file.</param>
     /// <param name="outputPath">The searchable PDF file to write.</param>
