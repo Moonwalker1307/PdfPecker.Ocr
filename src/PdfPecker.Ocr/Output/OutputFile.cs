@@ -10,7 +10,9 @@ internal static class OutputFile
     public static void WriteAllBytes(string path, byte[] bytes)
     {
         var full = Path.GetFullPath(path);
-        var temp = Path.Combine(Path.GetDirectoryName(full) ?? ".", "." + Path.GetFileName(full) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+        // The temporary name does not embed the target's, which would add to it and could pass the 255-character limit
+        // on a name that is itself valid.
+        var temp = Path.Combine(Path.GetDirectoryName(full) ?? ".", "." + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
             File.WriteAllBytes(temp, bytes);
@@ -18,8 +20,15 @@ internal static class OutputFile
         }
         catch
         {
-            // File.Exists never throws, so the original failure is the one the caller sees.
-            if (File.Exists(temp)) File.Delete(temp);
+            try
+            {
+                File.Delete(temp);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The original failure is the one the caller sees.
+            }
+
             throw;
         }
     }
