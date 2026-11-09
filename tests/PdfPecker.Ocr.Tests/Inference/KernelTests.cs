@@ -99,6 +99,37 @@ public sealed class KernelTests
         AssertClose(expected, result.Span, Tolerance, name);
     }
 
+    [Theory]
+    [MemberData(nameof(Kernels))]
+    public void ConvolutionPanelsReadInPlaceEqualPackedOnes(string kernel)
+    {
+        // The same input once more with a column in front: the output columns move by one, so the panels fall on
+        // other pixels, and pixels whose panel was read from the input in place in one run are packed in the other
+        // (at row ends and across rows). Without padding both runs sum the same values in the same order, so every
+        // output must match to the bit, after an activation too; 26 output channels leave a partial block of rows.
+        foreach (var (kh, kw, dh, dw) in new[] { (3, 3, 1, 1), (2, 2, 1, 1), (1, 7, 1, 1), (3, 3, 2, 2) })
+        {
+            int cin = 6, cout = 26, h = 11, w = 150;
+            var wide = RandomTensor(kh * 31 + kw, 2, cin, h, w + 1);
+            var narrow = new Tensor([2, cin, h, w]);
+            for (int row = 0; row < 2 * cin * h; row++) wide.Span.Slice(row * (w + 1) + 1, w).CopyTo(narrow.Span.Slice(row * w, w));
+            var graph = new GraphBuilder(4);
+            graph.Add(OpKind.Conv, [0], ConvInts(kh, kw, dh: dh, dw: dw, act: ActivationKind.Gelu), [0, 0], Weight([cout, cin, kh, kw], cout + kh), Weight([cout], cout + 5));
+            var a = graph.Run(wide, Kernel(kernel));
+            var b = graph.Run(narrow, Kernel(kernel));
+            int oh = b.Shape[2], ow = b.Shape[3];
+            Assert.Equal(ow + 1, a.Shape[3]);
+            for (int row = 0; row < 2 * cout * oh; row++)
+            {
+                for (int x = 0; x < ow; x++)
+                {
+                    float expected = a.Span[row * (ow + 1) + x + 1], actual = b.Span[row * ow + x];
+                    Assert.True(BitConverter.SingleToUInt32Bits(expected) == BitConverter.SingleToUInt32Bits(actual), $"{kh}x{kw} row {row}, column {x}: {actual} against {expected}");
+                }
+            }
+        }
+    }
+
     public static TheoryData<string> DepthwiseCases => new()
     {
         "3x3", "3x3-stride2", "3x3-stride2x1", "5x5", "7x7", "1x7", "7x1-stride2", "3x3-asymmetric", "5x5-stride2-odd", "wide", "wide-stride2",

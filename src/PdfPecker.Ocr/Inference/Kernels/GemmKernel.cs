@@ -20,24 +20,26 @@ namespace PdfPecker.Ocr.Inference.Kernels;
 internal sealed unsafe class GemmKernel
 {
     private readonly delegate*<int, float*, float*, float*, nint, float*, float*, void> _kernel;
+    private readonly delegate*<int, float*, float*, int*, float*, nint, float*, void> _direct;
 
-    private GemmKernel(string name, int mr, int nr, delegate*<int, float*, float*, float*, nint, float*, float*, void> kernel, bool isSupported)
+    private GemmKernel(string name, int mr, int nr, delegate*<int, float*, float*, float*, nint, float*, float*, void> kernel, delegate*<int, float*, float*, int*, float*, nint, float*, void> direct, bool isSupported)
     {
         Name = name;
         MR = mr;
         NR = nr;
         _kernel = kernel;
+        _direct = direct;
         IsSupported = isSupported;
     }
 
     /// <summary>12 x 32 with AVX-512.</summary>
-    public static GemmKernel Avx512 { get; } = new("avx512", 12, 32, &Kernel12x32Avx512, Avx512F.IsSupported);
+    public static GemmKernel Avx512 { get; } = new("avx512", 12, 32, &Kernel12x32Avx512, &Direct12x32Avx512, Avx512F.IsSupported);
 
     /// <summary>6 x 16 with AVX2 and FMA.</summary>
-    public static GemmKernel Avx2 { get; } = new("avx2", 6, 16, &Kernel6x16Avx2, Avx.IsSupported && Fma.IsSupported);
+    public static GemmKernel Avx2 { get; } = new("avx2", 6, 16, &Kernel6x16Avx2, &Direct6x16Avx2, Avx.IsSupported && Fma.IsSupported);
 
     /// <summary>6 x 8 with Vector128, which every platform runs (in software where it has no SIMD).</summary>
-    public static GemmKernel Portable { get; } = new("portable", 6, 8, &Kernel6x8Vector128, true);
+    public static GemmKernel Portable { get; } = new("portable", 6, 8, &Kernel6x8Vector128, &Direct6x8Vector128, true);
 
     /// <summary>The fastest kernel the processor supports.</summary>
     public static GemmKernel Best { get; } = Avx512.IsSupported ? Avx512 : Avx2.IsSupported ? Avx2 : Portable;
@@ -198,6 +200,36 @@ internal sealed unsafe class GemmKernel
                 }
             }
             if (hasEpilogue) epilogue.Apply(c + i * ldc, ldc, i, h, cols);
+        }
+    }
+
+    /// <summary>
+    /// C[rows x NR] = A x B + rowBias for one panel of B that is read where it lies instead of packed: step kk of k
+    /// reads the NR values at b + offsets[kk], such as one tap's run of an input row. The sums are the ones
+    /// <see cref="Multiply"/> computes from the same values packed, in the same order. There is no epilogue: callers
+    /// apply it to a whole tile. A partial block of rows goes through edge, MR x NR floats the caller provides, so that
+    /// a call per panel does not clear a buffer of its own on the stack.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public void MultiplyDirect(int k, float* aPanels, int rows, float* b, int* offsets, float* c, nint ldc, float* rowBias, float* edge)
+    {
+        int mr = MR, nr = NR;
+        var kernel = _direct;
+        for (int i = 0; i < rows; i += mr)
+        {
+            int h = Math.Min(mr, rows - i);
+            float* ap = aPanels + (nint)i * k;
+            float* rb = rowBias == null ? null : rowBias + i;
+            if (h == mr)
+            {
+                kernel(k, ap, b, offsets, c + i * ldc, ldc, rb);
+            }
+            else
+            {
+                kernel(k, ap, b, offsets, edge, nr, rb);
+                for (int r = 0; r < h; r++)
+                    Unsafe.CopyBlockUnaligned(c + (i + r) * ldc, edge + r * nr, (uint)(nr * sizeof(float)));
+            }
         }
     }
 
@@ -544,7 +576,284 @@ internal sealed unsafe class GemmKernel
         Vector128.Store(c4_1, c + 4 * ldc + 4);
         Vector128.Store(c5_0, c + 5 * ldc);
         Vector128.Store(c5_1, c + 5 * ldc + 4);
-    }}
+    }
+
+    /// <summary>Kernel12x32Avx512 with B read in place: step kk of k reads the 32 values at b + offsets[kk].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Direct12x32Avx512(int k, float* a, float* b, int* offsets, float* c, nint ldc, float* rowBias)
+    {
+        Vector512<float> c0_0, c0_1, c1_0, c1_1, c2_0, c2_1, c3_0, c3_1, c4_0, c4_1, c5_0, c5_1, c6_0, c6_1, c7_0, c7_1, c8_0, c8_1, c9_0, c9_1, c10_0, c10_1, c11_0, c11_1;
+        if (rowBias != null)
+        {
+            c0_0 = Vector512.Create(rowBias[0]);
+            c0_1 = c0_0;
+            c1_0 = Vector512.Create(rowBias[1]);
+            c1_1 = c1_0;
+            c2_0 = Vector512.Create(rowBias[2]);
+            c2_1 = c2_0;
+            c3_0 = Vector512.Create(rowBias[3]);
+            c3_1 = c3_0;
+            c4_0 = Vector512.Create(rowBias[4]);
+            c4_1 = c4_0;
+            c5_0 = Vector512.Create(rowBias[5]);
+            c5_1 = c5_0;
+            c6_0 = Vector512.Create(rowBias[6]);
+            c6_1 = c6_0;
+            c7_0 = Vector512.Create(rowBias[7]);
+            c7_1 = c7_0;
+            c8_0 = Vector512.Create(rowBias[8]);
+            c8_1 = c8_0;
+            c9_0 = Vector512.Create(rowBias[9]);
+            c9_1 = c9_0;
+            c10_0 = Vector512.Create(rowBias[10]);
+            c10_1 = c10_0;
+            c11_0 = Vector512.Create(rowBias[11]);
+            c11_1 = c11_0;
+        }
+        else
+        {
+            c0_0 = Vector512<float>.Zero;
+            c0_1 = Vector512<float>.Zero;
+            c1_0 = Vector512<float>.Zero;
+            c1_1 = Vector512<float>.Zero;
+            c2_0 = Vector512<float>.Zero;
+            c2_1 = Vector512<float>.Zero;
+            c3_0 = Vector512<float>.Zero;
+            c3_1 = Vector512<float>.Zero;
+            c4_0 = Vector512<float>.Zero;
+            c4_1 = Vector512<float>.Zero;
+            c5_0 = Vector512<float>.Zero;
+            c5_1 = Vector512<float>.Zero;
+            c6_0 = Vector512<float>.Zero;
+            c6_1 = Vector512<float>.Zero;
+            c7_0 = Vector512<float>.Zero;
+            c7_1 = Vector512<float>.Zero;
+            c8_0 = Vector512<float>.Zero;
+            c8_1 = Vector512<float>.Zero;
+            c9_0 = Vector512<float>.Zero;
+            c9_1 = Vector512<float>.Zero;
+            c10_0 = Vector512<float>.Zero;
+            c10_1 = Vector512<float>.Zero;
+            c11_0 = Vector512<float>.Zero;
+            c11_1 = Vector512<float>.Zero;
+        }
+        for (int kk = 0; kk < k; kk++)
+        {
+            float* bk = b + offsets[kk];
+            var b0 = Vector512.Load(bk);
+            var b1 = Vector512.Load(bk + 16);
+            var a0 = Vector512.Create(a[0]);
+            c0_0 = Avx512F.FusedMultiplyAdd(a0, b0, c0_0);
+            c0_1 = Avx512F.FusedMultiplyAdd(a0, b1, c0_1);
+            var a1 = Vector512.Create(a[1]);
+            c1_0 = Avx512F.FusedMultiplyAdd(a1, b0, c1_0);
+            c1_1 = Avx512F.FusedMultiplyAdd(a1, b1, c1_1);
+            var a2 = Vector512.Create(a[2]);
+            c2_0 = Avx512F.FusedMultiplyAdd(a2, b0, c2_0);
+            c2_1 = Avx512F.FusedMultiplyAdd(a2, b1, c2_1);
+            var a3 = Vector512.Create(a[3]);
+            c3_0 = Avx512F.FusedMultiplyAdd(a3, b0, c3_0);
+            c3_1 = Avx512F.FusedMultiplyAdd(a3, b1, c3_1);
+            var a4 = Vector512.Create(a[4]);
+            c4_0 = Avx512F.FusedMultiplyAdd(a4, b0, c4_0);
+            c4_1 = Avx512F.FusedMultiplyAdd(a4, b1, c4_1);
+            var a5 = Vector512.Create(a[5]);
+            c5_0 = Avx512F.FusedMultiplyAdd(a5, b0, c5_0);
+            c5_1 = Avx512F.FusedMultiplyAdd(a5, b1, c5_1);
+            var a6 = Vector512.Create(a[6]);
+            c6_0 = Avx512F.FusedMultiplyAdd(a6, b0, c6_0);
+            c6_1 = Avx512F.FusedMultiplyAdd(a6, b1, c6_1);
+            var a7 = Vector512.Create(a[7]);
+            c7_0 = Avx512F.FusedMultiplyAdd(a7, b0, c7_0);
+            c7_1 = Avx512F.FusedMultiplyAdd(a7, b1, c7_1);
+            var a8 = Vector512.Create(a[8]);
+            c8_0 = Avx512F.FusedMultiplyAdd(a8, b0, c8_0);
+            c8_1 = Avx512F.FusedMultiplyAdd(a8, b1, c8_1);
+            var a9 = Vector512.Create(a[9]);
+            c9_0 = Avx512F.FusedMultiplyAdd(a9, b0, c9_0);
+            c9_1 = Avx512F.FusedMultiplyAdd(a9, b1, c9_1);
+            var a10 = Vector512.Create(a[10]);
+            c10_0 = Avx512F.FusedMultiplyAdd(a10, b0, c10_0);
+            c10_1 = Avx512F.FusedMultiplyAdd(a10, b1, c10_1);
+            var a11 = Vector512.Create(a[11]);
+            c11_0 = Avx512F.FusedMultiplyAdd(a11, b0, c11_0);
+            c11_1 = Avx512F.FusedMultiplyAdd(a11, b1, c11_1);
+            a += 12;
+        }
+        Vector512.Store(c0_0, c);
+        Vector512.Store(c0_1, c + 16);
+        Vector512.Store(c1_0, c + ldc);
+        Vector512.Store(c1_1, c + ldc + 16);
+        Vector512.Store(c2_0, c + 2 * ldc);
+        Vector512.Store(c2_1, c + 2 * ldc + 16);
+        Vector512.Store(c3_0, c + 3 * ldc);
+        Vector512.Store(c3_1, c + 3 * ldc + 16);
+        Vector512.Store(c4_0, c + 4 * ldc);
+        Vector512.Store(c4_1, c + 4 * ldc + 16);
+        Vector512.Store(c5_0, c + 5 * ldc);
+        Vector512.Store(c5_1, c + 5 * ldc + 16);
+        Vector512.Store(c6_0, c + 6 * ldc);
+        Vector512.Store(c6_1, c + 6 * ldc + 16);
+        Vector512.Store(c7_0, c + 7 * ldc);
+        Vector512.Store(c7_1, c + 7 * ldc + 16);
+        Vector512.Store(c8_0, c + 8 * ldc);
+        Vector512.Store(c8_1, c + 8 * ldc + 16);
+        Vector512.Store(c9_0, c + 9 * ldc);
+        Vector512.Store(c9_1, c + 9 * ldc + 16);
+        Vector512.Store(c10_0, c + 10 * ldc);
+        Vector512.Store(c10_1, c + 10 * ldc + 16);
+        Vector512.Store(c11_0, c + 11 * ldc);
+        Vector512.Store(c11_1, c + 11 * ldc + 16);
+    }
+
+    /// <summary>Kernel6x16Avx2 with B read in place: step kk of k reads the 16 values at b + offsets[kk].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Direct6x16Avx2(int k, float* a, float* b, int* offsets, float* c, nint ldc, float* rowBias)
+    {
+        Vector256<float> c0_0, c0_1, c1_0, c1_1, c2_0, c2_1, c3_0, c3_1, c4_0, c4_1, c5_0, c5_1;
+        if (rowBias != null)
+        {
+            c0_0 = Vector256.Create(rowBias[0]);
+            c0_1 = c0_0;
+            c1_0 = Vector256.Create(rowBias[1]);
+            c1_1 = c1_0;
+            c2_0 = Vector256.Create(rowBias[2]);
+            c2_1 = c2_0;
+            c3_0 = Vector256.Create(rowBias[3]);
+            c3_1 = c3_0;
+            c4_0 = Vector256.Create(rowBias[4]);
+            c4_1 = c4_0;
+            c5_0 = Vector256.Create(rowBias[5]);
+            c5_1 = c5_0;
+        }
+        else
+        {
+            c0_0 = Vector256<float>.Zero;
+            c0_1 = Vector256<float>.Zero;
+            c1_0 = Vector256<float>.Zero;
+            c1_1 = Vector256<float>.Zero;
+            c2_0 = Vector256<float>.Zero;
+            c2_1 = Vector256<float>.Zero;
+            c3_0 = Vector256<float>.Zero;
+            c3_1 = Vector256<float>.Zero;
+            c4_0 = Vector256<float>.Zero;
+            c4_1 = Vector256<float>.Zero;
+            c5_0 = Vector256<float>.Zero;
+            c5_1 = Vector256<float>.Zero;
+        }
+        for (int kk = 0; kk < k; kk++)
+        {
+            float* bk = b + offsets[kk];
+            var b0 = Vector256.Load(bk);
+            var b1 = Vector256.Load(bk + 8);
+            var a0 = Vector256.Create(a[0]);
+            c0_0 = Fma.MultiplyAdd(a0, b0, c0_0);
+            c0_1 = Fma.MultiplyAdd(a0, b1, c0_1);
+            var a1 = Vector256.Create(a[1]);
+            c1_0 = Fma.MultiplyAdd(a1, b0, c1_0);
+            c1_1 = Fma.MultiplyAdd(a1, b1, c1_1);
+            var a2 = Vector256.Create(a[2]);
+            c2_0 = Fma.MultiplyAdd(a2, b0, c2_0);
+            c2_1 = Fma.MultiplyAdd(a2, b1, c2_1);
+            var a3 = Vector256.Create(a[3]);
+            c3_0 = Fma.MultiplyAdd(a3, b0, c3_0);
+            c3_1 = Fma.MultiplyAdd(a3, b1, c3_1);
+            var a4 = Vector256.Create(a[4]);
+            c4_0 = Fma.MultiplyAdd(a4, b0, c4_0);
+            c4_1 = Fma.MultiplyAdd(a4, b1, c4_1);
+            var a5 = Vector256.Create(a[5]);
+            c5_0 = Fma.MultiplyAdd(a5, b0, c5_0);
+            c5_1 = Fma.MultiplyAdd(a5, b1, c5_1);
+            a += 6;
+        }
+        Vector256.Store(c0_0, c);
+        Vector256.Store(c0_1, c + 8);
+        Vector256.Store(c1_0, c + ldc);
+        Vector256.Store(c1_1, c + ldc + 8);
+        Vector256.Store(c2_0, c + 2 * ldc);
+        Vector256.Store(c2_1, c + 2 * ldc + 8);
+        Vector256.Store(c3_0, c + 3 * ldc);
+        Vector256.Store(c3_1, c + 3 * ldc + 8);
+        Vector256.Store(c4_0, c + 4 * ldc);
+        Vector256.Store(c4_1, c + 4 * ldc + 8);
+        Vector256.Store(c5_0, c + 5 * ldc);
+        Vector256.Store(c5_1, c + 5 * ldc + 8);
+    }
+
+    /// <summary>Kernel6x8Vector128 with B read in place: step kk of k reads the 8 values at b + offsets[kk].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Direct6x8Vector128(int k, float* a, float* b, int* offsets, float* c, nint ldc, float* rowBias)
+    {
+        Vector128<float> c0_0, c0_1, c1_0, c1_1, c2_0, c2_1, c3_0, c3_1, c4_0, c4_1, c5_0, c5_1;
+        if (rowBias != null)
+        {
+            c0_0 = Vector128.Create(rowBias[0]);
+            c0_1 = c0_0;
+            c1_0 = Vector128.Create(rowBias[1]);
+            c1_1 = c1_0;
+            c2_0 = Vector128.Create(rowBias[2]);
+            c2_1 = c2_0;
+            c3_0 = Vector128.Create(rowBias[3]);
+            c3_1 = c3_0;
+            c4_0 = Vector128.Create(rowBias[4]);
+            c4_1 = c4_0;
+            c5_0 = Vector128.Create(rowBias[5]);
+            c5_1 = c5_0;
+        }
+        else
+        {
+            c0_0 = Vector128<float>.Zero;
+            c0_1 = Vector128<float>.Zero;
+            c1_0 = Vector128<float>.Zero;
+            c1_1 = Vector128<float>.Zero;
+            c2_0 = Vector128<float>.Zero;
+            c2_1 = Vector128<float>.Zero;
+            c3_0 = Vector128<float>.Zero;
+            c3_1 = Vector128<float>.Zero;
+            c4_0 = Vector128<float>.Zero;
+            c4_1 = Vector128<float>.Zero;
+            c5_0 = Vector128<float>.Zero;
+            c5_1 = Vector128<float>.Zero;
+        }
+        for (int kk = 0; kk < k; kk++)
+        {
+            float* bk = b + offsets[kk];
+            var b0 = Vector128.Load(bk);
+            var b1 = Vector128.Load(bk + 4);
+            var a0 = Vector128.Create(a[0]);
+            c0_0 = MultiplyAdd(a0, b0, c0_0);
+            c0_1 = MultiplyAdd(a0, b1, c0_1);
+            var a1 = Vector128.Create(a[1]);
+            c1_0 = MultiplyAdd(a1, b0, c1_0);
+            c1_1 = MultiplyAdd(a1, b1, c1_1);
+            var a2 = Vector128.Create(a[2]);
+            c2_0 = MultiplyAdd(a2, b0, c2_0);
+            c2_1 = MultiplyAdd(a2, b1, c2_1);
+            var a3 = Vector128.Create(a[3]);
+            c3_0 = MultiplyAdd(a3, b0, c3_0);
+            c3_1 = MultiplyAdd(a3, b1, c3_1);
+            var a4 = Vector128.Create(a[4]);
+            c4_0 = MultiplyAdd(a4, b0, c4_0);
+            c4_1 = MultiplyAdd(a4, b1, c4_1);
+            var a5 = Vector128.Create(a[5]);
+            c5_0 = MultiplyAdd(a5, b0, c5_0);
+            c5_1 = MultiplyAdd(a5, b1, c5_1);
+            a += 6;
+        }
+        Vector128.Store(c0_0, c);
+        Vector128.Store(c0_1, c + 4);
+        Vector128.Store(c1_0, c + ldc);
+        Vector128.Store(c1_1, c + ldc + 4);
+        Vector128.Store(c2_0, c + 2 * ldc);
+        Vector128.Store(c2_1, c + 2 * ldc + 4);
+        Vector128.Store(c3_0, c + 3 * ldc);
+        Vector128.Store(c3_1, c + 3 * ldc + 4);
+        Vector128.Store(c4_0, c + 4 * ldc);
+        Vector128.Store(c4_1, c + 4 * ldc + 4);
+        Vector128.Store(c5_0, c + 5 * ldc);
+        Vector128.Store(c5_1, c + 5 * ldc + 4);
+    }
+}
 
 /// <summary>
 /// What a matrix product does to its result: an activation, then a residual added. The residual is laid out like C
