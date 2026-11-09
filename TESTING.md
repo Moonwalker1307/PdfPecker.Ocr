@@ -91,7 +91,9 @@ when the work is not done within its bound (20 seconds for input that must be re
 pages) and only then cancels it, so a slow input fails instead of ending in an `OperationCanceledException` that looks
 documented. The cases: truncated and changed PNG, JPEG, TIFF, WebP, GIF and BMP files; zero-size and one-pixel images;
 headers that state billions of pixels with little or no data behind them, which must be refused or read within
-`MaxPixels` without allocating the stated size; pixel buffers that do not match their stated size, and zero, negative
+`MaxPixels` without allocating the stated size (an image that really has that many pixels is decoded within PdfPecker's
+own limit of 100 million pixels per image, which `MaxPixels` does not lower); headers that state a smaller image than
+the data holds; pixel buffers that do not match their stated size, and zero, negative
 and huge dimensions; damaged PDFs, encrypted PDFs without or with the wrong password, a PDF of 10,000 empty pages,
 page boxes from zero to 10^9 points and not numbers, and images of extreme shapes on a page; costly pixels (noise,
 thin stripes, a fine checkerboard, a page black but for one pixel in 997, and dashes like text everywhere) at A4

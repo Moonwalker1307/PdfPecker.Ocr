@@ -12,8 +12,9 @@ public static partial class ImageOcr
     /// <remarks>
     /// The image is read at its own size; its resolution, which it records or <see cref="OcrOptions.Dpi"/> stands in
     /// for, only goes into <see cref="OcrPage.Dpi"/>. An image with more pixels than <see cref="OcrOptions.MaxPixels"/>
-    /// is read at the largest size within the limit, and the page's size and resolution say so. Transparent parts are
-    /// read as if on white.
+    /// is read at the largest size within the limit, and the page's size and resolution say so; the file itself is first
+    /// decoded at its full size, which only PdfPecker's limit of 100 million pixels per image bounds. Transparent parts
+    /// are read as if on white.
     /// </remarks>
     /// <param name="image">The image file's bytes.</param>
     /// <param name="options">Rotation, confidence, threads and limits; null for the defaults.</param>

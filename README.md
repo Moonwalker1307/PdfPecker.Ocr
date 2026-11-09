@@ -124,7 +124,9 @@ Arabic, Hebrew, Devanagari or Thai letters, so text in those scripts is not reco
   from the words around it.
 - **Size.** Pages are limited to `OcrOptions.MaxPixels` (100 million pixels by default), so that a hostile file cannot
   exhaust memory: a PDF page or image file with more pixels is read at a lower resolution, and a raw pixel buffer that
-  large is refused with a `PdfLimitException`.
+  large is refused with a `PdfLimitException`. An image file, or an image on a PDF page, is still decoded at its full
+  size first, which PdfPecker limits to 100 million pixels per image whatever `MaxPixels` is, so lowering `MaxPixels`
+  does not lower the memory a large image can take while it is decoded.
 
 ## Performance
 

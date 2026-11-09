@@ -50,9 +50,11 @@ public sealed class OcrOptions
     public int MaxDegreeOfParallelism { get; set; } = Environment.ProcessorCount;
 
     /// <summary>
-    /// The most pixels a page is read at, which bounds the memory and time one page can take. A PDF page that would have
-    /// more at <see cref="Dpi"/>, or an image that has more, is read at the highest resolution that stays within the
-    /// limit, and its <see cref="OcrPage.Width"/>, <see cref="OcrPage.Height"/> and <see cref="OcrPage.Dpi"/> say so.
+    /// The most pixels a page is read at, which bounds the memory and time the rendering and recognition of one page
+    /// can take. A PDF page that would have more at <see cref="Dpi"/>, or an image that has more, is read at the highest
+    /// resolution that stays within the limit, and its <see cref="OcrPage.Width"/>, <see cref="OcrPage.Height"/> and
+    /// <see cref="OcrPage.Dpi"/> say so. An image file, and an image drawn on a PDF page, is first decoded at its full
+    /// size, which this limit does not bound: PdfPecker's own limit of 100 million pixels per image does.
     /// Must be at least 10,000. Default: 100,000,000 (a page of 84 by 119 cm at 300 dpi). A page is never rendered with
     /// more than about 536 million pixels, 2 GB of RGBA, whatever the limit: a page that would need more within it fails
     /// with <see cref="PdfLimitException"/>.
