@@ -86,41 +86,26 @@ internal static class DetectionInput
     private static int RoundTo32(int size) => Math.Max(32, (int)Math.Round(size / 32.0, MidpointRounding.ToEven) * 32);
 
     /// <summary>
-    /// Writes the network input for <paramref name="image"/> into <paramref name="input"/> (3 planes of
-    /// <c>InputHeight x InputWidth</c>, in the order B, G, R as rapidocr feeds OpenCV's BGR images).
-    /// </summary>
-    /// <summary>
-    /// Writes the network input: three planes, or for a gray image and <paramref name="outputPlanes"/> 1 the one plane
-    /// that stands for all three.
+    /// Writes the network input: three planes of <c>InputHeight x InputWidth</c>, in the order B, G, R as rapidocr feeds
+    /// OpenCV's BGR images, or for a gray image and <paramref name="outputPlanes"/> 1 the one plane that stands for all
+    /// three. Each resized row goes through the normalisation table on its way out, so no plane of bytes is held.
     /// </summary>
     public static void Fill(PixelView image, Layout layout, Span<float> input, int outputPlanes = 3)
     {
         int dw = layout.InputWidth, dh = layout.InputHeight, plane = dw * dh;
-        int planes = image.Channels == 1 ? 1 : 3;
-        byte[] resized = ArrayPool<byte>.Shared.Rent(plane * planes);
-        try
+        for (int p = 0; p < outputPlanes; p++)
         {
-            for (int p = 0; p < planes; p++)
+            Span<float> dst = input.Slice(p * plane, plane);
+            if (image.Channels == 1 && p > 0)
             {
-                // Plane p holds B, G, R in turn, which are channels 2, 1, 0 of an RGB image.
-                int channel = planes == 1 ? 0 : 2 - p;
-                LinearResize.Resize(image, channel, layout.PaddingTop, layout.PaddedHeight, resized.AsSpan(p * plane, plane), dw, dh);
+                // The planes of a gray image are all the same.
+                input[..plane].CopyTo(dst);
+                continue;
             }
 
-            float[] table = Normalize;
-            for (int p = 0; p < outputPlanes; p++)
-            {
-                ReadOnlySpan<byte> src = resized.AsSpan((planes == 1 ? 0 : p) * plane, plane);
-                Span<float> dst = input.Slice(p * plane, plane);
-                for (int i = 0; i < src.Length; i++)
-                {
-                    dst[i] = table[src[i]];
-                }
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(resized);
+            // Plane p holds B, G, R in turn, which are channels 2, 1, 0 of an RGB image.
+            int channel = image.Channels == 1 ? 0 : 2 - p;
+            LinearResize.Resize(image, channel, layout.PaddingTop, layout.PaddedHeight, dst, dw, dh, Normalize);
         }
     }
 }
@@ -137,9 +122,10 @@ internal static class LinearResize
 
     /// <summary>
     /// Resizes one channel of <paramref name="image"/>, seen as padded with <paramref name="padTop"/> black rows above
-    /// and as many below up to <paramref name="paddedHeight"/>, to <paramref name="dw"/> x <paramref name="dh"/>.
+    /// and as many below up to <paramref name="paddedHeight"/>, to <paramref name="dw"/> x <paramref name="dh"/>, and
+    /// writes each resulting grey level v as <c>table[v]</c>.
     /// </summary>
-    public static void Resize(PixelView image, int channel, int padTop, int paddedHeight, Span<byte> dst, int dw, int dh)
+    public static void Resize(PixelView image, int channel, int padTop, int paddedHeight, Span<float> dst, int dw, int dh, ReadOnlySpan<float> table)
     {
         int sw = image.Width, sh = paddedHeight;
         int[] rented = ArrayPool<int>.Shared.Rent((dw * 3) + (dw * 2));
@@ -192,12 +178,12 @@ internal static class LinearResize
                 }
 
                 short b0 = SaturateShort((1f - fy) * CoefScale), b1 = SaturateShort(fy * CoefScale);
-                Span<byte> d = dst.Slice(dy * dw, dw);
+                Span<float> d = dst.Slice(dy * dw, dw);
                 for (int x = 0; x < dw; x++)
                 {
                     // OpenCV's SIMD path: ((b0 * (s0 >> 4)) >> 16) + ((b1 * (s1 >> 4)) >> 16), then (v + 2) >> 2.
                     int v = (((b0 * (row0[x] >> 4)) >> 16) + ((b1 * (row1[x] >> 4)) >> 16) + 2) >> 2;
-                    d[x] = (byte)Math.Clamp(v, 0, 255);
+                    d[x] = table[Math.Clamp(v, 0, 255)];
                 }
             }
         }
