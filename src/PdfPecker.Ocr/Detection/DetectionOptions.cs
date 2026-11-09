@@ -33,6 +33,13 @@ internal sealed record DetectionOptions
     /// </summary>
     public int MaxSideLength { get; init; } = 1536;
 
+    /// <summary>
+    /// In <see cref="DetectionResize.Fit"/> mode, a page whose longer side is more than this many times its shorter
+    /// side gets the input area a page of this shape gets, rather than the longer side <see cref="MaxSideLength"/>:
+    /// a receipt of 7 by 90 cm would otherwise be shrunk until its text is too small to detect.
+    /// </summary>
+    public double ElongatedAspectRatio { get; init; } = 3;
+
     /// <summary>The shorter side small images are scaled up towards (rapidocr's <c>limit_side_len</c>).</summary>
     public int MinSideLength { get; init; } = 736;
 

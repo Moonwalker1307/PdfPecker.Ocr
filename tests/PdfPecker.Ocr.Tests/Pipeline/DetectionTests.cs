@@ -151,6 +151,23 @@ public sealed class DetectionTests
     }
 
     [Fact]
+    public void FitGivesElongatedPagesTheAreaOfAPageOfThreeToOne()
+    {
+        // A4 at 300 dpi keeps the longer side of 1,536.
+        DetectionInput.Layout layout = DetectionInput.Plan(2480, 3508, new DetectionOptions());
+        Assert.Equal((1088, 1536), (layout.InputWidth, layout.InputHeight));
+
+        // A receipt of 567 x 7,087 is scaled by 1536 / sqrt(3 * 567 * 7087), not 1536 / 7087, which shrank its text
+        // fourfold.
+        layout = DetectionInput.Plan(567, 7087, new DetectionOptions());
+        Assert.Equal((256, 3136), (layout.InputWidth, layout.InputHeight));
+
+        // Never past the page's own size: a strip of 100 x 3,000 is detected as it is.
+        layout = DetectionInput.Plan(100, 3000, new DetectionOptions());
+        Assert.Equal((96, 3008), (layout.InputWidth, layout.InputHeight));
+    }
+
+    [Fact]
     public void WideStripsArePaddedAsRapidocrDoes()
     {
         // rapidocr: h = 40 <= 30 is false, but 1000 / 40 > 8, so the padded height is max(125, 30) * 2 = 250.

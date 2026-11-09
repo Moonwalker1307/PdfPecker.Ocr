@@ -27,8 +27,9 @@ internal sealed class OcrEngine : IPageRecognizer
     internal static CharacterSet Characters => s_characters.Value;
 
     /// <summary>
-    /// The detection settings: the pipeline's defaults, which detect at most 1,536 pixels on the longer side and
-    /// crop the lines from the full-resolution page (see <see cref="DetectionOptions.MaxSideLength"/>).
+    /// The detection settings: the pipeline's defaults, which detect at most 1,536 pixels on the longer side (or the
+    /// same area for pages more elongated than 3 to 1) and crop the lines from the full-resolution page (see
+    /// <see cref="DetectionOptions.MaxSideLength"/>).
     /// </summary>
     internal static DetectionOptions DetectionOptions { get; } = new();
 

@@ -48,9 +48,7 @@ internal static class DetectionInput
             DetectionResize.Max => Math.Max(width, paddedHeight) > options.MaxSideLength
                 ? (double)options.MaxSideLength / Math.Max(width, paddedHeight)
                 : 1.0,
-            _ => Math.Min(
-                (double)options.MaxSideLength / Math.Max(width, paddedHeight),
-                Math.Max(1.0, (double)options.MinSideLength / Math.Min(width, paddedHeight))),
+            _ => FitRatio(width, paddedHeight, options),
         };
 
         // The pixel bound wins over every mode; it keeps the input within MaxInputPixels before rounding to 32.
@@ -63,6 +61,25 @@ internal static class DetectionInput
         int inputWidth = RoundTo32((int)(width * ratio));
         int inputHeight = RoundTo32((int)(paddedHeight * ratio));
         return new Layout(pad, width, paddedHeight, inputWidth, inputHeight);
+    }
+
+    /// <summary>
+    /// The scale of <see cref="DetectionResize.Fit"/>: the longer side to <see cref="DetectionOptions.MaxSideLength"/>,
+    /// small images up towards <see cref="DetectionOptions.MinSideLength"/> on the shorter side, and a page more
+    /// elongated than <see cref="DetectionOptions.ElongatedAspectRatio"/> to the input area of a page of that shape
+    /// instead (but not past its own size), so that the text of a long receipt is not shrunk below what the detector
+    /// finds.
+    /// </summary>
+    private static double FitRatio(int width, int height, DetectionOptions options)
+    {
+        double longer = Math.Max(width, height), shorter = Math.Min(width, height);
+        double upscale = Math.Max(1.0, options.MinSideLength / shorter);
+        double ratio = Math.Min(options.MaxSideLength / longer, upscale);
+        // M / sqrt(A * longer * shorter) equals M / longer when the aspect ratio is A, so the two rules meet there and
+        // pages up to that shape keep the scale they had. The area rule only spares elongated pages some of the
+        // shrinking; it does not scale anything up further than the longer-side rule.
+        double area = options.MaxSideLength / Math.Sqrt(options.ElongatedAspectRatio * longer * shorter);
+        return area > ratio ? Math.Min(area, Math.Max(ratio, 1.0)) : ratio;
     }
 
     // int(round(x / 32) * 32) with Python's round half to even, but at least 32 so tiny images still get an input.

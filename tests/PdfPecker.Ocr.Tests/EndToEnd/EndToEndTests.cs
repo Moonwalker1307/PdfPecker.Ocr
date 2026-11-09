@@ -57,6 +57,19 @@ public sealed class EndToEndTests
     }
 
     [Fact]
+    public void LongReceiptIsReadToTheEnd()
+    {
+        // A receipt of 72 by 900 mm at 200 dpi is 567 x 7,087 pixels. Scaled until its longer side fitted the detection
+        // input, its 9 point text was about 5 pixels high and most lines were lost; each item number must be found.
+        string items = string.Concat(Enumerable.Range(1, 120).Select(i => $"<p>Item {i:000} beans EUR {i * 3 % 97}.{i % 10}0</p>"));
+        byte[] pdf = HtmlToPdf.Convert(TestPages.Document("72mm 900mm", "@page{margin:4mm} p{font:9pt/1.3 monospace;margin:0}", items));
+        OcrDocument result = PdfOcr.Recognize(pdf, new OcrOptions { Dpi = 200, PageMode = OcrPageMode.Force });
+        Assert.Single(result.Pages);
+        var found = System.Text.RegularExpressions.Regex.Matches(result.Text, @"(?<![\d.])\d{3}(?![\d.])").Select(m => m.Value).ToHashSet();
+        Assert.Equal(Enumerable.Range(1, 120).Select(i => i.ToString("000", System.Globalization.CultureInfo.InvariantCulture)).Where(n => !found.Contains(n)), []);
+    }
+
+    [Fact]
     public void TwoColumnsReadColumnByColumn()
     {
         RenderedPage page = TestPages.Columns;
