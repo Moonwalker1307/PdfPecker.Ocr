@@ -448,59 +448,73 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
             }
         }
 
-        float* taps = stackalloc float[Kh * Kw];
-        fixed (float* weights = _weights) new Span<float>(weights + (long)c * Kh * Kw, Kh * Kw).CopyTo(new Span<float>(taps, Kh * Kw));
+        int tapCount = Kh * Kw;
+        float* taps = stackalloc float[tapCount];
+        fixed (float* weights = _weights) new Span<float>(weights + (long)c * tapCount, tapCount).CopyTo(new Span<float>(taps, tapCount));
+
+        // Where each tap reads, from an output pixel's position in its first padded row: for a stride of 2, the even
+        // taps read the even half and the odd taps the odd half.
+        int* offsets = stackalloc int[tapCount];
+        for (int ky = 0; ky < Kh; ky++)
+        {
+            for (int kx = 0; kx < Kw; kx++)
+                offsets[(ky * Kw) + kx] = (ky * rowLength) + (Sw == 1 ? kx : ((kx & 1) == 0 ? 0 : half) + (kx >> 1));
+        }
+
+        // Each row goes in blocks of four vectors, and the whole vectors left at the ends of the rows of the band go
+        // four at a time, whichever rows they are in: four independent sums hide the latency of the additions, which
+        // a row's last one to three vectors alone did not, and a plane of the orientation classifier, 96 pixels wide,
+        // has only one block of four per row. Every pixel still sums its taps in the same order, with the same
+        // separate products and sums.
+        bool wide = VectorMath.Wide;
+        int vector = wide ? 16 : Width;
+        int whole = ow / vector * vector;
+        float** sources = stackalloc float*[4];
+        float** targets = stackalloc float*[4];
+        float* spare = stackalloc float[16];
+        int pending = 0;
+        for (int y = y0; y < y1; y++)
+        {
+            float* rows = scratch + (long)(y * Sh - Pt - iyStart) * rowLength;
+            float* outRow = output + (long)y * ow;
+            int ox = wide ? RowBlocksWide(rows, rowLength, half, taps, _bias[c], outRow, ow) : RowBlocks(rows, rowLength, half, taps, _bias[c], outRow, ow);
+            for (; ox < whole; ox += vector)
+            {
+                sources[pending] = rows + ox;
+                targets[pending] = outRow + ox;
+                if (++pending == 4)
+                {
+                    if (wide) BlockWide(sources, targets, taps, offsets, tapCount, _bias[c]);
+                    else Block(sources, targets, taps, offsets, tapCount, _bias[c]);
+                    pending = 0;
+                }
+            }
+        }
+
+        if (pending > 0)
+        {
+            // The last group is filled up with copies of its last vector, written to a spare buffer.
+            for (int i = pending; i < 4; i++)
+            {
+                sources[i] = sources[pending - 1];
+                targets[i] = spare;
+            }
+
+            if (wide) BlockWide(sources, targets, taps, offsets, tapCount, _bias[c]);
+            else Block(sources, targets, taps, offsets, tapCount, _bias[c]);
+        }
+
+        // The pixels after a row's last whole vector, through a zero-padded vector.
         var bias = new Vector<float>(_bias[c]);
         float* tail = stackalloc float[Width];
         for (int y = y0; y < y1; y++)
         {
             float* outRow = output + (long)y * ow;
             float* rows = scratch + (long)(y * Sh - Pt - iyStart) * rowLength;
-            int ox = VectorMath.Wide ? ComputeWide(rows, rowLength, half, taps, _bias[c], outRow, ow) : 0;
-            // Four vectors of pixels at a time: four independent sums hide the latency of the additions, and each tap is
-            // broadcast once for all four. Every pixel still sums its taps in the same order as in the loop below.
-            for (; ox + 4 * Width <= ow; ox += 4 * Width)
-            {
-                Vector<float> a0 = bias, a1 = bias, a2 = bias, a3 = bias;
-                for (int ky = 0; ky < Kh; ky++)
-                {
-                    float* row = rows + (long)ky * rowLength;
-                    float* tap = taps + ky * Kw;
-                    for (int kx = 0; kx < Kw; kx++)
-                    {
-                        float* src = Sw == 1 ? row + ox + kx : row + ((kx & 1) == 0 ? 0 : half) + ox + (kx >> 1);
-                        var t = new Vector<float>(tap[kx]);
-                        a0 += t * VectorMath.Load(src);
-                        a1 += t * VectorMath.Load(src + Width);
-                        a2 += t * VectorMath.Load(src + 2 * Width);
-                        a3 += t * VectorMath.Load(src + 3 * Width);
-                    }
-                }
-                VectorMath.Store(VectorMath.Activate(a0, Activation, Alpha, Beta), outRow + ox);
-                VectorMath.Store(VectorMath.Activate(a1, Activation, Alpha, Beta), outRow + ox + Width);
-                VectorMath.Store(VectorMath.Activate(a2, Activation, Alpha, Beta), outRow + ox + 2 * Width);
-                VectorMath.Store(VectorMath.Activate(a3, Activation, Alpha, Beta), outRow + ox + 3 * Width);
-            }
-            for (; ox < ow; ox += Width)
+            for (int ox = whole; ox < ow; ox += Width)
             {
                 var acc = bias;
-                for (int ky = 0; ky < Kh; ky++)
-                {
-                    float* row = rows + (long)ky * rowLength;
-                    float* tap = taps + ky * Kw;
-                    if (Sw == 1)
-                    {
-                        for (int kx = 0; kx < Kw; kx++) acc += new Vector<float>(tap[kx]) * VectorMath.Load(row + ox + kx);
-                    }
-                    else
-                    {
-                        for (int kx = 0; kx < Kw; kx++)
-                        {
-                            float* src = (kx & 1) == 0 ? row + ox + (kx >> 1) : row + half + ox + (kx >> 1);
-                            acc += new Vector<float>(tap[kx]) * VectorMath.Load(src);
-                        }
-                    }
-                }
+                for (int i = 0; i < tapCount; i++) acc += new Vector<float>(taps[i]) * VectorMath.Load(rows + ox + offsets[i]);
                 acc = VectorMath.Activate(acc, Activation, Alpha, Beta);
                 if (ox + Width <= ow)
                 {
@@ -512,18 +526,45 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
                     new Span<float>(tail, ow - ox).CopyTo(new Span<float>(outRow + ox, ow - ox));
                 }
             }
+
             if (HasResidual) VectorMath.AddInPlace(outRow, step.Input(1) + outOffset + (long)y * ow, ow);
         }
     }
 
-    /// <summary>
-    /// The leading whole 512-bit vectors of one output row, for processors with AVX-512, where Vector&lt;T&gt; stays 256
-    /// bits wide; returns how many pixels it did. Each pixel sums its taps in the same order, with the same separate
-    /// products and sums, as the loops of <see cref="Compute"/>, and the wide activation matches the narrow one lane
-    /// for lane, so the results do not depend on which loop a pixel lands in.
-    /// </summary>
+    /// <summary>The blocks of four whole vectors at the start of one output row; returns how many pixels it did.</summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private int ComputeWide(float* rows, int rowLength, int half, float* taps, float biasValue, float* outRow, int ow)
+    private int RowBlocks(float* rows, int rowLength, int half, float* taps, float biasValue, float* outRow, int ow)
+    {
+        var bias = new Vector<float>(biasValue);
+        int ox = 0;
+        for (; ox + 4 * Width <= ow; ox += 4 * Width)
+        {
+            Vector<float> a0 = bias, a1 = bias, a2 = bias, a3 = bias;
+            for (int ky = 0; ky < Kh; ky++)
+            {
+                float* row = rows + (long)ky * rowLength;
+                float* tap = taps + ky * Kw;
+                for (int kx = 0; kx < Kw; kx++)
+                {
+                    float* src = Sw == 1 ? row + ox + kx : row + ((kx & 1) == 0 ? 0 : half) + ox + (kx >> 1);
+                    var t = new Vector<float>(tap[kx]);
+                    a0 += t * VectorMath.Load(src);
+                    a1 += t * VectorMath.Load(src + Width);
+                    a2 += t * VectorMath.Load(src + 2 * Width);
+                    a3 += t * VectorMath.Load(src + 3 * Width);
+                }
+            }
+            VectorMath.Store(VectorMath.Activate(a0, Activation, Alpha, Beta), outRow + ox);
+            VectorMath.Store(VectorMath.Activate(a1, Activation, Alpha, Beta), outRow + ox + Width);
+            VectorMath.Store(VectorMath.Activate(a2, Activation, Alpha, Beta), outRow + ox + 2 * Width);
+            VectorMath.Store(VectorMath.Activate(a3, Activation, Alpha, Beta), outRow + ox + 3 * Width);
+        }
+        return ox;
+    }
+
+    /// <summary><see cref="RowBlocks"/> on 512-bit vectors, for processors with AVX-512.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private int RowBlocksWide(float* rows, int rowLength, int half, float* taps, float biasValue, float* outRow, int ow)
     {
         var bias = Vector512.Create(biasValue);
         int ox = 0;
@@ -549,22 +590,57 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
             Vector512.Store(VectorMath.ActivateWide(a2, Activation, Alpha, Beta), outRow + ox + 32);
             Vector512.Store(VectorMath.ActivateWide(a3, Activation, Alpha, Beta), outRow + ox + 48);
         }
-        for (; ox + 16 <= ow; ox += 16)
-        {
-            var acc = bias;
-            for (int ky = 0; ky < Kh; ky++)
-            {
-                float* row = rows + (long)ky * rowLength;
-                float* tap = taps + ky * Kw;
-                for (int kx = 0; kx < Kw; kx++)
-                {
-                    float* src = Sw == 1 ? row + ox + kx : row + ((kx & 1) == 0 ? 0 : half) + ox + (kx >> 1);
-                    acc += Vector512.Create(tap[kx]) * Vector512.Load(src);
-                }
-            }
-            Vector512.Store(VectorMath.ActivateWide(acc, Activation, Alpha, Beta), outRow + ox);
-        }
         return ox;
+    }
+
+    /// <summary>Four vectors of output pixels, each summing the taps from its own position.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private void Block(float** src, float** dst, float* taps, int* offsets, int count, float biasValue)
+    {
+        float* p0 = src[0], p1 = src[1], p2 = src[2], p3 = src[3];
+        var bias = new Vector<float>(biasValue);
+        Vector<float> a0 = bias, a1 = bias, a2 = bias, a3 = bias;
+        for (int i = 0; i < count; i++)
+        {
+            int o = offsets[i];
+            var t = new Vector<float>(taps[i]);
+            a0 += t * VectorMath.Load(p0 + o);
+            a1 += t * VectorMath.Load(p1 + o);
+            a2 += t * VectorMath.Load(p2 + o);
+            a3 += t * VectorMath.Load(p3 + o);
+        }
+
+        VectorMath.Store(VectorMath.Activate(a0, Activation, Alpha, Beta), dst[0]);
+        VectorMath.Store(VectorMath.Activate(a1, Activation, Alpha, Beta), dst[1]);
+        VectorMath.Store(VectorMath.Activate(a2, Activation, Alpha, Beta), dst[2]);
+        VectorMath.Store(VectorMath.Activate(a3, Activation, Alpha, Beta), dst[3]);
+    }
+
+    /// <summary>
+    /// <see cref="Block"/> on 512-bit vectors, for processors with AVX-512, where Vector&lt;T&gt; stays 256 bits wide. The
+    /// products, sums and the wide activation match the narrow ones lane for lane, so the results do not depend on
+    /// which path a pixel takes.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private void BlockWide(float** src, float** dst, float* taps, int* offsets, int count, float biasValue)
+    {
+        float* p0 = src[0], p1 = src[1], p2 = src[2], p3 = src[3];
+        var bias = Vector512.Create(biasValue);
+        Vector512<float> a0 = bias, a1 = bias, a2 = bias, a3 = bias;
+        for (int i = 0; i < count; i++)
+        {
+            int o = offsets[i];
+            var t = Vector512.Create(taps[i]);
+            a0 += t * Vector512.Load(p0 + o);
+            a1 += t * Vector512.Load(p1 + o);
+            a2 += t * Vector512.Load(p2 + o);
+            a3 += t * Vector512.Load(p3 + o);
+        }
+
+        Vector512.Store(VectorMath.ActivateWide(a0, Activation, Alpha, Beta), dst[0]);
+        Vector512.Store(VectorMath.ActivateWide(a1, Activation, Alpha, Beta), dst[1]);
+        Vector512.Store(VectorMath.ActivateWide(a2, Activation, Alpha, Beta), dst[2]);
+        Vector512.Store(VectorMath.ActivateWide(a3, Activation, Alpha, Beta), dst[3]);
     }
 }
 
