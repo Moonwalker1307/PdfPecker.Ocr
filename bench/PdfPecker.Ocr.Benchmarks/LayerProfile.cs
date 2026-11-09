@@ -81,13 +81,10 @@ static unsafe class LayerProfile
             var page = new double[count];
             foreach (var (input, shape) in net.Inputs)
             {
-                var plan = context.GetPlan(model, shape);
-                context.EnsureScratch(plan.ScratchPerWorker);
-                float* arena = context.Arena(plan.ArenaFloats);
                 fixed (float* x = input)
                 {
-                    plan.Frame.Arena = arena;
-                    plan.Frame.Input = x;
+                    // The same preparation as a run, the runs of equal columns of this input included.
+                    var plan = model.Prepare(x, shape, context);
                     for (int i = 0; i < plan.Steps.Length; i++)
                     {
                         long s = Stopwatch.GetTimestamp();

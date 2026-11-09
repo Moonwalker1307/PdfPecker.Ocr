@@ -84,14 +84,11 @@ static class Profile
             _shapes.Add(shape.ToArray());
             if (shape.Length == 4) _contentSteps += ContentSteps(input, shape);
             long start = Stopwatch.GetTimestamp();
-            var plan = context.GetPlan(model, shape);
-            context.EnsureScratch(plan.ScratchPerWorker);
-            float* arena = context.Arena(plan.ArenaFloats);
+            ExecutionPlan plan;
             fixed (float* inputPointer = input)
             {
-                var frame = plan.Frame;
-                frame.Arena = arena;
-                frame.Input = inputPointer;
+                // The same preparation as a run, the runs of equal columns of this input included.
+                plan = model.Prepare(inputPointer, shape, context);
                 for (int s = 0; s < plan.Steps.Length; s++)
                 {
                     var step = plan.Steps[s];
@@ -107,7 +104,7 @@ static class Profile
             }
             _ticks += Stopwatch.GetTimestamp() - start;
             outputShape = (int[])plan.OutputShape.Clone();
-            return new ReadOnlySpan<float>(arena + plan.OutputOffset, plan.OutputLength);
+            return new ReadOnlySpan<float>(plan.Frame.Arena + plan.OutputOffset, plan.OutputLength);
         }
 
         /// <summary>

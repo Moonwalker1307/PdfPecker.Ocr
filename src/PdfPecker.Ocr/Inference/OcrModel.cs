@@ -198,20 +198,32 @@ internal sealed unsafe class OcrModel
     /// <summary>Runs every step of the plan for the input's shape; the output lands in the arena, where output points.</summary>
     private ExecutionPlan RunCore(float* input, ReadOnlySpan<int> shape, InferenceContext context, out float* output)
     {
-        var plan = context.GetPlan(this, shape);
-        context.EnsureScratch(plan.ScratchPerWorker);
-        float* arena = context.Arena(plan.ArenaFloats);
-        var frame = plan.Frame;
-        frame.Arena = arena;
-        frame.Input = input;
+        var plan = Prepare(input, shape, context);
         var token = context.CancellationToken;
-        plan.FindRuns(input, context);
         foreach (var step in plan.Steps)
         {
             token.ThrowIfCancellationRequested();
             step.Layer.Execute(step, context);
         }
-        output = arena + plan.OutputOffset;
+        output = plan.Frame.Arena + plan.OutputOffset;
+        return plan;
+    }
+
+    /// <summary>
+    /// Makes the plan for the input's shape ready to run its steps in order on <paramref name="input"/>: the scratch and
+    /// the arena, the frame, and the columns this input's values hold equal (see <see cref="ColumnRuns"/>), which change
+    /// with every input. A run starts here, and so does anything that runs the steps itself, such as the benchmarks'
+    /// profilers, so that it computes what a run computes; the output is at the frame's arena plus
+    /// <see cref="ExecutionPlan.OutputOffset"/> afterwards.
+    /// </summary>
+    internal ExecutionPlan Prepare(float* input, ReadOnlySpan<int> shape, InferenceContext context)
+    {
+        var plan = context.GetPlan(this, shape);
+        context.EnsureScratch(plan.ScratchPerWorker);
+        var frame = plan.Frame;
+        frame.Arena = context.Arena(plan.ArenaFloats);
+        frame.Input = input;
+        plan.FindRuns(input, context);
         return plan;
     }
 
