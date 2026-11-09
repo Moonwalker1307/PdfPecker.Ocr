@@ -177,11 +177,19 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         return Tiling.Balanced(columns, Math.Clamp(65536 / _k / nr * nr, nr, 2048), nr);
     }
 
+    // The output may take the residual's memory: each tile reads the residual only where it writes, and copies that
+    // part to its scratch before writing, so a residual block, the largest value of the block, needs no memory of its own.
+    public override int InPlaceInput(int[][] inputs, int[] output) => HasResidual ? 1 : -1;
+
     public override long ScratchPerWorker(Step step, InferenceContext context)
     {
         int columns = step.OutputShape[2] * step.OutputShape[3];
-        return _gemm.PackedBSize(_k, TileColumns(columns));
+        long packed = _gemm.PackedBSize(_k, TileColumns(columns));
+        // Room for the tile's part of a residual that the output writes over: at most every row by the tile's columns.
+        return HasResidual ? Align(packed) + (long)GemmKernel.RoundUp(Cout, _gemm.MR) * TileColumns(columns) : packed;
     }
+
+    private static long Align(long floats) => (floats + 15) & ~15L;
 
     public override void Execute(Step step, InferenceContext context)
     {
@@ -207,7 +215,24 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         else layer.PackPatches(input, layer._broadcast ? 0 : (long)x[2] * x[3], x[3], x[2], x[3], 0, 0, ow, 0, 0, n0, columns, packed);
         float* output = step.Output;
         long baseOffset = (long)n * layer.Cout * planeOut + (long)m0 * planeOut + n0;
-        var epilogue = new Epilogue(layer.Activation, layer.Alpha, layer.Beta, layer.HasResidual ? step.Input(1) + baseOffset : null);
+        var epilogue = default(Epilogue);
+        if (!layer.HasResidual)
+        {
+            epilogue = new Epilogue(layer.Activation, layer.Alpha, layer.Beta, null);
+        }
+        else if (step.Input(1) != output)
+        {
+            epilogue = new Epilogue(layer.Activation, layer.Alpha, layer.Beta, step.Input(1) + baseOffset);
+        }
+        else
+        {
+            // The output writes over the residual, so the tile's part of it goes to scratch first.
+            float* residual = packed + Align(gemm.PackedBSize(layer._k, tiling.TileColumns));
+            float* source = output + baseOffset;
+            for (int r = 0; r < rows; r++) new ReadOnlySpan<float>(source + (long)r * planeOut, columns).CopyTo(new Span<float>(residual + (long)r * columns, columns));
+            epilogue = new Epilogue(layer.Activation, layer.Alpha, layer.Beta, residual, columns);
+        }
+
         fixed (float* weights = layer._weights, bias = layer._bias)
             gemm.Multiply(layer._k, weights + (long)m0 * layer._k, rows, packed, columns, output + baseOffset, planeOut, bias + m0, null, epilogue);
     }

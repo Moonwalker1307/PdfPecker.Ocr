@@ -175,7 +175,7 @@ internal sealed unsafe class GemmKernel
                         Unsafe.CopyBlockUnaligned(c + (i + r) * ldc + j, edge + r * nr, (uint)(w * sizeof(float)));
                 }
             }
-            if (hasEpilogue) epilogue.Apply(c + i * ldc, ldc, i * ldc, h, cols);
+            if (hasEpilogue) epilogue.Apply(c + i * ldc, ldc, i, h, cols);
         }
     }
 
@@ -529,7 +529,7 @@ internal sealed unsafe class GemmKernel
 /// (same leading dimension) and is read at the same offsets. Each value is treated alone, so the result does not
 /// depend on the blocks it is applied to.
 /// </summary>
-internal readonly unsafe struct Epilogue(ActivationKind activation, float alpha, float beta, float* residual)
+internal readonly unsafe struct Epilogue(ActivationKind activation, float alpha, float beta, float* residual, nint residualStride = 0)
 {
     public ActivationKind Activation { get; } = activation;
 
@@ -540,17 +540,21 @@ internal readonly unsafe struct Epilogue(ActivationKind activation, float alpha,
     /// <summary>The residual at the position of C's first value, or null.</summary>
     public float* Residual { get; } = residual;
 
+    /// <summary>The floats between the residual's rows, or 0 when its rows lie as far apart as C's.</summary>
+    public nint ResidualStride { get; } = residualStride;
+
     public bool IsEmpty => Activation == ActivationKind.None && Residual == null;
 
-    /// <summary>Applies the epilogue to a rows x cols block at c, which lies offset values after C's first value.</summary>
+    /// <summary>Applies the epilogue to a rows x cols block at c, whose first row is row <paramref name="row"/> of C.</summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public void Apply(float* c, nint ldc, nint offset, int rows, int cols)
+    public void Apply(float* c, nint ldc, int row, int rows, int cols)
     {
+        nint stride = ResidualStride != 0 ? ResidualStride : ldc;
         for (int r = 0; r < rows; r++)
         {
-            float* row = c + r * ldc;
-            if (Activation != ActivationKind.None) VectorMath.Activate(row, cols, Activation, Alpha, Beta);
-            if (Residual != null) VectorMath.AddInPlace(row, Residual + offset + r * ldc, cols);
+            float* line = c + r * ldc;
+            if (Activation != ActivationKind.None) VectorMath.Activate(line, cols, Activation, Alpha, Beta);
+            if (Residual != null) VectorMath.AddInPlace(line, Residual + (row + r) * stride, cols);
         }
     }
 }
