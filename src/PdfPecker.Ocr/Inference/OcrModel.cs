@@ -146,7 +146,7 @@ internal sealed unsafe class OcrModel
     private ExecutionPlan RunCore(float* input, ReadOnlySpan<int> shape, InferenceContext context, out float[] output, out int offset)
     {
         var plan = context.GetPlan(this, shape);
-        context.EnsureScratch(plan.ScratchPerWorker, plan.SharedScratch);
+        context.EnsureScratch(plan.ScratchPerWorker);
         float* arena = context.Arena(plan.ArenaFloats);
         output = context.OutputBuffer(this, plan.OutputLength, out offset);
         fixed (float* outputPointer = output)

@@ -49,6 +49,9 @@ internal sealed unsafe class Step(Layer layer, int[][] inputShapes, int[] output
 
     public Location OutputLocation { get; set; }
 
+    /// <summary>Where the step's shared scratch lies in the arena, if it has any.</summary>
+    public Location SharedLocation { get; set; }
+
     /// <summary>The tile split of a matrix-product layer for this step's shapes, made on first use.</summary>
     public Layers.Tiling? Tiling { get; set; }
 
@@ -58,13 +61,17 @@ internal sealed unsafe class Step(Layer layer, int[][] inputShapes, int[] output
     public float* Input(int index) => Frame.Resolve(InputLocations[index]);
 
     public float* Output => Frame.Resolve(OutputLocation);
+
+    /// <summary>The scratch shared by the workers of this step (<see cref="Layer.SharedScratch"/>), valid only while it runs.</summary>
+    public float* SharedScratch => Frame.Resolve(SharedLocation);
 }
 
 /// <summary>
 /// The shapes and memory layout of a model for one input shape. Values are placed in one arena by their lifetimes:
 /// views share their input's memory, elementwise layers may write over an input that is not needed afterwards, and the
 /// inputs of a concatenation along a contiguous axis are written straight into their slice of its output. The rest are
-/// placed greedily, largest first, at the lowest offset no value alive at the same time occupies.
+/// placed greedily, largest first, at the lowest offset no value alive at the same time occupies, and so is each step's
+/// shared scratch, which lives only while its step runs and so fits in memory that values of other steps use.
 /// </summary>
 internal sealed class ExecutionPlan
 {
@@ -90,8 +97,6 @@ internal sealed class ExecutionPlan
     public long ArenaFloats { get; private set; }
 
     public long ScratchPerWorker { get; private set; }
-
-    public long SharedScratch { get; private set; }
 
     public static ExecutionPlan Create(OcrModel model, int[] inputShape, InferenceContext context)
     {
@@ -206,24 +211,33 @@ internal sealed class ExecutionPlan
         int outputRoot = Find(outputValue, out _);
         if (outputRoot == 0) throw new InvalidOperationException("A model whose output is its input is not supported.");
 
-        // Greedy placement of the remaining groups, largest first.
-        var roots = Enumerable.Range(1, valueCount - 1).Where(v => parent[v] == v && v != outputRoot)
-            .OrderByDescending(v => sizes[v]).ThenBy(v => start[v]).ThenBy(v => v).ToList();
+        // Each step's shared scratch is a block of the arena that lives for that step alone.
+        var scratch = new long[layers.Count];
+        for (int i = 0; i < layers.Count; i++) scratch[i] = layers[i].SharedScratch(steps[i]);
+
+        // Greedy placement of the remaining groups and the scratch blocks, largest first. An item is a value's group
+        // (Key >= 0, its root) or step ~Key's scratch.
+        var items = Enumerable.Range(1, valueCount - 1).Where(v => parent[v] == v && v != outputRoot)
+            .Select(v => (Key: v, Size: sizes[v], Start: start[v], End: end[v]))
+            .Concat(Enumerable.Range(0, layers.Count).Where(i => scratch[i] > 0).Select(i => (Key: ~i, Size: scratch[i], Start: i, End: i)))
+            .OrderByDescending(x => x.Size).ThenBy(x => x.Start).ThenBy(x => x.Key < 0).ThenBy(x => x.Key < 0 ? ~x.Key : x.Key).ToList();
         var placed = new List<(long Offset, long Size, int Start, int End)>();
         var rootOffset = new long[valueCount];
+        var scratchOffset = new long[layers.Count];
         long arena = 0;
-        foreach (int root in roots)
+        foreach (var item in items)
         {
-            long size = (sizes[root] + Alignment - 1) / Alignment * Alignment;
-            var conflicts = placed.Where(p => p.Start <= end[root] && start[root] <= p.End).OrderBy(p => p.Offset).ToList();
+            long size = (item.Size + Alignment - 1) / Alignment * Alignment;
+            var conflicts = placed.Where(p => p.Start <= item.End && item.Start <= p.End).OrderBy(p => p.Offset).ToList();
             long at = 0;
             foreach (var p in conflicts)
             {
                 if (at + size <= p.Offset) break;
                 at = Math.Max(at, p.Offset + p.Size);
             }
-            placed.Add((at, size, start[root], end[root]));
-            rootOffset[root] = at;
+            placed.Add((at, size, item.Start, item.End));
+            if (item.Key >= 0) rootOffset[item.Key] = at;
+            else scratchOffset[~item.Key] = at;
             arena = Math.Max(arena, at + size);
         }
 
@@ -240,17 +254,16 @@ internal sealed class ExecutionPlan
             ArenaFloats = arena,
             OutputLength = checked((int)sizes[outputRoot]),
         };
-        long perWorker = 0, shared = 0;
+        long perWorker = 0;
         for (int i = 0; i < steps.Length; i++)
         {
             var step = steps[i];
             step.InputLocations = layers[i].Node.Inputs.Select(LocationOf).ToArray();
             step.OutputLocation = LocationOf(i + 1);
+            step.SharedLocation = new Location(BufferKind.Arena, scratchOffset[i]);
             perWorker = Math.Max(perWorker, layers[i].ScratchPerWorker(step, context));
-            shared = Math.Max(shared, layers[i].SharedScratch(step));
         }
         plan.ScratchPerWorker = perWorker;
-        plan.SharedScratch = shared;
         return plan;
     }
 }
