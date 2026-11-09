@@ -18,8 +18,8 @@
     <PackageTags>ocr;text-recognition;pdf;searchable-pdf;scanned-pdf;image-to-text;paddleocr;csharp;dotnet;pdfpecker</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/Moonwalker1307/PdfPecker.Ocr</PackageProjectUrl>
-    <!-- The code is MIT and the embedded model weights are Apache-2.0; both are OSI-approved, so nuget.org takes the
-         expression. The notices file, packed below, carries the attribution and licence text Apache-2.0 asks for. -->
+    <!-- The code is MIT, the embedded model weights are Apache-2.0 and the polygon offset is a port of Clipper under
+         BSL-1.0; all three are OSI-approved, so nuget.org takes the expression. The notices file, packed below, carries the attribution and licence text Apache-2.0 asks for. -->
     <PackageLicenseExpression>MIT AND Apache-2.0 AND BSL-1.0</PackageLicenseExpression>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
@@ -49,7 +49,17 @@
 
   <ItemGroup>
     <!-- The neural network models, written by tools/ModelBuilder; never edit them by hand. -->
-    <EmbeddedResource Include="Models/*.bin.deflate" LogicalName="PdfPecker.Ocr.Models.%(Filename)%(Extension)" />
+    <!-- Named one by one rather than by a wildcard: on the Windows runner the wildcard matched nothing, without a
+         warning, and the assembly was built without its models. -->
+    <EmbeddedResource Include="Models\det.bin.deflate" LogicalName="PdfPecker.Ocr.Models.det.bin.deflate" />
+    <EmbeddedResource Include="Models\rec.bin.deflate" LogicalName="PdfPecker.Ocr.Models.rec.bin.deflate" />
+    <EmbeddedResource Include="Models\cls.bin.deflate" LogicalName="PdfPecker.Ocr.Models.cls.bin.deflate" />
   </ItemGroup>
+
+  <!-- An assembly without its models builds and fails only when it first reads a page, so refuse to build it. -->
+  <Target Name="CheckModelResources" BeforeTargets="CoreCompile">
+    <Error Condition="'%(EmbeddedResource.Extension)' == '.deflate' And !Exists('%(EmbeddedResource.FullPath)')"
+           Text="The model file %(EmbeddedResource.Identity) is missing; it is written by tools/ModelBuilder." />
+  </Target>
 
 </Project>
