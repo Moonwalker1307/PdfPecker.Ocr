@@ -54,8 +54,11 @@ internal static class ModelStore
     internal static MemoryStream Inflate(string name)
     {
         string resource = "PdfPecker.Ocr.Models." + name + ".bin.deflate";
-        using var stream = typeof(ModelStore).Assembly.GetManifestResourceStream(resource)
-            ?? throw new InvalidOperationException($"The model resource {resource} is missing from the assembly.");
+        var assembly = typeof(ModelStore).Assembly;
+        using var stream = assembly.GetManifestResourceStream(resource)
+            ?? throw new InvalidOperationException(
+                $"The model resource {resource} is missing from {assembly.FullName}, which has the resources " +
+                $"[{string.Join(", ", assembly.GetManifestResourceNames())}].");
         using var deflate = new DeflateStream(stream, CompressionMode.Decompress);
         // The files inflate to less than twice their size, so the buffer is allocated once.
         var data = new MemoryStream(capacity: (int)Math.Min(stream.Length * 2, int.MaxValue));
