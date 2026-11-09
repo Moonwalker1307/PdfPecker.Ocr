@@ -494,18 +494,60 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
     public override void Execute(Step step, InferenceContext context)
     {
         int rows = Rows.Count(step.OutputShape);
-        var chunk = step.State as Chunk ?? (Chunk)(step.State = new Chunk(step, _linear.Gemm));
-        chunk.Packing.Run(context, step.Input(0), _linear.InputFeatures, rows, _linear.InputFeatures, step.SharedScratch);
+        var gemm = _linear.Gemm;
+        var chunk = step.State as Chunk ?? (Chunk)(step.State = new Chunk(step, gemm));
+        var runs = step.OutputRuns;
+        int computed = rows;
+        chunk.Indexed = step.OutputShape.Length == 3 && runs.Any(1, 3);
+        if (chunk.Indexed)
+        {
+            // Time steps in a run of equal ones (see ColumnRuns) are computed once, at the run's first step, and copied.
+            int steps = step.OutputShape[1];
+            if (chunk.Rows.Length < rows) chunk.Rows = new int[rows];
+            computed = 0;
+            for (int n = 0; n < runs.Batch; n++)
+            {
+                bool run = runs.HasRun(n);
+                int s = runs.Start[n], e = runs.End[n];
+                for (int t = 0; t < steps; t++)
+                    if (!run || t <= s || t >= e) chunk.Rows[computed++] = n * steps + t;
+            }
+
+            gemm.PackARows(step.Input(0), _linear.InputFeatures, chunk.Rows.AsSpan(0, computed), _linear.InputFeatures, step.SharedScratch);
+        }
+        else
+        {
+            chunk.Packing.Run(context, step.Input(0), _linear.InputFeatures, rows, _linear.InputFeatures, step.SharedScratch);
+        }
+
         chunk.Logits = step.SharedScratch + PackedSize(rows);
         chunk.Blocks = Blocks;
         chunk.Maxima = chunk.Logits + ((long)Math.Min(rows, ChunkRows) * _stride);
-        for (int m0 = 0; m0 < rows; m0 += ChunkRows)
+        for (int m0 = 0; m0 < computed; m0 += ChunkRows)
         {
             chunk.First = m0;
-            chunk.Count = Math.Min(ChunkRows, rows - m0);
+            chunk.Count = Math.Min(ChunkRows, computed - m0);
             chunk.Tiling = _linear.ColumnTiling(chunk.Count);
             context.For(chunk.Tiling.Count, chunk, &Product);
             context.For((chunk.Count + RowsPerTile - 1) / RowsPerTile, chunk, &Reduce);
+        }
+
+        if (chunk.Indexed) FillRuns(step.Output, step.OutputShape[1], runs);
+    }
+
+    /// <summary>Copies the class and probability of each run's first time step to the rest of the run.</summary>
+    private static void FillRuns(float* output, int steps, ColumnRuns runs)
+    {
+        for (int n = 0; n < runs.Batch; n++)
+        {
+            if (!runs.HasRun(n)) continue;
+            float* first = output + (((long)n * steps) + runs.Start[n]) * 2;
+            for (int t = runs.Start[n] + 1; t < runs.End[n]; t++)
+            {
+                float* row = output + (((long)n * steps) + t) * 2;
+                row[0] = first[0];
+                row[1] = first[1];
+            }
         }
     }
 
@@ -533,15 +575,16 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         var chunk = (Chunk)state;
         var layer = (ArgMaxHeadLayer)chunk.Step.Layer;
         int n = layer._linear.OutputFeatures;
-        float* output = chunk.Step.Output + (long)chunk.First * 2;
+        float* output = chunk.Step.Output;
         int blocks = chunk.Blocks;
         for (int r = tile * RowsPerTile, end = Math.Min(chunk.Count, r + RowsPerTile); r < end; r++)
         {
             float max = chunk.Maxima[r * blocks];
             for (int b = 1; b < blocks; b++) max = Math.Max(max, chunk.Maxima[(r * blocks) + b]);
             int index = VectorMath.SoftmaxArgMax(chunk.Logits + (long)r * layer._stride, n, max, out float probability);
-            output[2 * r] = index;
-            output[(2 * r) + 1] = probability;
+            long row = chunk.Indexed ? chunk.Rows[chunk.First + r] : chunk.First + r;
+            output[2 * row] = index;
+            output[(2 * row) + 1] = probability;
         }
     }
 
@@ -564,5 +607,10 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         public int Blocks { get; set; }
 
         public float* Maxima { get; set; }
+
+        /// <summary>Whether this run computes only the rows in <see cref="Rows"/>, the output row of each packed row.</summary>
+        public bool Indexed { get; set; }
+
+        public int[] Rows { get; set; } = [];
     }
 }
