@@ -16,6 +16,7 @@ internal static class Targets
         OcrPixelsTarget.Target,
         OcrPdfTarget.Target,
         SearchableLayerTarget.Target,
+        TiffPagesTarget.Target,
     };
 
     // Targets that fail on purpose, to check that the supervisor copes with a fatal crash and with a thread that cannot be

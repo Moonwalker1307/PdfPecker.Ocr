@@ -58,6 +58,34 @@ public sealed class ImageInputTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TiffPagesBecomeFilesOfTheirOwn(bool bigEndian)
+    {
+        // Three pages of different sizes; the last shares the first one's data. Each page must decode to its own pixels
+        // from a file that holds only its directory and its strip, not the whole TIFF.
+        var gray = new byte[40 * 30 + 1000 * 20];
+        new Random(3).NextBytes(gray);
+        var tiff = TestImages.TiffPages(bigEndian, gray, [(40, 30, 0, 40 * 30), (1000, 20, 40 * 30, 1000 * 20), (40, 30, 0, 40 * 30)]);
+        var info = ImageInfo.Read(tiff);
+        Assert.Equal(3, info.FrameCount);
+        int[] widths = [40, 1000, 40];
+        int[] starts = [0, 40 * 30, 0];
+        for (int i = 0; i < 3; i++)
+        {
+            byte[] frame = ImageInfo.TiffFrame(tiff, info, i);
+            int pixels = widths[i] * (i == 1 ? 20 : 30);
+            Assert.InRange(frame.Length, pixels, pixels + 200);
+            var decoded = ImageDecoder.Decode(frame, 300, long.MaxValue, default);
+            using (decoded.Pixels)
+            {
+                Assert.Equal(widths[i], decoded.Pixels.Width);
+                Assert.Equal(gray.AsSpan(starts[i], pixels).ToArray(), decoded.Pixels.Pixels.ToArray());
+            }
+        }
+    }
+
     [Fact]
     public void BmpWithResolutionDecodes()
     {

@@ -23,7 +23,10 @@ public static partial class ImageOcr
     /// <exception cref="ArgumentException">There are no images, or more than <see cref="ImageToPdf.MaxImages"/> images and TIFF pages.</exception>
     /// <exception cref="ArgumentOutOfRangeException">An option is out of its range.</exception>
     /// <exception cref="InvalidDataException">An image is not in a supported format or is damaged.</exception>
-    /// <exception cref="PdfLimitException">An image needs more than 2 GB of pixels at the size it is read at.</exception>
+    /// <exception cref="PdfLimitException">
+    /// An image needs more than 2 GB of pixels at the size it is read at, or the pages of a TIFF file refer to far more
+    /// data than the file holds.
+    /// </exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public static byte[] ToSearchablePdf(IEnumerable<byte[]> images, OcrOptions? options = null, CancellationToken cancellationToken = default)
         => SearchablePdf.FromImages(images, options, PageRecognizer.Default, cancellationToken);

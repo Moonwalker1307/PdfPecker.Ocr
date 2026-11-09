@@ -406,6 +406,25 @@ public sealed class HostileInputTests
         Assert.Throws<ArgumentNullException>(() => ImageOcr.ToSearchablePdf([png, null!]));
     }
 
+    /// <summary>
+    /// A TIFF of a thousand pages over one 32 MB blob: each page used to become a copy of the whole file, encoded and
+    /// decoded twice, so the work grew with pages times file size. One-pixel pages must be read quickly, and pages that
+    /// each refer to the whole blob must be refused once they have taken twice the file.
+    /// </summary>
+    [Theory]
+    [InlineData("one-pixel-strips")]
+    [InlineData("shared-blob")]
+    public void ManyTiffPagesOverOneBlobFinish(string kind)
+    {
+        var blob = new byte[32 << 20];
+        int length = kind == "shared-blob" ? blob.Length : 1;
+        byte[] tiff = TestImages.TiffPages(false, blob, Enumerable.Repeat((1, 1, 0, length), 1_000).ToList());
+        var options = new OcrOptions { Dpi = 72, MaxDegreeOfParallelism = 1 };
+        Exception? ex = Documented(kind, ct => ImageOcr.ToSearchablePdf([tiff], options, ct).Length, ImageFailures);
+        if (kind == "shared-blob") Assert.IsType<PdfLimitException>(ex);
+        else Assert.Null(ex);
+    }
+
     // ---- PDFs ----
 
     [Fact]

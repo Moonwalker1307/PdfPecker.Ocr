@@ -41,6 +41,7 @@ jobs:
             ocr-pixels
             ocr-pdf
             searchable-layer
+            tiff-pages
           TARGET: ${{ github.event_name == 'schedule' && 'all' || inputs.target }}
         run: |
           if [ "$TARGET" = "all" ]; then

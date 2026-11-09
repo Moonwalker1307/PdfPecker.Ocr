@@ -110,13 +110,17 @@ internal static class SearchablePdf
             var info = ImageInfo.Read(image);
             if (info.Format == ImageFormat.Unknown)
                 throw new InvalidDataException(FormattableString.Invariant($"Image {total + 1} is not a PNG, JPEG, GIF, WebP, BMP or TIFF image."));
+            long left = ImageInfo.TiffFramesBudget(image.Length);
             for (int frame = 0; frame < info.FrameCount; frame++)
             {
                 if (++total > ImageToPdf.MaxImages)
                     throw new ArgumentException(FormattableString.Invariant($"At most {ImageToPdf.MaxImages} images and TIFF pages can be read at once."), nameof(images));
                 float dpi = info.Format == ImageFormat.Tiff && frame > 0 ? ImageInfo.TiffDpi(image, info.TiffFrames[frame]) : info.Dpi;
                 if (dpi <= 0) dpi = fallbackDpi;
-                if (group != null && (group.Dpi != dpi || bytes + image.Length > MaxGroupBytes || group.Images.Count >= MaxGroupImages))
+                // Each page of a multi-page TIFF becomes a file of its own with only the data it refers to.
+                byte[] data = info.Format == ImageFormat.Tiff ? ImageInfo.TiffFrame(image, info, frame, left) : image;
+                left -= data.Length;
+                if (group != null && (group.Dpi != dpi || bytes + data.Length > MaxGroupBytes || group.Images.Count >= MaxGroupImages))
                 {
                     yield return group;
                     group = null;
@@ -126,8 +130,8 @@ internal static class SearchablePdf
                     group = new ImageGroup(dpi, new List<byte[]>());
                     bytes = 0;
                 }
-                group.Images.Add(info.Format == ImageFormat.Tiff ? ImageInfo.TiffFrame(image, info, frame) : image);
-                bytes += image.Length;
+                group.Images.Add(data);
+                bytes += data.Length;
             }
         }
         if (group != null) yield return group;

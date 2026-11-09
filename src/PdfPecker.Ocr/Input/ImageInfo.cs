@@ -112,17 +112,195 @@ internal sealed class ImageInfo
     };
 
     /// <summary>
-    /// A copy of a TIFF file whose header points at page <paramref name="frame"/>, so a reader of first pages, such as
-    /// <see cref="ImageToPdf"/>, reads that page. The rest of the file is unchanged, which keeps every offset valid.
+    /// Page <paramref name="frame"/> of a TIFF file as a file of its own, so a reader of first pages, such as
+    /// <see cref="ImageToPdf"/>, reads that page. A file of one page is returned as it is; a page of a multi-page file
+    /// gets a header, a copy of its directory and its values, and only the strips or tiles it refers to, with their
+    /// offsets rewritten (see <see cref="TiffPage"/>).
     /// </summary>
-    public static byte[] TiffFrame(byte[] tiff, ImageInfo info, int frame)
+    /// <param name="tiff">The TIFF file.</param>
+    /// <param name="info">What <see cref="Read"/> found in it.</param>
+    /// <param name="frame">The page, from 0.</param>
+    /// <param name="budget">The most bytes the page may take; a page that needs more is refused before it is made.</param>
+    /// <exception cref="PdfLimitException">The page would take more than <paramref name="budget"/> bytes.</exception>
+    public static byte[] TiffFrame(byte[] tiff, ImageInfo info, int frame, long budget = long.MaxValue)
+        => info.FrameCount == 1 ? tiff : TiffPage(tiff, info.TiffFrames[frame], budget);
+
+    /// <summary>
+    /// The bytes the pages of a multi-page TIFF may take together once each is a file of its own: twice the file and a
+    /// megabyte. Each page's own data adds up to the file, but pages may share strips, and a file of thousands of pages
+    /// that all refer to one large strip would otherwise be copied and decoded once per page.
+    /// </summary>
+    public static long TiffFramesBudget(int fileLength) => 2L * fileLength + (1 << 20);
+
+    // The size in bytes of each TIFF field type, by type number: BYTE, ASCII, SHORT, LONG, RATIONAL, SBYTE, UNDEFINED,
+    // SSHORT, SLONG, SRATIONAL, FLOAT, DOUBLE and IFD.
+    private static ReadOnlySpan<byte> TiffTypeSizes => [0, 1, 1, 2, 4, 8, 1, 1, 2, 4, 8, 4, 8, 4];
+
+    /// <summary>
+    /// Tags that point at other parts of the file which a page's pixels do not need (free space, sub-directories, the
+    /// EXIF, GPS and interoperability directories, and the old-style JPEG data PdfPecker does not read); a copied
+    /// directory leaves them out rather than point at the wrong bytes.
+    /// </summary>
+    private static bool TiffPointerTag(int tag) => tag is 288 or 289 or 330 or 513 or 514 or 519 or 520 or 521 or 34665 or 34853 or 40965;
+
+    private readonly record struct TiffEntry(int Tag, int Type, uint Count, int At, long Size);
+
+    /// <summary>
+    /// The page whose directory is at <paramref name="ifd"/> as a TIFF file of its own, in the file's byte order.
+    /// </summary>
+    /// <remarks>
+    /// Values outside the file are left out, as are tags of unknown types; strips and tiles are clipped to the file, and
+    /// strips that share bytes share them in the copy too. The copy is padded to the size of the whole file at most,
+    /// so that PdfPecker's check that a few bytes do not claim a huge image (its limit on how much a file may expand)
+    /// decides for a well compressed page as it did with the whole file.
+    /// </remarks>
+    private static byte[] TiffPage(byte[] tiff, int ifd, long budget)
     {
-        if (frame == 0) return tiff;
-        var copy = (byte[])tiff.Clone();
-        int offset = info.TiffFrames[frame];
-        if (tiff[0] == 0x49) BinaryPrimitives.WriteInt32LittleEndian(copy.AsSpan(4), offset);
-        else BinaryPrimitives.WriteInt32BigEndian(copy.AsSpan(4), offset);
-        return copy;
+        bool little = tiff[0] == 0x49;
+        var entries = new List<TiffEntry>();
+        int count = ifd >= 8 && ifd + 2 <= tiff.Length ? U16(tiff, ifd, little) : 0;
+        for (int i = 0; i < count; i++)
+        {
+            int at = ifd + 2 + i * 12;
+            if (at + 12 > tiff.Length) break;
+            int tag = U16(tiff, at, little), type = U16(tiff, at + 2, little);
+            uint n = U32(tiff, at + 4, little);
+            if (type < 1 || type >= TiffTypeSizes.Length || TiffPointerTag(tag)) continue;
+            long size = (long)TiffTypeSizes[type] * n;
+            if (size > 4 && U32(tiff, at + 8, little) + size > tiff.Length) continue;
+            entries.Add(new TiffEntry(tag, type, n, at, size));
+        }
+
+        bool tiled = entries.Exists(e => e.Tag == 324);
+        int offsetsAt = entries.FindIndex(e => e.Tag == (tiled ? 324 : 273));
+        int countsAt = entries.FindIndex(e => e.Tag == (tiled ? 325 : 279));
+        long[] offsets = offsetsAt >= 0 ? TiffValues(tiff, entries[offsetsAt], little) : [];
+        long[] counts = countsAt >= 0 ? TiffValues(tiff, entries[countsAt], little) : [];
+        if (offsets.Length > 0 && counts.Length == 0)
+        {
+            // Without byte counts nothing says where the data ends: the page keeps the whole file, as it once did.
+            if (tiff.Length > budget) throw TooLarge(tiff.Length, budget);
+            var whole = (byte[])tiff.Clone();
+            W32(whole, 4, (uint)ifd, little);
+            return whole;
+        }
+
+        // The layout: the header, the directory, the values that do not fit in their entries, then the data.
+        long pos = 8 + 2 + entries.Count * 12L + 4;
+        var valueAt = new long[entries.Count];
+        for (int j = 0; j < entries.Count; j++)
+        {
+            // The strip or tile offsets and byte counts are written as LONGs, since the new offsets may need 32 bits.
+            long size = j == offsetsAt || j == countsAt ? 4L * entries[j].Count : entries[j].Size;
+            if (size <= 4) continue;
+            pos += pos & 1;
+            valueAt[j] = pos;
+            pos += size;
+        }
+
+        var newOffsets = new long[offsets.Length];
+        var newCounts = new long[counts.Length];
+        var placed = new Dictionary<(long Start, long Length), long>();
+        var ranges = new List<(long From, long To, long Length)>();
+        for (int i = 0; i < offsets.Length; i++)
+        {
+            long start = offsets[i];
+            long length = i < counts.Length && start < tiff.Length ? Math.Min(counts[i], tiff.Length - start) : 0;
+            if (i < counts.Length) newCounts[i] = length;
+            if (length <= 0) continue;
+            if (!placed.TryGetValue((start, length), out long to))
+            {
+                to = pos;
+                placed.Add((start, length), to);
+                ranges.Add((start, to, length));
+                pos += length;
+                if (pos > budget) throw TooLarge(pos, budget);
+            }
+            newOffsets[i] = to;
+        }
+
+        pos = Math.Max(pos, Math.Min(tiff.Length, TiffRawBytes(tiff, entries, little) / 1000 + 1));
+        if (pos > budget) throw TooLarge(pos, budget);
+        if (pos > Array.MaxLength) throw new PdfLimitException("A page of the TIFF file is larger than 2 GB.");
+
+        var page = new byte[pos];
+        tiff.AsSpan(0, 4).CopyTo(page);
+        W32(page, 4, 8, little);
+        W16(page, 8, entries.Count, little);
+        for (int j = 0; j < entries.Count; j++)
+        {
+            var e = entries[j];
+            int at = 10 + j * 12;
+            bool rewritten = j == offsetsAt || j == countsAt;
+            W16(page, at, e.Tag, little);
+            W16(page, at + 2, rewritten ? 4 : e.Type, little);
+            W32(page, at + 4, e.Count, little);
+            if (rewritten)
+            {
+                long[] values = j == offsetsAt ? newOffsets : newCounts;
+                int into = valueAt[j] != 0 ? (int)valueAt[j] : at + 8;
+                if (valueAt[j] != 0) W32(page, at + 8, (uint)valueAt[j], little);
+                for (int k = 0; k < e.Count; k++) W32(page, into + k * 4, k < values.Length ? (uint)values[k] : 0, little);
+            }
+            else if (e.Size <= 4)
+            {
+                tiff.AsSpan(e.At + 8, 4).CopyTo(page.AsSpan(at + 8));
+            }
+            else
+            {
+                W32(page, at + 8, (uint)valueAt[j], little);
+                tiff.AsSpan((int)U32(tiff, e.At + 8, little), (int)e.Size).CopyTo(page.AsSpan((int)valueAt[j]));
+            }
+        }
+
+        foreach (var (from, to, length) in ranges) tiff.AsSpan((int)from, (int)length).CopyTo(page.AsSpan((int)to));
+        return page;
+    }
+
+    private static PdfLimitException TooLarge(long size, long budget) => new(FormattableString.Invariant(
+        $"The pages of the TIFF file refer to more data than the file holds: a page needs {size} bytes, and {budget} are left."));
+
+    /// <summary>The SHORT or LONG values of an entry, or none for another type.</summary>
+    private static long[] TiffValues(ReadOnlySpan<byte> tiff, TiffEntry e, bool little)
+    {
+        if (e.Type is not (3 or 4)) return [];
+        int at = e.Size <= 4 ? e.At + 8 : (int)U32(tiff, e.At + 8, little);
+        var values = new long[e.Count];
+        for (int i = 0; i < values.Length; i++) values[i] = e.Type == 3 ? U16(tiff, at + i * 2, little) : U32(tiff, at + i * 4, little);
+        return values;
+    }
+
+    /// <summary>The bytes of a page's pixels as stored, uncompressed: rows of samples of the first BitsPerSample.</summary>
+    private static long TiffRawBytes(ReadOnlySpan<byte> tiff, List<TiffEntry> entries, bool little)
+    {
+        double raw = Math.Ceiling(TiffFirst(tiff, entries, 256, 0, little) * (double)TiffFirst(tiff, entries, 277, 1, little)
+            * TiffFirst(tiff, entries, 258, 1, little) / 8) * TiffFirst(tiff, entries, 257, 0, little);
+        return raw >= long.MaxValue / 2 ? long.MaxValue / 2 : (long)raw;
+    }
+
+    /// <summary>The first SHORT or LONG value of a tag among the entries, or <paramref name="fallback"/>.</summary>
+    private static long TiffFirst(ReadOnlySpan<byte> tiff, List<TiffEntry> entries, int tag, long fallback, bool little)
+    {
+        foreach (var e in entries)
+        {
+            if (e.Tag != tag) continue;
+            if (e.Count == 0) return fallback;
+            int at = e.Size <= 4 ? e.At + 8 : (int)U32(tiff, e.At + 8, little);
+            return e.Type == 3 ? U16(tiff, at, little) : e.Type == 4 ? U32(tiff, at, little) : fallback;
+        }
+        return fallback;
+    }
+
+    private static void W16(byte[] d, int at, int value, bool little)
+    {
+        if (little) BinaryPrimitives.WriteUInt16LittleEndian(d.AsSpan(at), (ushort)value);
+        else BinaryPrimitives.WriteUInt16BigEndian(d.AsSpan(at), (ushort)value);
+    }
+
+    private static void W32(byte[] d, int at, uint value, bool little)
+    {
+        if (little) BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(at), value);
+        else BinaryPrimitives.WriteUInt32BigEndian(d.AsSpan(at), value);
     }
 
     /// <summary>A resolution, or 0 when it is outside what scanners and screens use.</summary>

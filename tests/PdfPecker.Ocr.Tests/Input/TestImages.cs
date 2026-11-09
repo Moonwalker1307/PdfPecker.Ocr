@@ -130,6 +130,62 @@ internal static class TestImages
     }
 
     /// <summary>
+    /// A TIFF of several pages of 8-bit gray pixels, uncompressed, in either byte order: <paramref name="blob"/> follows
+    /// the header, and each page is one strip of <c>Length</c> bytes at <c>Offset</c> in the blob, so pages may share
+    /// data. The directories come after the blob, each pointing at the next.
+    /// </summary>
+    public static byte[] TiffPages(bool bigEndian, byte[] blob, IReadOnlyList<(int W, int H, int Offset, int Length)> pages)
+    {
+        const int Entries = 9, DirectoryBytes = 2 + (Entries * 12) + 4;
+        int first = 8 + blob.Length + (blob.Length & 1);
+        var tiff = new byte[first + (pages.Count * DirectoryBytes)];
+        void U16(int at, int value)
+        {
+            if (bigEndian) BinaryPrimitives.WriteUInt16BigEndian(tiff.AsSpan(at), (ushort)value);
+            else BinaryPrimitives.WriteUInt16LittleEndian(tiff.AsSpan(at), (ushort)value);
+        }
+
+        void U32(int at, long value)
+        {
+            if (bigEndian) BinaryPrimitives.WriteUInt32BigEndian(tiff.AsSpan(at), (uint)value);
+            else BinaryPrimitives.WriteUInt32LittleEndian(tiff.AsSpan(at), (uint)value);
+        }
+
+        (bigEndian ? "MM"u8 : "II"u8).CopyTo(tiff);
+        U16(2, 42);
+        U32(4, first);
+        blob.CopyTo(tiff.AsSpan(8));
+        for (int p = 0; p < pages.Count; p++)
+        {
+            var (w, h, offset, length) = pages[p];
+            int ifd = first + (p * DirectoryBytes), at = ifd + 2;
+            U16(ifd, Entries);
+            void Tag(int tag, int type, long value)
+            {
+                U16(at, tag);
+                U16(at + 2, type);
+                U32(at + 4, 1);
+                if (type == 3) U16(at + 8, (int)value);
+                else U32(at + 8, value);
+                at += 12;
+            }
+
+            Tag(256, 4, w);
+            Tag(257, 4, h);
+            Tag(258, 3, 8);
+            Tag(259, 3, 1);
+            Tag(262, 3, 1);
+            Tag(273, 4, 8 + offset);
+            Tag(277, 3, 1);
+            Tag(278, 4, h);
+            Tag(279, 4, length);
+            U32(at, p + 1 < pages.Count ? ifd + DirectoryBytes : 0);
+        }
+
+        return tiff;
+    }
+
+    /// <summary>
     /// A PNG of the given size and bit depth (gray, colour type 0) whose image data is <paramref name="rows"/> rows of
     /// zeros, each with filter byte 0, deflated as they are written: a few hundred kilobytes can state billions of
     /// pixels. Rows short of the height make the data end early.
