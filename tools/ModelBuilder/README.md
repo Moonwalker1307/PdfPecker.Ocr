@@ -10,9 +10,11 @@ dotnet run -c Release --project tools/ModelBuilder -- [--wheel path] [--out dir]
 
 Without `--wheel` the wheel is downloaded once from files.pythonhosted.org into `pdfpecker-ocr-modelbuilder` in the
 temporary directory. The wheel and the three ONNX files are checked against pinned SHA-256 hashes (in `Program.cs`), and
-the output is byte-identical on every run: the graph passes are deterministic, the writer has no timestamps, and
-Deflate (`CompressionLevel.SmallestSize`, zlib-ng in .NET 10) is deterministic for a given runtime; another .NET version
-may compress the same model bytes differently. A run takes about ten seconds. After writing each model the tool loads it
+the output is byte-identical on every run with the same runtime: the graph passes are deterministic, the writer has no
+timestamps, and Deflate (`CompressionLevel.SmallestSize`) is deterministic for a given zlib. Which zlib that is depends on
+the runtime build: the committed files were written by a Linux distribution's .NET 10, which links the system zlib, and
+Microsoft's own builds link zlib-ng, which writes different but equivalent bytes. Compare regenerated models inflated,
+not byte for byte. A run takes about ten seconds. After writing each model the tool loads it
 with the runtime and runs it once, so a graph the runtime cannot execute fails here rather than in a test.
 
 The files are Deflate rather than Brotli (quality 11, window 24, which earlier versions used) because loading is mostly
