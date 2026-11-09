@@ -98,11 +98,12 @@ wins here.
   `bench/compare-versions.sh`, which runs two versions in turns on one machine.
 - `bench/TesseractComparison/` and `tools/Tesseract/build.sh` – a native build of Tesseract and Leptonica from pinned
   git tags, called through its C API from a Native AOT comparison app, with a synthetic corpus and its ground truth.
-  Tesseract never ships in the package.
+  Tesseract never ships in the package. `tools/Tesseract/sbom.cdx.json` lists the commits it builds, which the daily
+  vulnerability scan checks; change it with the pins.
 - `samples/PdfPecker.Ocr.Sample` – a console app that prints the text of an image or a scanned PDF, or writes hOCR or
   a searchable PDF; CI publishes it with Native AOT and checks the text it reads on `sample.png`.
-- `.github/workflows/` – `nuget.yml`, `codeql.yml`, `fuzz.yml`, `perf.yml`, `dependabot-auto-merge.yml`; see
-  `CONFIG.md`.
+- `.github/workflows/` – `nuget.yml`, `codeql.yml`, `fuzz.yml`, `perf.yml`, `vulnerability-scan.yml`,
+  `dependabot-auto-merge.yml`; see `CONFIG.md`.
 
 ## Build and verify
 
