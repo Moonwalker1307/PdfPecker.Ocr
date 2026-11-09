@@ -22,9 +22,10 @@ internal sealed unsafe class OcrModel
         foreach (var node in definition.Nodes) layers.Add(Layer.Create(node, definition, gemm));
         Layers = layers;
         if (layers.Count == 0) throw new InvalidDataException("The model has no layers.");
+        Inputs = layers.Select(l => l.Node.Inputs).ToArray();
     }
 
-    private OcrModel(OcrModel source, List<Layer> layers, int[]? inputShape = null)
+    private OcrModel(OcrModel source, List<Layer> layers, int[][] inputs, int[]? inputShape = null)
     {
         Name = source.Name;
         Notice = source.Notice;
@@ -32,6 +33,7 @@ internal sealed unsafe class OcrModel
         Characters = source.Characters;
         Gemm = source.Gemm;
         Layers = layers;
+        Inputs = inputs;
     }
 
     public string Name { get; }
@@ -48,6 +50,12 @@ internal sealed unsafe class OcrModel
     public GemmKernel Gemm { get; }
 
     internal IReadOnlyList<Layer> Layers { get; }
+
+    /// <summary>
+    /// The values each layer reads, by layer: value 0 is the model's input and value i + 1 is what layer i writes. They
+    /// are the nodes' inputs until a variant replaces several layers by one, which numbers the values afresh.
+    /// </summary>
+    internal int[][] Inputs { get; }
 
     /// <summary>Loads a model from the file format.</summary>
     public static OcrModel Load(ReadOnlySpan<byte> data, GemmKernel? gemm = null) => FromDefinition(ModelDefinition.Deserialize(data), gemm);
@@ -70,13 +78,13 @@ internal sealed unsafe class OcrModel
     {
         var layers = Layers;
         if (_inputShape.Length != 4 || _inputShape[1] != 3 || layers[0] is not Layers.GemmConvLayer { CanBroadcastInput: true } conv
-            || conv.Node.Inputs is not [0])
+            || Inputs[0] is not [0])
             throw new InvalidOperationException($"{Name} does not start with a convolution of a three-channel input.");
         for (int i = 1; i < layers.Count; i++)
-            if (Array.IndexOf(layers[i].Node.Inputs, 0) >= 0)
+            if (Array.IndexOf(Inputs[i], 0) >= 0)
                 throw new InvalidOperationException($"{Name} reads its input after the first convolution.");
         var gray = new List<Layer>(layers) { [0] = conv.WithBroadcastInput() };
-        return new OcrModel(this, gray, [_inputShape[0], 1, _inputShape[2], _inputShape[3]]);
+        return new OcrModel(this, gray, Inputs, [_inputShape[0], 1, _inputShape[2], _inputShape[3]]);
     }
 
     /// <summary>
@@ -91,8 +99,8 @@ internal sealed unsafe class OcrModel
         var layers = Layers;
         if (layers.Count < 2 || layers[^1] is not Layers.SoftmaxLayer softmax || layers[^2] is not Layers.LinearLayer { IsPlain: true } linear)
             throw new InvalidOperationException($"{Name} does not end in a linear layer and a softmax.");
-        int linearValue = linear.Node.Output;
-        if (softmax.Node.Inputs.Length != 1 || softmax.Node.Inputs[0] != linearValue)
+        int linearValue = layers.Count - 1;
+        if (Inputs[^1] is not [var read] || read != linearValue)
             throw new InvalidOperationException($"{Name}'s softmax does not read its last linear layer.");
         if (linear.OutputFeatures > 1 << 24)
             throw new InvalidOperationException($"{Name} has too many classes for an index stored as a float.");
@@ -100,7 +108,30 @@ internal sealed unsafe class OcrModel
         var fused = new List<Layer>(layers.Count - 1);
         for (int i = 0; i < layers.Count - 2; i++) fused.Add(layers[i]);
         fused.Add(new Layers.ArgMaxHeadLayer(linear, node));
-        return new OcrModel(this, fused);
+        return new OcrModel(this, fused, Inputs[..^1]);
+    }
+
+    /// <summary>
+    /// The same model with its first six layers, when they are PP-HGNetV2's stem, replaced by one
+    /// <see cref="Layers.StemLayer"/>, which computes the stem's output block by block without its four inner maps: bit
+    /// for bit the same output in much less working memory. The other layers and their weights are shared with this
+    /// model. A model without that stem is returned as it is.
+    /// </summary>
+    public OcrModel WithFusedStem()
+    {
+        var stem = Inference.Layers.StemLayer.TryCreate(Layers, Inputs);
+        if (stem is null) return this;
+        const int Fused = 5;
+        var layers = new List<Layer>(Layers.Count - Fused) { stem };
+        var inputs = new List<int[]>(Layers.Count - Fused) { Inputs[0] };
+        for (int i = Fused + 1; i < Layers.Count; i++)
+        {
+            layers.Add(Layers[i]);
+            // Values after the stem move down by the five it no longer writes; TryCreate checked that none of them is read.
+            inputs.Add(Inputs[i].Select(v => v > Fused ? v - Fused : v).ToArray());
+        }
+
+        return new OcrModel(this, layers, [.. inputs]);
     }
 
     /// <summary>

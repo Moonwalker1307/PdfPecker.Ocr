@@ -181,6 +181,69 @@ public sealed class RuntimeTests
         Assert.Throws<InvalidOperationException>(() => ModelStore.DetectionGray.WithGrayInput());
     }
 
+    [Theory]
+    [InlineData("det", 1, 3, 1536, 1088)]
+    [InlineData("det", 1, 3, 96, 160)]
+    [InlineData("det", 1, 3, 32, 32)]
+    [InlineData("det", 2, 3, 224, 320)]
+    [InlineData("det-gray", 1, 1, 1536, 1088)]
+    [InlineData("det-gray", 1, 1, 320, 96)]
+    [InlineData("rec", 6, 3, 48, 2400)]
+    [InlineData("rec", 6, 3, 48, 320)]
+    [InlineData("rec", 3, 3, 48, 1601)]
+    [InlineData("rec", 1, 3, 48, 335)]
+    [InlineData("rec", 1, 3, 48, 48)]
+    public void FusedStemGivesTheLayersBits(string name, int n, int c, int h, int w)
+    {
+        // The stem computed block by block in scratch must give the bits of its six layers run one after the other, for
+        // maps that split into many blocks, a few, or one, and for any degree of parallelism.
+        var layers = ModelStore.Load(name == "rec" ? "rec" : "det");
+        if (name == "det-gray") layers = layers.WithGrayInput();
+        var fused = layers.WithFusedStem();
+        Assert.NotSame(layers, fused);
+        Assert.Equal(layers.Layers.Count - 5, fused.Layers.Count);
+        int[] shape = [n, c, h, w];
+        var input = Random(Tensor.ElementCount(shape), 11);
+        float[] expected;
+        using (var context = new InferenceContext(2)) expected = layers.Run(input, shape, context, out _).ToArray();
+        foreach (int degree in new[] { 1, 4, 3 })
+        {
+            using var context = new InferenceContext(degree);
+            var result = fused.Run(input, shape, context, out int[] outputShape);
+            Assert.Equal(expected.Length, result.Length);
+            Assert.True(expected.AsSpan().SequenceEqual(result), $"{name} {string.Join('x', shape)} with {degree} threads");
+        }
+    }
+
+    [Fact]
+    public void FusedStemGivesTheLayersBitsWithEveryMatrixKernel()
+    {
+        byte[] data = ModelStore.Inflate("det").ToArray();
+        var input = ReferenceFixture.Load("det_96x128").Input();
+        foreach (var kernel in GemmKernel.Supported)
+        {
+            var layers = OcrModel.Load(data, kernel);
+            float[] expected;
+            using (var context = new InferenceContext(2)) expected = layers.Run(input, context).Span.ToArray();
+            using var fused = new InferenceContext(3);
+            Assert.True(expected.AsSpan().SequenceEqual(layers.WithFusedStem().Run(input, fused).Span), kernel.Name);
+        }
+    }
+
+    [Fact]
+    public void FusedStemNeedsTheStem()
+    {
+        // The classifier starts differently, and the bundled detector and recogniser already have their stems fused.
+        Assert.Same(ModelStore.Classifier, ModelStore.Classifier.WithFusedStem());
+        Assert.Same(ModelStore.Detection, ModelStore.Detection.WithFusedStem());
+        Assert.Same(ModelStore.RecognitionArgMax, ModelStore.RecognitionArgMax.WithFusedStem());
+        var graph = new GraphBuilder(4);
+        int a = graph.Add(OpKind.Conv, [0], ConvInts(3, 3, pt: 1, pl: 1, pb: 1, pr: 1), [0, 0], Weight([4, 3, 3, 3], 1), Weight([4], 2));
+        graph.Add(OpKind.Conv, [a], ConvInts(1, 1), [0, 0], Weight([2, 4, 1, 1], 3), Weight([2], 4));
+        var model = OcrModel.FromDefinition(graph.Model);
+        Assert.Same(model, model.WithFusedStem());
+    }
+
     [Fact]
     public void LayersAreDeterministicAcrossDegrees()
     {

@@ -10,11 +10,13 @@ namespace PdfPecker.Ocr.Models;
 /// </summary>
 internal static class ModelStore
 {
-    private static readonly LoadOnce<OcrModel> s_detection = new(() => Load("det"));
-    private static readonly LoadOnce<OcrModel> s_recognition = new(() => Load("rec"));
+    // The detector as loaded, before its stem is fused, which the gray variant starts from.
+    private static readonly LoadOnce<OcrModel> s_detectionLayers = new(() => Load("det"));
+    private static readonly LoadOnce<OcrModel> s_detection = new(() => s_detectionLayers.Value.WithFusedStem());
+    private static readonly LoadOnce<OcrModel> s_recognition = new(() => Load("rec").WithFusedStem());
     private static readonly LoadOnce<OcrModel> s_classifier = new(() => Load("cls"));
     private static readonly LoadOnce<OcrModel> s_recognitionArgMax = new(() => Recognition.WithArgMaxOutput());
-    private static readonly LoadOnce<OcrModel> s_detectionGray = new(() => Detection.WithGrayInput());
+    private static readonly LoadOnce<OcrModel> s_detectionGray = new(() => s_detectionLayers.Value.WithGrayInput().WithFusedStem());
 
     /// <summary>The text detector: input [N, 3, H, W] with H and W multiples of 32, output the text probability [N, 1, H, W].</summary>
     public static OcrModel Detection => s_detection.Value;

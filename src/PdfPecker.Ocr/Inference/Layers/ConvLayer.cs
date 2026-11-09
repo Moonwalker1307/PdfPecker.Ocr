@@ -79,7 +79,7 @@ internal abstract class ConvLayer : Layer
     protected ActivationKind Activation { get; }
     protected float Alpha { get; }
     protected float Beta { get; }
-    protected bool HasResidual { get; }
+    internal bool HasResidual { get; }
 
     public static Layer CreateConv(NodeDefinition node, ModelDefinition model, GemmKernel gemm)
     {
@@ -89,6 +89,17 @@ internal abstract class ConvLayer : Layer
         if (w.Shape.Length == 4 && w.Shape[1] == 1 && w.Shape[0] == group) return new DepthwiseConvLayer(node, model);
         throw new InvalidDataException("Grouped convolutions other than depthwise are not supported.");
     }
+
+    /// <summary>The input rows [first, end) that output rows [y0, y1) read inside a map of the given height.</summary>
+    internal (int First, int End) InputRows(int y0, int y1, int height) =>
+        (Math.Max(0, y0 * Sh - Pt), Math.Min(height, (y1 - 1) * Sh - Pt + Dh * (Kh - 1) + 1));
+
+    /// <summary>The input columns [first, end) that output columns [x0, x1) read inside a map of the given width.</summary>
+    internal (int First, int End) InputColumns(int x0, int x1, int width) =>
+        (Math.Max(0, x0 * Sw - Pl), Math.Min(width, (x1 - 1) * Sw - Pl + Dw * (Kw - 1) + 1));
+
+    /// <summary>The multiply-adds of one output pixel, all channels, for weighing work.</summary>
+    internal long MultiplyAddsPerPixel => (long)Cout * CinPerGroup * Kh * Kw;
 
     public override int[] OutputShape(int[][] inputs)
     {
@@ -193,7 +204,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         float* input = step.Input(0) + (long)n * x[1] * x[2] * x[3];
         float* packed = step.Context.Scratch(worker);
         if (layer._pointwise) gemm.PackBRows(input + n0, planeOut, layer._k, columns, packed);
-        else layer.PackPatches(input, layer.CinPerGroup, x[2], x[3], ow, n0, columns, packed);
+        else layer.PackPatches(input, layer._broadcast ? 0 : (long)x[2] * x[3], x[3], x[2], x[3], 0, 0, ow, 0, 0, n0, columns, packed);
         float* output = step.Output;
         long baseOffset = (long)n * layer.Cout * planeOut + (long)m0 * planeOut + n0;
         var epilogue = new Epilogue(layer.Activation, layer.Alpha, layer.Beta, layer.HasResidual ? step.Input(1) + baseOffset : null);
@@ -202,20 +213,60 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     }
 
     /// <summary>
-    /// Gathers the patches of output pixels [n0, n0 + columns) into NR-column panels: row (ci, ky, kx) of a panel holds
-    /// the input value each output pixel's kernel tap reads, or zero in the padding. Panels are filled one after the
-    /// other. A panel's pixels split into runs that each lie in one output row (usually one run for the whole panel),
-    /// and each run fills its part of every row of the panel from one run of an input row per tap, contiguous for
-    /// stride 1 and every Sw-th value otherwise. Looping over the taps inside a run keeps the run's position in
+    /// Computes every output channel of a block of output pixels, <paramref name="rows"/> rows of
+    /// <paramref name="width"/> pixels from output pixel (<paramref name="oy0"/>, <paramref name="ox0"/>), into
+    /// <paramref name="output"/>, which holds the block's pixels row after row and its channels
+    /// <paramref name="outputPlane"/> floats apart. The input is a window of an h x w map that holds its rows from
+    /// <paramref name="firstRow"/> and its columns from <paramref name="firstColumn"/>, <paramref name="rowStride"/>
+    /// floats per row and <paramref name="inputPlane"/> per channel; it must hold every pixel inside the map that the
+    /// block's taps read, and pixels outside the map are the padding as usual. Each output value is the sum the whole
+    /// layer computes for it, in the same order, so a map computed block by block has the bits of one computed at
+    /// once. This is how <see cref="StemLayer"/> runs a convolution on bands it keeps in scratch. The packed panels
+    /// need <see cref="BlockScratch"/> floats.
+    /// </summary>
+    internal void ComputeBlock(float* input, long inputPlane, long rowStride, int h, int w, int firstRow, int firstColumn,
+        int oy0, int ox0, int rows, int width, float* output, long outputPlane, float* packed)
+    {
+        if (HasResidual) throw new InvalidOperationException("A convolution with a residual cannot run on a block.");
+        int columns = rows * width;
+        int tile = TileColumns(columns);
+        var epilogue = new Epilogue(Activation, Alpha, Beta, null);
+        fixed (float* weights = _weights, bias = _bias)
+        {
+            for (int n0 = 0; n0 < columns; n0 += tile)
+            {
+                int count = Math.Min(tile, columns - n0);
+                PackPatches(input, _broadcast ? 0 : inputPlane, rowStride, h, w, firstRow, firstColumn, width, oy0, ox0, n0, count, packed);
+                _gemm.Multiply(_k, weights, Cout, packed, count, output + n0, (nint)outputPlane, bias, null, epilogue);
+            }
+        }
+    }
+
+    /// <summary>The floats of packed panels <see cref="ComputeBlock"/> needs for a block of the given number of pixels.</summary>
+    internal long BlockScratch(int pixels) => _gemm.PackedBSize(_k, TileColumns(pixels));
+
+    /// <summary>
+    /// Gathers the patches of output pixels [n0, n0 + columns) of a block into NR-column panels: row (ci, ky, kx) of a
+    /// panel holds the input value each output pixel's kernel tap reads, or zero in the padding. The block's pixels go
+    /// row by row, <paramref name="bandWidth"/> to a row, from output pixel (<paramref name="oy0"/>, <paramref name="ox0"/>);
+    /// for a whole layer the block is the output map. The input holds the rows of an h x w map from
+    /// <paramref name="firstRow"/> and its columns from <paramref name="firstColumn"/>, <paramref name="rowStride"/>
+    /// floats apart, channels <paramref name="planeSize"/> apart (0 for a broadcast plane). Panels are filled one after
+    /// the other. A panel's pixels split into runs that each lie in one output row (usually one run for the whole
+    /// panel), and each run fills its part of every row of the panel from one run of an input row per tap, contiguous
+    /// for stride 1 and every Sw-th value otherwise. Looping over the taps inside a run keeps the run's position in
     /// registers: the bookkeeping per tap, not the copying, was most of the packing time.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private void PackPatches(float* input, int channels, int h, int w, int ow, int n0, int columns, float* packed)
+    private void PackPatches(float* input, long planeSize, long rowStride, int h, int w, int firstRow, int firstColumn, int bandWidth,
+        int oy0, int ox0, int n0, int columns, float* packed)
     {
         int nr = _gemm.NR;
         int k = _k;
+        int channels = CinPerGroup;
         int kh = Kh, kw = Kw, sw = Sw, dh = Dh, dw = Dw;
-        long planeSize = _broadcast ? 0 : (long)h * w;
+        // The map's first channel as if the window held it whole; only rows and columns the window holds are read.
+        float* origin = input - (long)firstRow * rowStride - firstColumn;
         for (int j0 = 0; j0 < columns; j0 += nr)
         {
             int width = Math.Min(nr, columns - j0);
@@ -223,11 +274,11 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
             for (int t = 0; t < width;)
             {
                 int n = n0 + j0 + t;
-                int oy = n / ow, ox = n - oy * ow;
-                int length = Math.Min(ow - ox, width - t);
-                int y0 = oy * Sh - Pt, x0 = ox * sw - Pl;
+                int ly = n / bandWidth, lx = n - ly * bandWidth;
+                int length = Math.Min(bandWidth - lx, width - t);
+                int y0 = (oy0 + ly) * Sh - Pt, x0 = (ox0 + lx) * sw - Pl;
                 float* dst = panel + t;
-                float* plane = input;
+                float* plane = origin;
                 for (int ci = 0; ci < channels; ci++, plane += planeSize)
                 {
                     for (int ky = 0, iy = y0; ky < kh; ky++, iy += dh)
@@ -238,7 +289,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
                             continue;
                         }
 
-                        float* row = plane + (long)iy * w;
+                        float* row = plane + (long)iy * rowStride;
                         for (int kx = 0, ix = x0; kx < kw; kx++, ix += dw, dst += nr) CopyTap(row, w, ix, sw, dst, length);
                     }
                 }

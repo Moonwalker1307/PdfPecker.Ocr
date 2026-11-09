@@ -101,6 +101,7 @@ internal sealed class ExecutionPlan
     public static ExecutionPlan Create(OcrModel model, int[] inputShape, InferenceContext context)
     {
         var layers = model.Layers;
+        var reads = model.Inputs;
         int valueCount = layers.Count + 1;
         var shapes = new int[valueCount][];
         var sizes = new long[valueCount];
@@ -111,7 +112,7 @@ internal sealed class ExecutionPlan
         for (int i = 0; i < layers.Count; i++)
         {
             var layer = layers[i];
-            var inputs = layer.Node.Inputs.Select(v => shapes[v]).ToArray();
+            var inputs = reads[i].Select(v => shapes[v]).ToArray();
             int[] output = layer.OutputShape(inputs);
             int v = i + 1;
             shapes[v] = output;
@@ -123,7 +124,7 @@ internal sealed class ExecutionPlan
         var lastUse = new int[valueCount];
         for (int v = 0; v < valueCount; v++) lastUse[v] = v == 0 ? -1 : v - 1;
         for (int i = 0; i < layers.Count; i++)
-            foreach (int input in layers[i].Node.Inputs) lastUse[input] = Math.Max(lastUse[input], i);
+            foreach (int input in reads[i]) lastUse[input] = Math.Max(lastUse[input], i);
         int outputValue = valueCount - 1;
         lastUse[outputValue] = int.MaxValue;
 
@@ -163,20 +164,20 @@ internal sealed class ExecutionPlan
         for (int i = 0; i < layers.Count; i++)
         {
             var layer = layers[i];
-            var node = layer.Node;
+            int[] read = reads[i];
             int output = i + 1;
             if (layer.IsView)
             {
-                int root = Find(node.Inputs[0], out long at);
+                int root = Find(read[0], out long at);
                 Join(output, root, at);
                 continue;
             }
             int candidate = layer.InPlaceInput(steps[i].InputShapes, steps[i].OutputShape);
             if (candidate >= 0)
             {
-                int v = node.Inputs[candidate];
+                int v = read[candidate];
                 int root = Find(v, out long at);
-                bool usedTwice = node.Inputs.Count(x => x == v) > 1;
+                bool usedTwice = read.Count(x => x == v) > 1;
                 if (root != 0 && at == 0 && end[root] == i && !usedTwice && sizes[v] == sizes[output] && sizes[root] == sizes[output])
                 {
                     Join(output, root, 0);
@@ -188,22 +189,22 @@ internal sealed class ExecutionPlan
                 // An input is written straight into its slice when it fills its memory alone: it owns it, or the
                 // values sharing it (a layer that wrote over it in place, a view) have exactly its size. Two inputs
                 // with the same memory cannot both move.
-                var sources = new int[node.Inputs.Length];
+                var sources = new int[read.Length];
                 for (int j = 0; j < sources.Length; j++)
                 {
-                    int v = node.Inputs[j];
+                    int v = read[j];
                     int root = Find(v, out long at);
                     sources[j] = root != 0 && at == 0 && sizes[root] == sizes[v] && concat.Factor(j) == (1, 1) ? root : -1;
                 }
                 long sliceOffset = 0;
-                for (int j = 0; j < node.Inputs.Length; j++)
+                for (int j = 0; j < read.Length; j++)
                 {
                     int root = sources[j];
                     if (root > 0 && Array.IndexOf(sources, root) == j && Array.LastIndexOf(sources, root) == j)
                         Join(root, output, sliceOffset);
                     // An upsampled input's slice is larger than the input by its factors.
                     var (fh, fw) = concat.Factor(j);
-                    sliceOffset += sizes[node.Inputs[j]] * fh * fw;
+                    sliceOffset += sizes[read[j]] * fh * fw;
                 }
             }
         }
@@ -258,7 +259,7 @@ internal sealed class ExecutionPlan
         for (int i = 0; i < steps.Length; i++)
         {
             var step = steps[i];
-            step.InputLocations = layers[i].Node.Inputs.Select(LocationOf).ToArray();
+            step.InputLocations = reads[i].Select(LocationOf).ToArray();
             step.OutputLocation = LocationOf(i + 1);
             step.SharedLocation = new Location(BufferKind.Arena, scratchOffset[i]);
             perWorker = Math.Max(perWorker, layers[i].ScratchPerWorker(step, context));
