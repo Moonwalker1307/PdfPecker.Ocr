@@ -242,7 +242,7 @@ public sealed class KernelTests
     [MemberData(nameof(Kernels))]
     public void TransposedConvolutionMatchesNaive(string kernel)
     {
-        foreach (var (cin, cout, h, w, k) in new[] { (12, 5, 6, 9, 2), (3, 2, 4, 5, 3), (33, 16, 5, 17, 2) })
+        foreach (var (cin, cout, h, w, k) in new[] { (12, 5, 6, 9, 2), (3, 2, 4, 5, 3), (33, 16, 5, 17, 2), (8, 3, 4, 70, 2) })
         {
             var x = RandomTensor(cin + h, 2, cin, h, w);
             var weight = Weight([cin, cout, k, k], cout);
