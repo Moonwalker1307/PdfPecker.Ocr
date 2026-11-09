@@ -12,9 +12,9 @@ internal sealed class OcrPipeline
     private readonly TextDetector _detector;
     private readonly TextRecognizer _recognizer;
 
-    public OcrPipeline(INetwork detection, INetwork recognition, INetwork? orientation, CharacterSet characters, DetectionOptions? detectionOptions = null, RecognitionOptions? recognitionOptions = null)
+    public OcrPipeline(INetwork detection, INetwork recognition, INetwork? orientation, CharacterSet characters, DetectionOptions? detectionOptions = null, RecognitionOptions? recognitionOptions = null, INetwork? detectionGray = null)
     {
-        _detector = new TextDetector(detection, detectionOptions);
+        _detector = new TextDetector(detection, detectionOptions, detectionGray);
         _recognizer = new TextRecognizer(recognition, orientation, characters, recognitionOptions);
     }
 

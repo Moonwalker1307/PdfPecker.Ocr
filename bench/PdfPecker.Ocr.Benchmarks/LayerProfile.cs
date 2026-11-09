@@ -29,10 +29,12 @@ static unsafe class LayerProfile
         raster.Pixels.Dispose();
 
         using var context = new InferenceContext(threads);
-        var det = new Recording(new ModelNetwork(ModelStore.Detection, context));
+        // The page is gray, so the detector runs on one plane, as in the engine.
+        var det = new Recording(new ModelNetwork(ModelStore.DetectionGray, context));
+        var detColour = new Recording(new ModelNetwork(ModelStore.Detection, context));
         var rec = new Recording(new ModelNetwork(ModelStore.RecognitionArgMax, context));
         var cls = new Recording(new ModelNetwork(ModelStore.Classifier, context));
-        var pipeline = new OcrPipeline(det, rec, cls, OcrEngine.Characters, OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(new OcrOptions()));
+        var pipeline = new OcrPipeline(detColour, rec, cls, OcrEngine.Characters, OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(new OcrOptions()), det);
         pipeline.Run(view, 300);
 
         var inv = CultureInfo.InvariantCulture;

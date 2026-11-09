@@ -10,11 +10,19 @@ namespace PdfPecker.Ocr.Detection;
 internal sealed class TextDetector
 {
     private readonly INetwork _network;
+    private readonly INetwork? _grayNetwork;
     private readonly DbPostProcessor _postProcessor = new();
 
-    public TextDetector(INetwork network, DetectionOptions? options = null)
+    /// <param name="network">The detection network, input [1, 3, H, W].</param>
+    /// <param name="options">The detection settings.</param>
+    /// <param name="grayNetwork">
+    /// Optionally the same network on a one-plane input [1, 1, H, W] (<see cref="Models.ModelStore.DetectionGray"/>),
+    /// for gray images: a third of the input to build and hold, and the same map.
+    /// </param>
+    public TextDetector(INetwork network, DetectionOptions? options = null, INetwork? grayNetwork = null)
     {
         _network = network;
+        _grayNetwork = grayNetwork;
         Options = options ?? new DetectionOptions();
     }
 
@@ -25,13 +33,15 @@ internal sealed class TextDetector
     {
         DetectionInput.Layout layout = DetectionInput.Plan(image.Width, image.Height, Options);
         int dw = layout.InputWidth, dh = layout.InputHeight;
-        int length = 3 * dw * dh;
+        bool gray = image.Channels == 1 && _grayNetwork is not null;
+        int planes = gray ? 1 : 3;
+        int length = planes * dw * dh;
         float[] input = ArrayPool<float>.Shared.Rent(length);
         try
         {
-            DetectionInput.Fill(image, layout, input.AsSpan(0, length));
+            DetectionInput.Fill(image, layout, input.AsSpan(0, length), planes);
             cancellationToken.ThrowIfCancellationRequested();
-            ReadOnlySpan<float> map = _network.Run(input.AsSpan(0, length), [1, 3, dh, dw], out int[] shape);
+            ReadOnlySpan<float> map = (gray ? _grayNetwork! : _network).Run(input.AsSpan(0, length), [1, planes, dh, dw], out int[] shape);
             if (shape.Length != 4 || shape[0] != 1 || shape[1] != 1 || shape[2] != dh || shape[3] != dw || map.Length < dw * dh)
             {
                 throw new InvalidOperationException("The detection network returned an unexpected shape.");

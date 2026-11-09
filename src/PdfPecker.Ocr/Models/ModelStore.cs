@@ -14,9 +14,16 @@ internal static class ModelStore
     private static readonly Lazy<OcrModel> s_recognition = new(() => Load("rec"));
     private static readonly Lazy<OcrModel> s_classifier = new(() => Load("cls"));
     private static readonly Lazy<OcrModel> s_recognitionArgMax = new(() => Recognition.WithArgMaxOutput());
+    private static readonly Lazy<OcrModel> s_detectionGray = new(() => Detection.WithGrayInput());
 
     /// <summary>The text detector: input [N, 3, H, W] with H and W multiples of 32, output the text probability [N, 1, H, W].</summary>
     public static OcrModel Detection => s_detection.Value;
+
+    /// <summary>
+    /// The text detector on a gray page: input [N, 1, H, W], the one plane that stands for the three equal colour planes
+    /// (see <see cref="OcrModel.WithGrayInput"/>), output as <see cref="Detection"/>'s, bit for bit. It shares its layers.
+    /// </summary>
+    public static OcrModel DetectionGray => s_detectionGray.Value;
 
     /// <summary>The line recogniser: input [N, 3, 48, W], output [N, W / 8, classes], a softmax over <see cref="Characters"/>.</summary>
     public static OcrModel Recognition => s_recognition.Value;

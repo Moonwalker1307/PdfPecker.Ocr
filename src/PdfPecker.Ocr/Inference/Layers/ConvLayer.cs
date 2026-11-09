@@ -40,6 +40,29 @@ internal abstract class ConvLayer : Layer
         if (node.Inputs.Length != (HasResidual ? 2 : 1)) throw new InvalidDataException("Convolution has the wrong number of inputs.");
     }
 
+    /// <summary>A copy of another convolution's attributes, for a variant of a loaded layer.</summary>
+    protected ConvLayer(ConvLayer source)
+        : base(source.Node)
+    {
+        Kh = source.Kh;
+        Kw = source.Kw;
+        Sh = source.Sh;
+        Sw = source.Sw;
+        Dh = source.Dh;
+        Dw = source.Dw;
+        Pt = source.Pt;
+        Pl = source.Pl;
+        Pb = source.Pb;
+        Pr = source.Pr;
+        Group = source.Group;
+        Activation = source.Activation;
+        HasResidual = source.HasResidual;
+        Alpha = source.Alpha;
+        Beta = source.Beta;
+        Cout = source.Cout;
+        CinPerGroup = source.CinPerGroup;
+    }
+
     protected int Kh { get; }
     protected int Kw { get; }
     protected int Sh { get; }
@@ -93,6 +116,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     private readonly float[] _bias;
     private readonly bool _pointwise;
     private readonly int _k;
+    private readonly bool _broadcast;
 
     public GemmConvLayer(NodeDefinition node, ModelDefinition model, GemmKernel gemm)
         : base(node, model)
@@ -102,6 +126,37 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         _weights = gemm.PackA(Weight(node, model, 0).Data, Cout, _k);
         _bias = gemm.PadBias(Weight(node, model, 1).Data, Cout);
         _pointwise = Kh == 1 && Kw == 1 && Sh == 1 && Sw == 1 && Pt == 0 && Pl == 0 && Pb == 0 && Pr == 0;
+    }
+
+    private GemmConvLayer(GemmConvLayer source)
+        : base(source)
+    {
+        _gemm = source._gemm;
+        _k = source._k;
+        _weights = source._weights;
+        _bias = source._bias;
+        _pointwise = source._pointwise;
+        _broadcast = true;
+    }
+
+    /// <summary>True when <see cref="WithBroadcastInput"/> can make a variant of this layer.</summary>
+    public bool CanBroadcastInput => !_pointwise && !_broadcast && !HasResidual;
+
+    /// <summary>
+    /// The same convolution on a one-channel input that stands for its every input channel: a gray page's three equal
+    /// colour planes. Each tap reads the one plane where it would read its channel's, so the products and their order
+    /// are the same and so is every bit of the output, without the two copies of the plane. The weights are shared.
+    /// </summary>
+    public GemmConvLayer WithBroadcastInput() =>
+        CanBroadcastInput ? new GemmConvLayer(this) : throw new InvalidOperationException("This convolution cannot read a broadcast input.");
+
+    public override int[] OutputShape(int[][] inputs)
+    {
+        if (!_broadcast) return base.OutputShape(inputs);
+        var x = inputs[0];
+        RequireRank(x, 4, "Convolution");
+        if (x[1] != 1) throw Unsupported($"Convolution expects one channel, got {x[1]}.");
+        return base.OutputShape([[x[0], CinPerGroup, x[2], x[3]]]);
     }
 
     /// <summary>The columns of one tile: the packed tile stays around a quarter of a megabyte.</summary>
@@ -138,7 +193,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         float* input = step.Input(0) + (long)n * x[1] * x[2] * x[3];
         float* packed = step.Context.Scratch(worker);
         if (layer._pointwise) gemm.PackBRows(input + n0, planeOut, layer._k, columns, packed);
-        else layer.PackPatches(input, x[1], x[2], x[3], ow, n0, columns, packed);
+        else layer.PackPatches(input, layer.CinPerGroup, x[2], x[3], ow, n0, columns, packed);
         float* output = step.Output;
         long baseOffset = (long)n * layer.Cout * planeOut + (long)m0 * planeOut + n0;
         var epilogue = new Epilogue(layer.Activation, layer.Alpha, layer.Beta, layer.HasResidual ? step.Input(1) + baseOffset : null);
@@ -181,7 +236,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
             float* dst = packed + (long)j0 * k;
             for (int ci = 0; ci < channels; ci++)
             {
-                float* plane = input + (long)ci * h * w;
+                float* plane = _broadcast ? input : input + (long)ci * h * w;
                 for (int ky = 0; ky < Kh; ky++)
                 {
                     for (int kx = 0; kx < Kw; kx++, dst += nr)

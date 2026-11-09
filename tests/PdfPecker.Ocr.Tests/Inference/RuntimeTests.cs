@@ -134,6 +134,54 @@ public sealed class RuntimeTests
     }
 
     [Fact]
+    public void GrayInputIsTheRepeatedPlaneBitForBit()
+    {
+        // A gray page's detector input is one plane read as all three channels; the output must be the bits of the
+        // full model on the plane written three times, with every matrix kernel and degree of parallelism.
+        byte[] data = ModelStore.Inflate("det").ToArray();
+        var fixture = ReferenceFixture.Load("det_96x128").Input();
+        int plane = 96 * 128;
+        var gray = fixture.Span[..plane].ToArray();
+        var repeated = new float[3 * plane];
+        for (int c = 0; c < 3; c++) gray.CopyTo(repeated, c * plane);
+        foreach (var kernel in GemmKernel.Supported)
+        {
+            var full = OcrModel.Load(data, kernel);
+            var grayModel = full.WithGrayInput();
+            Assert.Equal([-1, 1, -1, -1], grayModel.InputShape);
+            float[] expected;
+            using (var context = new InferenceContext(2))
+                expected = full.Run(repeated, [1, 3, 96, 128], context, out _).ToArray();
+            foreach (int degree in new[] { 1, 3 })
+            {
+                using var context = new InferenceContext(degree);
+                var result = grayModel.Run(gray, [1, 1, 96, 128], context, out int[] shape);
+                Assert.Equal([1, 1, 96, 128], shape);
+                Assert.True(expected.AsSpan().SequenceEqual(result), $"{kernel.Name} with {degree} threads");
+            }
+        }
+    }
+
+    [Fact]
+    public void GrayInputNeedsAFirstConvolutionThatAloneReadsTheInput()
+    {
+        var plain = new GraphBuilder(4);
+        plain.Model.InputShape = [-1, 3, -1, -1];
+        plain.Add(OpKind.Conv, [0], ConvInts(3, 3, pt: 1, pl: 1, pb: 1, pr: 1), [0, 0], Weight([4, 3, 3, 3], 1), Weight([4], 2));
+        Assert.Equal([-1, 1, -1, -1], OcrModel.FromDefinition(plain.Model).WithGrayInput().InputShape);
+        var graph = new GraphBuilder(4);
+        graph.Model.InputShape = [-1, 3, -1, -1];
+        int a = graph.Add(OpKind.Conv, [0], ConvInts(3, 3, pt: 1, pl: 1, pb: 1, pr: 1), [0, 0], Weight([3, 3, 3, 3], 1), Weight([3], 2));
+        graph.Add(OpKind.Add, [a, 0], [1, 1]);
+        Assert.Throws<InvalidOperationException>(() => OcrModel.FromDefinition(graph.Model).WithGrayInput());
+        var pointwise = new GraphBuilder(4);
+        pointwise.Model.InputShape = [-1, 3, -1, -1];
+        pointwise.Add(OpKind.Conv, [0], ConvInts(1, 1), [0, 0], Weight([4, 3, 1, 1], 1), Weight([4], 2));
+        Assert.Throws<InvalidOperationException>(() => OcrModel.FromDefinition(pointwise.Model).WithGrayInput());
+        Assert.Throws<InvalidOperationException>(() => ModelStore.DetectionGray.WithGrayInput());
+    }
+
+    [Fact]
     public void LayersAreDeterministicAcrossDegrees()
     {
         // The detector and recogniser above cover the layers they use at their shapes; this covers the tiling of a

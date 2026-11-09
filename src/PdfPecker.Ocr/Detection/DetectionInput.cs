@@ -72,7 +72,11 @@ internal static class DetectionInput
     /// Writes the network input for <paramref name="image"/> into <paramref name="input"/> (3 planes of
     /// <c>InputHeight x InputWidth</c>, in the order B, G, R as rapidocr feeds OpenCV's BGR images).
     /// </summary>
-    public static void Fill(PixelView image, Layout layout, Span<float> input)
+    /// <summary>
+    /// Writes the network input: three planes, or for a gray image and <paramref name="outputPlanes"/> 1 the one plane
+    /// that stands for all three.
+    /// </summary>
+    public static void Fill(PixelView image, Layout layout, Span<float> input, int outputPlanes = 3)
     {
         int dw = layout.InputWidth, dh = layout.InputHeight, plane = dw * dh;
         int planes = image.Channels == 1 ? 1 : 3;
@@ -87,7 +91,7 @@ internal static class DetectionInput
             }
 
             float[] table = Normalize;
-            for (int p = 0; p < 3; p++)
+            for (int p = 0; p < outputPlanes; p++)
             {
                 ReadOnlySpan<byte> src = resized.AsSpan((planes == 1 ? 0 : p) * plane, plane);
                 Span<float> dst = input.Slice(p * plane, plane);
