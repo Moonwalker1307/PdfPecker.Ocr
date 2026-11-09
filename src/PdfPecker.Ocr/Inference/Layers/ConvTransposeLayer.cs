@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
@@ -93,16 +94,19 @@ internal sealed unsafe class ConvTransposeLayer : Layer
         int ow = w * kw;
         float* output = step.Output + (long)n * layer._cout * plane * taps;
         for (int r = 0; r < rows; r++) VectorMath.Activate(result + (long)r * columns, columns, layer._activation, layer._alpha, layer._beta);
+
+        // With a kernel two wide, the rows of dx = 0 and 1 follow each other and are interleaved into the output rows
+        // together. That needs the tile to start and end on a pair: tiles start at a multiple of the panel height, which
+        // is even for every kernel, and the layer's rows are even, so they always do; a tile that did not would write
+        // its rows one at a time.
+        bool pair = kw == 2 && (m0 & 1) == 0 && (rows & 1) == 0;
+        Debug.Assert(kw != 2 || pair, "A tile of a transposed convolution splits a pair of rows.");
         for (int r = 0; r < rows; r++)
         {
             float* src = result + (long)r * columns;
             int row = m0 + r;
             int co = row / taps, dy = row % taps / kw, dx = row % kw;
             float* outPlane = output + (long)co * plane * taps + dx;
-
-            // With a kernel two wide, the rows of dx = 0 and 1 follow each other (tiles start at a multiple of the
-            // panel height, which is even) and are interleaved into the output rows together.
-            bool pair = kw == 2;
             int y = n0 / w, x = n0 - y * w;
             for (int j = 0; j < columns; y++, x = 0)
             {
