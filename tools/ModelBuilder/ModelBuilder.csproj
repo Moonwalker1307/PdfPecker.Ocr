@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Regenerates src/PdfPecker.Ocr/Models/*.bin.br from the ONNX models in the rapidocr wheel on PyPI.
+  <!-- Regenerates src/PdfPecker.Ocr/Models/*.bin.deflate from the ONNX models in the rapidocr wheel on PyPI.
        Run manually from the repository root: dotnet run -c Release (project tools/ModelBuilder); see README.md. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>

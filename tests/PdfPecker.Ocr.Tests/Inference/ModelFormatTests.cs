@@ -133,11 +133,7 @@ public sealed class ModelFormatTests
     {
         foreach (string name in new[] { "cls" })
         {
-            using var stream = typeof(ModelStore).Assembly.GetManifestResourceStream($"PdfPecker.Ocr.Models.{name}.bin.br")!;
-            using var brotli = new System.IO.Compression.BrotliStream(stream, System.IO.Compression.CompressionMode.Decompress);
-            using var buffer = new MemoryStream();
-            brotli.CopyTo(buffer);
-            byte[] data = buffer.ToArray();
+            byte[] data = ModelStore.Inflate(name).ToArray();
             Assert.Equal(data, ModelDefinition.Deserialize(data).Serialize());
         }
     }

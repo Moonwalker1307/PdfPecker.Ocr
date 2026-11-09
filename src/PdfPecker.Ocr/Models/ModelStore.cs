@@ -39,12 +39,20 @@ internal static class ModelStore
     /// <summary>Loads a bundled model by its short name (det, rec or cls).</summary>
     internal static OcrModel Load(string name)
     {
-        string resource = "PdfPecker.Ocr.Models." + name + ".bin.br";
+        using var data = Inflate(name);
+        return OcrModel.Load(data.GetBuffer().AsSpan(0, (int)data.Length));
+    }
+
+    /// <summary>The model file of a bundled model, inflated; the model data is the stream's buffer up to its length.</summary>
+    internal static MemoryStream Inflate(string name)
+    {
+        string resource = "PdfPecker.Ocr.Models." + name + ".bin.deflate";
         using var stream = typeof(ModelStore).Assembly.GetManifestResourceStream(resource)
             ?? throw new InvalidOperationException($"The model resource {resource} is missing from the assembly.");
-        using var brotli = new BrotliStream(stream, CompressionMode.Decompress);
-        using var data = new MemoryStream(capacity: (int)Math.Min(stream.Length * 2, int.MaxValue));
-        brotli.CopyTo(data);
-        return OcrModel.Load(data.GetBuffer().AsSpan(0, (int)data.Length));
+        using var deflate = new DeflateStream(stream, CompressionMode.Decompress);
+        // The files inflate to less than twice their size, so the buffer is allocated once.
+        var data = new MemoryStream(capacity: (int)Math.Min(stream.Length * 2, int.MaxValue));
+        deflate.CopyTo(data);
+        return data;
     }
 }
