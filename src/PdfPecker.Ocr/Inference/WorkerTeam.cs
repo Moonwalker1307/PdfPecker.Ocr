@@ -84,9 +84,11 @@ internal sealed unsafe class WorkerTeam : IDisposable
         var threads = new Thread[_size - 1];
         for (int w = 1; w < _size; w++)
         {
-            // Background threads: a context that is never disposed must not keep the process alive.
+            // Background threads: a context that is never disposed must not keep the process alive. UnsafeStart, because
+            // the threads live as long as the pooled context, and Start would keep the execution context (async locals,
+            // Activity.Current, logging scopes) of whichever call first ran an operator reachable for that long.
             var thread = new Thread(Worker, maxStackSize: 1 << 20) { IsBackground = true, Name = "PdfPecker.Ocr worker" };
-            thread.Start(w);
+            thread.UnsafeStart(w);
             threads[w - 1] = thread;
         }
         return threads;
