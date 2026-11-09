@@ -169,10 +169,15 @@ internal static unsafe partial class VectorMath
     /// gone through <see cref="Softmax(float*, int)"/> and then a search for the first largest value: the same exponentials, the same
     /// sum and the same products. The row is left as it is, and neither the exponentials nor the probabilities are stored.
     /// </summary>
+    public static int SoftmaxArgMax(float* row, int length, out float probability) => SoftmaxArgMax(row, length, Max(row, length), out probability);
+
+    /// <summary>
+    /// <see cref="SoftmaxArgMax(float*, int, out float)"/> for a row whose largest value the caller already has, such
+    /// as the largest of the maxima of its parts: the maximum of a set does not depend on how it is taken.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public static int SoftmaxArgMax(float* row, int length, out float probability)
+    public static int SoftmaxArgMax(float* row, int length, float max, out float probability)
     {
-        float max = Max(row, length);
         float scale = 1f / ExpSum(row, length, max, out float largest);
 
         // Rounding a product to nearest never puts a smaller factor above a larger one, so the largest probability is

@@ -421,9 +421,10 @@ internal sealed unsafe class SoftmaxLayer(NodeDefinition node) : Layer(node)
 /// <summary>
 /// A <see cref="LinearLayer"/> followed by a softmax over its output, reduced to what greedy decoding reads: for each row,
 /// the index of the most probable class and its probability, as [.., 2]. Both values are bit for bit what the two layers
-/// and a search for the first largest probability give (see <see cref="VectorMath.SoftmaxArgMax"/>), but the
-/// probabilities of all classes are never kept: the recogniser's 18,710 classes made an output of 75 KB per time step,
-/// 45 to 180 MB for a batch of long lines, which the decoder then read once more.
+/// and a search for the first largest probability give (see
+/// <see cref="VectorMath.SoftmaxArgMax(float*, int, float, out float)"/>), but the probabilities of all classes are
+/// never kept: the recogniser's 18,710 classes made an output of 75 KB per time step, 45 to 180 MB for a batch of long
+/// lines, which the decoder then read once more.
 /// </summary>
 /// <remarks>
 /// The rows go in chunks: the linear layer writes a chunk's logits into shared scratch, tiled over blocks of output
@@ -459,13 +460,23 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         return output;
     }
 
-    // The packed rows come first in the shared scratch, and the chunk's logits after them on a 64-byte boundary.
+    // The packed rows come first in the shared scratch, then the chunk's logits on a 64-byte boundary, then the largest
+    // logit of each of the chunk's rows in each column block of the product (the blocks do not depend on the rows).
     private long PackedSize(int rows) => (_linear.Gemm.PackedASize(rows, _linear.InputFeatures) + 15) / 16 * 16;
+
+    private int Blocks
+    {
+        get
+        {
+            var tiling = _linear.ColumnTiling(1);
+            return (tiling.Columns + tiling.TileColumns - 1) / tiling.TileColumns;
+        }
+    }
 
     public override long SharedScratch(Step step)
     {
         int rows = Rows.Count(step.OutputShape);
-        return PackedSize(rows) + (long)Math.Min(rows, ChunkRows) * _stride;
+        return PackedSize(rows) + ((long)Math.Min(rows, ChunkRows) * (_stride + Blocks));
     }
 
     public override void Execute(Step step, InferenceContext context)
@@ -474,6 +485,8 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         var chunk = step.State as Chunk ?? (Chunk)(step.State = new Chunk(step, _linear.Gemm));
         chunk.Packing.Run(context, step.Input(0), _linear.InputFeatures, rows, _linear.InputFeatures, context.SharedScratch);
         chunk.Logits = context.SharedScratch + PackedSize(rows);
+        chunk.Blocks = Blocks;
+        chunk.Maxima = chunk.Logits + ((long)Math.Min(rows, ChunkRows) * _stride);
         for (int m0 = 0; m0 < rows; m0 += ChunkRows)
         {
             chunk.First = m0;
@@ -493,8 +506,13 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         int k = linear.InputFeatures;
         chunk.Tiling!.Decode(tile, out _, out int n0, out int columns, out int m0, out int rows);
         float* a = chunk.Step.Context.SharedScratch + (long)(chunk.First + m0) * k;
+        float* logits = chunk.Logits + (long)m0 * layer._stride + n0;
         fixed (float* weights = linear.PackedWeights, bias = linear.PaddedBias)
-            linear.Gemm.Multiply(k, a, rows, weights + (long)n0 * k, columns, chunk.Logits + (long)m0 * layer._stride + n0, layer._stride, null, bias + n0);
+            linear.Gemm.Multiply(k, a, rows, weights + (long)n0 * k, columns, logits, layer._stride, null, bias + n0);
+
+        // The largest logit of each row in this block of columns, while the block is still in the cache.
+        int blocks = chunk.Blocks, block = n0 / chunk.Tiling.TileColumns;
+        for (int r = 0; r < rows; r++) chunk.Maxima[((m0 + r) * blocks) + block] = VectorMath.Max(logits + ((long)r * layer._stride), columns);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -504,9 +522,12 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         var layer = (ArgMaxHeadLayer)chunk.Step.Layer;
         int n = layer._linear.OutputFeatures;
         float* output = chunk.Step.Output + (long)chunk.First * 2;
+        int blocks = chunk.Blocks;
         for (int r = tile * RowsPerTile, end = Math.Min(chunk.Count, r + RowsPerTile); r < end; r++)
         {
-            int index = VectorMath.SoftmaxArgMax(chunk.Logits + (long)r * layer._stride, n, out float probability);
+            float max = chunk.Maxima[r * blocks];
+            for (int b = 1; b < blocks; b++) max = Math.Max(max, chunk.Maxima[(r * blocks) + b]);
+            int index = VectorMath.SoftmaxArgMax(chunk.Logits + (long)r * layer._stride, n, max, out float probability);
             output[2 * r] = index;
             output[(2 * r) + 1] = probability;
         }
@@ -526,5 +547,10 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         public int Count { get; set; }
 
         public Tiling? Tiling { get; set; }
+
+        /// <summary>The column blocks of the tiling, and the largest logit of each row in each of them.</summary>
+        public int Blocks { get; set; }
+
+        public float* Maxima { get; set; }
     }
 }
