@@ -40,7 +40,7 @@ public static partial class ImageOcr
     {
         ArgumentNullException.ThrowIfNull(image);
         if (!image.CanRead) throw new ArgumentException("The stream is not readable.", nameof(image));
-        return Recognize(PdfOcr.ReadAll(image), options, cancellationToken);
+        return Recognize(PdfOcr.ReadAll(image, cancellationToken), options, cancellationToken);
     }
 
     /// <summary>Reads the text of the image file at <paramref name="path"/>.</summary>

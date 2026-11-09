@@ -53,7 +53,7 @@ public static partial class PdfOcr
         ArgumentNullException.ThrowIfNull(output);
         if (!pdf.CanRead) throw new ArgumentException("The stream is not readable.", nameof(pdf));
         if (!output.CanWrite) throw new ArgumentException("The output stream is not writable.", nameof(output));
-        var result = MakeSearchable(ReadAll(pdf), options, cancellationToken);
+        var result = MakeSearchable(ReadAll(pdf, cancellationToken), options, cancellationToken);
         output.Write(result);
         output.Flush();
     }
@@ -78,16 +78,26 @@ public static partial class PdfOcr
         OutputFile.WriteAllBytes(outputPath, result);
     }
 
-    internal static byte[] ReadAll(Stream stream)
+    /// <summary>The stream from its position to its end, read in chunks with the token checked between them.</summary>
+    internal static byte[] ReadAll(Stream stream, CancellationToken cancellationToken)
     {
         if (stream is MemoryStream ms && ms.TryGetBuffer(out var buffer))
         {
-            var data = buffer.AsSpan((int)ms.Position).ToArray();
-            ms.Position = ms.Length;
+            // A position past the end is allowed, and the stream reads nothing from there.
+            int start = (int)Math.Min(ms.Position, ms.Length);
+            var data = buffer.AsSpan(start).ToArray();
+            if (start < ms.Length) ms.Position = ms.Length;
             return data;
         }
         var copy = new MemoryStream();
-        stream.CopyTo(copy);
+        var chunk = new byte[81920];
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int read = stream.Read(chunk, 0, chunk.Length);
+            if (read == 0) break;
+            copy.Write(chunk, 0, read);
+        }
         return copy.ToArray();
     }
 }

@@ -27,9 +27,9 @@ public sealed class OutputFileTests
     public void StreamsAreReadFromTheirPosition()
     {
         var ms = new MemoryStream(new byte[] { 1, 2, 3, 4 }) { Position = 1 };
-        Assert.Equal(new byte[] { 2, 3, 4 }, PdfOcr.ReadAll(ms));
+        Assert.Equal(new byte[] { 2, 3, 4 }, PdfOcr.ReadAll(ms, default));
         Assert.Equal(4, ms.Position);
         using var buffered = new BufferedStream(new MemoryStream(new byte[] { 9, 8 }));
-        Assert.Equal(new byte[] { 9, 8 }, PdfOcr.ReadAll(buffered));
+        Assert.Equal(new byte[] { 9, 8 }, PdfOcr.ReadAll(buffered, default));
     }
 }

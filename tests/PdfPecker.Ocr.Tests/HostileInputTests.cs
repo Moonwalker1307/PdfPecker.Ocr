@@ -156,6 +156,33 @@ public sealed class HostileInputTests
         Assert.Throws<FileNotFoundException>(() => ImageOcr.RecognizeFile(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".png")));
     }
 
+    [Fact]
+    public void StreamsPositionedPastTheEndReadAsEmpty()
+    {
+        // A MemoryStream may be positioned past its end; it then reads nothing, which is an empty, unreadable input.
+        static MemoryStream PastTheEnd(byte[] data)
+        {
+            var ms = new MemoryStream();
+            ms.Write(data);
+            ms.Position = ms.Length + 10;
+            return ms;
+        }
+
+        Assert.Throws<InvalidDataException>(() => PdfOcr.Recognize(PastTheEnd(TestPages.Small.Pdf)));
+        Assert.Throws<InvalidDataException>(() => ImageOcr.Recognize(PastTheEnd(TestPages.Small.Png)));
+        Assert.Throws<InvalidDataException>(() => PdfOcr.MakeSearchable(PastTheEnd(TestPages.Small.Pdf), new MemoryStream()));
+    }
+
+    [Fact]
+    public void ReadingAStreamStopsWhenCancelled()
+    {
+        // The token is cancelled during the first read; the rest of the stream must not be read.
+        using var cts = new CancellationTokenSource();
+        var stream = new SlowStream(cts);
+        Assert.ThrowsAny<OperationCanceledException>(() => Bounded(_ => PdfOcr.Recognize(stream, null, cts.Token), Quick));
+        Assert.Equal(1, stream.Reads);
+    }
+
     // ---- Image files ----
 
     [Fact]
@@ -775,6 +802,42 @@ public sealed class HostileInputTests
     }
 
     private static int IndexOf(byte[] data, ReadOnlySpan<byte> value) => data.AsSpan().IndexOf(value);
+
+    /// <summary>A stream of zeros, a little at a time, that cancels a token on its first read.</summary>
+    private sealed class SlowStream(CancellationTokenSource cancel) : Stream
+    {
+        public int Reads { get; private set; }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            cancel.Cancel();
+            // A thousand reads at most, so the test ends even if cancellation were ignored.
+            if (++Reads > 1000) return 0;
+            int n = Math.Min(count, 16);
+            Array.Clear(buffer, offset, n);
+            return n;
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 
     private sealed class UnreadableStream : MemoryStream
     {

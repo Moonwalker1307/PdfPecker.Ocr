@@ -40,7 +40,7 @@ public static partial class PdfOcr
     {
         ArgumentNullException.ThrowIfNull(pdf);
         if (!pdf.CanRead) throw new ArgumentException("The stream is not readable.", nameof(pdf));
-        return Recognize(ReadAll(pdf), options, cancellationToken);
+        return Recognize(ReadAll(pdf, cancellationToken), options, cancellationToken);
     }
 
     /// <summary>Reads the text of the scanned PDF file at <paramref name="path"/>.</summary>
