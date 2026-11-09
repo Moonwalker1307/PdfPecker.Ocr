@@ -9,6 +9,8 @@ using OcrBench;
 // Usage: dotnet run -c Release [-- [--corpus dir] [--threads n] [--filter text]]
 //        dotnet run -c Release -- --json            one pass in this process, the result as one line of JSON (what the
 //                                                   version comparison starts a fresh process for)
+//        dotnet run -c Release -- --perf <file>     the table on standard output and the result as JSON in <file>, which
+//                                                   perf.yml keeps
 //        dotnet run -c Release -- versions <other.dll> [rounds]   this build against another build of this program, in turns
 //                                                   (bench/compare-versions.sh builds the other one from a git ref)
 //        dotnet run -c Release -p:OcrInternals=true -- stages [--memory] [--threads n] [--runs n]
@@ -74,9 +76,11 @@ bool json = args.Contains("--json");
 string? corpus = ArgValue("--corpus");
 int threads = int.TryParse(ArgValue("--threads"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var t) ? t : Environment.ProcessorCount;
 string? filter = ArgValue("--filter");
+string? perf = ArgValue("--perf");
 
 var cases = Cases.Create(corpus, threads).Where(c => filter is null || c.Name.Contains(filter, StringComparison.Ordinal)).ToList();
 var result = Runner.RunAll(cases, quiet: json);
+if (perf is not null) File.WriteAllText(perf, JsonSerializer.Serialize(result));
 if (json) Console.WriteLine(JsonSerializer.Serialize(result));
 else Runner.Print(result);
 return 0;
