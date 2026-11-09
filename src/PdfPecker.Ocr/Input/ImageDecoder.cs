@@ -63,7 +63,10 @@ internal static class ImageDecoder
         // corner of a larger page, which the renderer rounds and stretches by a fraction of a pixel. At four times 72
         // dpi such a page is a whole number of pixels and each image pixel a block of 3 by 3 pixels whose centre is
         // the image pixel itself, so those centres give the image back unchanged.
-        if (w > 0 && h > 0 && (w < MinPagePixels || h < MinPagePixels) && 16L * Math.Max(w, MinPagePixels) * Math.Max(h, MinPagePixels) <= maxPixels)
+        // The header's size is only a claim: PdfPecker decodes a BMP that wraps a PNG or JPEG, or a WebP frame, at the
+        // size of the data, so the path is taken only when the page the renderer has is the one the header gives.
+        if (w > 0 && h > 0 && (w < MinPagePixels || h < MinPagePixels) && 16L * Math.Max(w, MinPagePixels) * Math.Max(h, MinPagePixels) <= maxPixels
+            && PageMatches(renderer.GetPageSize(pageIndex), w, h))
             return new DecodedImage(SmallImage(renderer, pageIndex, w, h, cancellationToken), imageDpi);
         var page = PageRaster.Render(renderer, pageIndex, NativeDpi, maxPixels, cancellationToken);
         return new DecodedImage(page.Pixels, imageDpi * (page.Dpi / NativeDpi));
@@ -72,9 +75,16 @@ internal static class ImageDecoder
     /// <summary>The fewest pixels on a side of a page at <see cref="NativeDpi"/>: 10 points.</summary>
     private const int MinPagePixels = 14;
 
+    /// <summary>Whether a page at <see cref="NativeDpi"/> is no larger than the one an image of the given size makes.</summary>
+    private static bool PageMatches((double Width, double Height) page, int width, int height)
+        => page.Width <= Math.Max(width, MinPagePixels) * 0.75 + 0.5 && page.Height <= Math.Max(height, MinPagePixels) * 0.75 + 0.5;
+
     private static PagePixels SmallImage(PdfRenderer renderer, int pageIndex, int width, int height, CancellationToken cancellationToken)
     {
-        var image = renderer.RenderPage(pageIndex, new ImageOptions { Dpi = 288, MaxDimension = int.MaxValue }, cancellationToken);
+        // The page is at most 3 pixels per image pixel and a rounding pixel on a side; a larger one is drawn smaller
+        // and then fails the size check below rather than taking the memory of a page the header did not announce.
+        int maxDimension = 3 * Math.Max(Math.Max(width, height), MinPagePixels) + 3;
+        var image = renderer.RenderPage(pageIndex, new ImageOptions { Dpi = 288, MaxDimension = maxDimension }, cancellationToken);
         if (image.Width < 3 * width || image.Height < 3 * height)
             throw new InvalidDataException("The image is not the size its header gives.");
         var rgba = image.Rgba;

@@ -354,6 +354,47 @@ public sealed class HostileInputTests
         Assert.True(page.Dpi < options.Dpi);
     }
 
+    /// <summary>
+    /// Files whose header states a small image around a large one that PdfPecker decodes at its own size: a BMP that
+    /// wraps a PNG, and a WebP whose VP8X canvas is smaller than its frame. The small-image path, which renders at
+    /// three times the size, must not be taken on the header's word, and the page read must stay within MaxPixels.
+    /// </summary>
+    public static TheoryData<string> SmallHeaders() => new() { "bmp-png", "webp-canvas" };
+
+    [Theory]
+    [MemberData(nameof(SmallHeaders))]
+    public void HeadersSmallerThanTheImageStayWithinMaxPixels(string kind)
+    {
+        byte[] image = kind switch
+        {
+            "bmp-png" => TestImages.WrappingBmp(LargeBlank.Value.ToPng(), 5, 1, 1),
+            "webp-canvas" => TestImages.WebPWithCanvas(LargeBlank.Value.ToWebP(), 2, 2),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+        var options = new OcrOptions { MaxPixels = 10_000, MaxDegreeOfParallelism = 1 };
+
+        long before = GC.GetTotalAllocatedBytes(precise: true);
+        Exception? ex = Documented(kind, ct =>
+        {
+            OcrPage page = ImageOcr.Recognize(image, options, ct);
+            Assert.True((long)page.Width * page.Height <= options.MaxPixels, page.ToString());
+            return page;
+        }, ImageFailures, Quick);
+        long recognized = GC.GetTotalAllocatedBytes(precise: true) - before;
+        Exception? searchable = Documented(kind + " searchable", ct => ImageOcr.ToSearchablePdf([image], options, ct).Length, ImageFailures, Quick);
+        long both = GC.GetTotalAllocatedBytes(precise: true) - before;
+        _output.WriteLine($"{kind}: {recognized / 1_000_000} MB to read, {(both - recognized) / 1_000_000} MB for the searchable PDF");
+
+        // Decoding the 3,000 by 3,000 image takes about a hundred megabytes; rendering it at three times the size, as
+        // the small-image path does, would take more than a gigabyte.
+        Assert.True(recognized < 500_000_000L, $"{kind}: {recognized / 1_000_000} MB allocated to read ({ex?.GetType().Name ?? "read"}).");
+        Assert.True(both - recognized < 500_000_000L, $"{kind}: {(both - recognized) / 1_000_000} MB allocated for the searchable PDF ({searchable?.GetType().Name ?? "made"}).");
+    }
+
+    /// <summary>A white image of 3,000 by 3,000 pixels, which PNG and WebP store in a few kilobytes.</summary>
+    private static readonly Lazy<RenderedImage> LargeBlank = new(() =>
+        PdfRenderer.Open(HtmlToPdf.Convert(TestPages.Document("2250pt 2250pt", "", ""))).RenderPage(0, new ImageOptions { Dpi = 96 }));
+
     [Fact]
     public void SearchablePdfOfDamagedImagesFailsWithDocumentedExceptions()
     {

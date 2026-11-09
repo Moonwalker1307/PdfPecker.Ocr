@@ -168,6 +168,51 @@ internal static class TestImages
         png.Write(four);
     }
 
+    /// <summary>
+    /// A BMP whose data is another image file (compression 4, JPEG, or 5, PNG), with any width and height in its info
+    /// header: readers decode the wrapped file at that file's own size.
+    /// </summary>
+    public static byte[] WrappingBmp(byte[] image, int compression, int w, int h)
+    {
+        var bmp = new byte[54 + image.Length];
+        var s = bmp.AsSpan();
+        "BM"u8.CopyTo(s);
+        BinaryPrimitives.WriteInt32LittleEndian(s[2..], bmp.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(s[10..], 54);
+        BinaryPrimitives.WriteInt32LittleEndian(s[14..], 40);
+        BinaryPrimitives.WriteInt32LittleEndian(s[18..], w);
+        BinaryPrimitives.WriteInt32LittleEndian(s[22..], h);
+        BinaryPrimitives.WriteInt16LittleEndian(s[26..], 1);
+        BinaryPrimitives.WriteInt32LittleEndian(s[30..], compression);
+        BinaryPrimitives.WriteInt32LittleEndian(s[34..], image.Length);
+        image.CopyTo(s[54..]);
+        return bmp;
+    }
+
+    /// <summary>
+    /// A simple WebP file (one VP8 or VP8L chunk) put behind a VP8X chunk that declares a canvas of any size; readers
+    /// decode a still image at its frame's own size.
+    /// </summary>
+    public static byte[] WebPWithCanvas(byte[] webp, int w, int h)
+    {
+        var chunks = webp.AsSpan(12);
+        var file = new byte[12 + 18 + chunks.Length];
+        var s = file.AsSpan();
+        "RIFF"u8.CopyTo(s);
+        BinaryPrimitives.WriteInt32LittleEndian(s[4..], file.Length - 8);
+        "WEBPVP8X"u8.CopyTo(s[8..]);
+        BinaryPrimitives.WriteInt32LittleEndian(s[16..], 10);
+        // Four bytes of flags (none), then the canvas width and height minus one in 24 bits each.
+        s[24] = (byte)(w - 1);
+        s[25] = (byte)((w - 1) >> 8);
+        s[26] = (byte)((w - 1) >> 16);
+        s[27] = (byte)(h - 1);
+        s[28] = (byte)((h - 1) >> 8);
+        s[29] = (byte)((h - 1) >> 16);
+        chunks.CopyTo(s[30..]);
+        return file;
+    }
+
     /// <summary>A PNG with its IHDR width and height changed, and the chunk's CRC written again to match.</summary>
     public static byte[] WithPngSize(byte[] png, uint w, uint h)
     {
