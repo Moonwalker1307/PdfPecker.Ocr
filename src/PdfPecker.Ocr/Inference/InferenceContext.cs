@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace PdfPecker.Ocr.Inference;
 
@@ -9,14 +10,22 @@ namespace PdfPecker.Ocr.Inference;
 /// runs, so a steady stream of runs of similar sizes allocates nothing. It is not thread-safe; give each concurrent
 /// worker its own context, and dispose it to stop its threads. Models are shared.
 /// </summary>
+/// <remarks>
+/// The arena and the shared scratch, the two large buffers, are native memory rather than pinned arrays. When a page
+/// needs a larger arena than the last one, the old one is freed at once and its pages go back to the system; a pinned
+/// array would stay resident until a full garbage collection and then often in the collector's free regions, so a run
+/// of growing pages left several arenas resident. The finalizer frees them if a context is never disposed.
+/// </remarks>
 internal sealed unsafe class InferenceContext : IDisposable
 {
     private readonly WorkerTeam? _team;
     private readonly Dictionary<OcrModel, ExecutionPlan> _plans = [];
     private readonly Dictionary<OcrModel, float[]> _outputs = [];
-    private float[]? _arena;
+    private float* _arena;
+    private long _arenaFloats;
     private float[]?[] _scratch;
-    private float[]? _shared;
+    private float* _shared;
+    private long _sharedFloats;
     private bool _disposed;
 
     /// <summary>Creates a context that uses at most the given number of threads for one run.</summary>
@@ -35,18 +44,26 @@ internal sealed unsafe class InferenceContext : IDisposable
     public CancellationToken CancellationToken { get; set; }
 
     /// <summary>The size of the activation arena, in bytes, for memory measurements.</summary>
-    public long ArenaBytes => (_arena?.LongLength ?? 0) * sizeof(float);
+    public long ArenaBytes => _arenaFloats * sizeof(float);
 
     /// <summary>Releases the buffers and stops the context's threads. The context cannot run models afterwards.</summary>
     public void Dispose()
     {
         _disposed = true;
         _team?.Dispose();
-        _arena = null;
-        _shared = null;
+        FreeNative();
         _scratch = [];
         _plans.Clear();
         _outputs.Clear();
+        GC.SuppressFinalize(this);
+    }
+
+    ~InferenceContext() => FreeNative();
+
+    private void FreeNative()
+    {
+        Free(ref _arena, ref _arenaFloats);
+        Free(ref _shared, ref _sharedFloats);
     }
 
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
@@ -61,7 +78,7 @@ internal sealed unsafe class InferenceContext : IDisposable
     }
 
     /// <summary>The arena for a plan, grown when needed; its contents are not preserved across growth.</summary>
-    internal float* Arena(long floats) => Pointer(ref _arena, floats);
+    internal float* Arena(long floats) => Native(ref _arena, ref _arenaFloats, floats);
 
     /// <summary>
     /// The output buffer of a model, owned by this context and overwritten by its next run of the model; offset is where
@@ -83,14 +100,14 @@ internal sealed unsafe class InferenceContext : IDisposable
     internal void EnsureScratch(long perWorker, long shared)
     {
         for (int i = 0; i < _scratch.Length; i++) Pointer(ref _scratch[i], perWorker);
-        Pointer(ref _shared, shared);
+        Native(ref _shared, ref _sharedFloats, shared);
     }
 
     /// <summary>The scratch of one worker, as sized by <see cref="EnsureScratch"/>.</summary>
     internal float* Scratch(int worker) => Aligned(_scratch[worker]!);
 
     /// <summary>The scratch shared by all workers of one operator, as sized by <see cref="EnsureScratch"/>.</summary>
-    internal float* SharedScratch => Aligned(_shared!);
+    internal float* SharedScratch => _shared;
 
     /// <summary>
     /// Runs body(state, i, worker) for i in [0, count), on up to <see cref="MaxDegreeOfParallelism"/> threads. Each i
@@ -107,6 +124,26 @@ internal sealed unsafe class InferenceContext : IDisposable
             return;
         }
         _team.For(count, state, body);
+    }
+
+    /// <summary>A native buffer of at least the given floats plus vector slack, 64-byte aligned, reallocated when too small.</summary>
+    private static float* Native(ref float* buffer, ref long capacity, long floats)
+    {
+        long needed = Math.Max(floats, 0) + 64;
+        if (buffer != null && capacity >= needed) return buffer;
+        if (needed > Array.MaxLength) throw new ArgumentException("The tensors of this input do not fit in one buffer.", "input");
+        // The old contents are not kept, so the old buffer goes first and the two are never held together.
+        Free(ref buffer, ref capacity);
+        buffer = (float*)NativeMemory.AlignedAlloc((nuint)needed * sizeof(float), 64);
+        capacity = needed;
+        return buffer;
+    }
+
+    private static void Free(ref float* buffer, ref long capacity)
+    {
+        if (buffer != null) NativeMemory.AlignedFree(buffer);
+        buffer = null;
+        capacity = 0;
     }
 
     private static float* Pointer(ref float[]? buffer, long floats)
