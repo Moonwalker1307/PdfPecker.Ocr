@@ -283,6 +283,18 @@ public sealed class RuntimeTests
     }
 
     [Fact]
+    public void AFailedModelLoadIsTriedAgain()
+    {
+        // A transient failure while the first call inflates the models must not fail every later call.
+        int calls = 0;
+        var value = new LoadOnce<string>(() => ++calls == 1 ? throw new OutOfMemoryException() : "loaded");
+        Assert.Throws<OutOfMemoryException>(() => value.Value);
+        Assert.Equal("loaded", value.Value);
+        Assert.Equal("loaded", value.Value);
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
     public void BundledModelsCarryTheirNotices()
     {
         foreach (var model in new[] { ModelStore.Detection, ModelStore.Recognition, ModelStore.Classifier })

@@ -14,7 +14,7 @@ namespace PdfPecker.Ocr.Layout;
 /// </summary>
 internal sealed class OcrEngine : IPageRecognizer
 {
-    private static readonly Lazy<CharacterSet> s_characters = new(() => new CharacterSet(ModelStore.Characters.AsSpan(1, ModelStore.Characters.Length - 2).ToArray()));
+    private static readonly LoadOnce<CharacterSet> s_characters = new(() => new CharacterSet(ModelStore.Characters.AsSpan(1, ModelStore.Characters.Length - 2).ToArray()));
 
     private OcrEngine()
     {
