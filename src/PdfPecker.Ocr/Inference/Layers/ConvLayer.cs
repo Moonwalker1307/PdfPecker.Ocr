@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -315,6 +316,20 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
                         }
 
                         float* row = plane + (long)iy * rowStride;
+                        if (Sse.IsSupported)
+                        {
+                            // The next panel reads on from here in each of these rows: more rows than the hardware
+                            // prefetcher follows, so they are fetched while this panel is packed.
+                            float* next = row + x0 + nr * sw;
+                            Sse.Prefetch0(next);
+                            Sse.Prefetch0(next + 16);
+                            if (sw > 1)
+                            {
+                                Sse.Prefetch0(next + 32);
+                                Sse.Prefetch0(next + 48);
+                            }
+                        }
+
                         for (int kx = 0, ix = x0; kx < kw; kx++, ix += dw, dst += nr) CopyTap(row, w, ix, sw, dst, length);
                     }
                 }
