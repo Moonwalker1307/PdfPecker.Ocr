@@ -532,17 +532,48 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         int columns = rows * width;
         int tile = TileColumns(columns);
         var epilogue = new Epilogue(Activation, Alpha, Beta, null);
+        long planeSize = _broadcast ? 0 : inputPlane;
+
+        // With a stride of 1 the panels inside the window are read where they lie, as TileInPlace reads them from a
+        // whole map, at tap offsets that follow the window's strides.
+        bool direct = _inPlace && Sw == 1 && _k <= MaxBlockTaps
+            && (CinPerGroup - 1) * planeSize + ((Kh - 1) * Dh * rowStride) + ((long)(Kw - 1) * Dw) <= int.MaxValue;
+        int* offsets = stackalloc int[direct ? _k : 1];
+        if (direct)
+        {
+            for (int ci = 0, i = 0; ci < CinPerGroup; ci++)
+            {
+                for (int ky = 0; ky < Kh; ky++)
+                {
+                    for (int kx = 0; kx < Kw; kx++) offsets[i++] = (int)((ci * planeSize) + (ky * Dh * rowStride) + ((long)kx * Dw));
+                }
+            }
+        }
+
         fixed (float* weights = _weights, bias = _bias)
         {
             for (int n0 = 0; n0 < columns; n0 += tile)
             {
                 int count = Math.Min(tile, columns - n0);
-                PackPatches(input, _broadcast ? 0 : inputPlane, rowStride, h, w, firstRow, firstColumn, width, oy0, ox0, n0, count, packed);
+                if (direct)
+                {
+                    PanelsInPlace(input, planeSize, rowStride, h, w, firstRow, firstColumn, width, oy0, ox0, n0, count, weights, Cout, bias,
+                        output + n0, (nint)outputPlane, offsets, packed);
+                    if (epilogue.IsEmpty) continue;
+                    for (int i = 0; i < Cout; i += _gemm.MR)
+                        epilogue.Apply(output + n0 + ((nint)i * (nint)outputPlane), (nint)outputPlane, i, Math.Min(_gemm.MR, Cout - i), count);
+                    continue;
+                }
+
+                PackPatches(input, planeSize, rowStride, h, w, firstRow, firstColumn, width, oy0, ox0, n0, count, packed);
                 _gemm.ClearPanelTail(packed, _k, count);
                 _gemm.Multiply(_k, weights, Cout, packed, count, output + n0, (nint)outputPlane, bias, null, epilogue);
             }
         }
     }
+
+    // The most values per output for which a block reads its panels in place: the tap offsets are on the stack.
+    private const int MaxBlockTaps = 1024;
 
     /// <summary>The floats of packed panels <see cref="ComputeBlock"/> needs for a block of the given number of pixels.</summary>
     internal long BlockScratch(int pixels) => _gemm.PackedBSize(_k, TileColumns(pixels));
@@ -566,38 +597,53 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         // A residual that the output writes over is copied before the first panel writes.
         var epilogue = TileEpilogue(step, baseOffset, rows, columns, planeOut, packed);
 
-        // The first input row and column a panel's taps read must lie within these bounds for every tap to read inside.
-        int rowEnd = h - ((Kh - 1) * Dh);
-        int columnLast = w - ((Kw - 1) * Dw) - nr;
-        float* edge = stackalloc float[12 * 32];
         fixed (float* weights = _weights, bias = _bias)
         fixed (int* tapOffsets = offsets)
-        {
-            float* a = weights + (long)m0 * _k;
-            for (int j0 = 0; j0 < columns; j0 += nr)
-            {
-                int width = Math.Min(nr, columns - j0);
-                int n = n0 + j0;
-                int oy = n / ow, ox = n - oy * ow;
-                int iy = oy * Sh - Pt, ix = ox - Pl;
-                if (width == nr && ox + nr <= ow && iy >= 0 && iy < rowEnd && ix >= 0 && ix <= columnLast)
-                {
-                    _gemm.MultiplyDirect(_k, a, rows, input + (long)iy * w + ix, tapOffsets, output + j0, planeOut, bias + m0, edge, nr);
-                }
-                else
-                {
-                    PackPatches(input, _broadcast ? 0 : (long)h * w, w, h, w, 0, 0, ow, 0, 0, n, width, packed);
-                    _gemm.ClearPanelTail(packed, _k, width);
-                    _gemm.Multiply(_k, a, rows, packed, width, output + j0, planeOut, bias + m0, null);
-                }
-            }
-        }
+            PanelsInPlace(input, _broadcast ? 0 : (long)h * w, w, h, w, 0, 0, ow, 0, 0, n0, columns, weights + (long)m0 * _k, rows, bias + m0, output, planeOut, tapOffsets, packed);
 
         // The activation and the residual once for the tile, a block of rows at a time while it is still in the cache;
         // each value is treated alone, so the result is the same as per panel.
         if (epilogue.IsEmpty) return;
         int mr = _gemm.MR;
         for (int i = 0; i < rows; i += mr) epilogue.Apply(output + (nint)i * planeOut, planeOut, i, Math.Min(mr, rows - i), columns);
+    }
+
+    /// <summary>
+    /// The products of rows [0, rows) of the packed weights <paramref name="a"/> with output pixels [n0, n0 + columns)
+    /// of a block, for a horizontal stride of 1, into <paramref name="output"/> (pixel n0 first, channels
+    /// <paramref name="ldc"/> apart), without an epilogue. The block and its input are described as for
+    /// <see cref="PackPatches"/>. A panel whose pixels lie in one row of the block and whose taps all read inside the
+    /// map is read where it lies, at <paramref name="tapOffsets"/> from its first value, which must follow the input's
+    /// plane and row strides; the others are packed.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private void PanelsInPlace(float* input, long planeSize, long rowStride, int h, int w, int firstRow, int firstColumn, int bandWidth,
+        int oy0, int ox0, int n0, int columns, float* a, int rows, float* bias, float* output, nint ldc, int* tapOffsets, float* packed)
+    {
+        int nr = _gemm.NR;
+
+        // The first input row and column a panel's taps read must lie within these bounds for every tap to read inside.
+        int rowEnd = h - ((Kh - 1) * Dh);
+        int columnLast = w - ((Kw - 1) * Dw) - nr;
+        float* origin = input - (long)firstRow * rowStride - firstColumn;
+        float* edge = stackalloc float[12 * 32];
+        for (int j0 = 0; j0 < columns; j0 += nr)
+        {
+            int width = Math.Min(nr, columns - j0);
+            int n = n0 + j0;
+            int ly = n / bandWidth, lx = n - ly * bandWidth;
+            int iy = (oy0 + ly) * Sh - Pt, ix = ox0 + lx - Pl;
+            if (width == nr && lx + nr <= bandWidth && iy >= 0 && iy < rowEnd && ix >= 0 && ix <= columnLast)
+            {
+                _gemm.MultiplyDirect(_k, a, rows, origin + (iy * rowStride) + ix, tapOffsets, output + j0, ldc, bias, edge, nr);
+            }
+            else
+            {
+                PackPatches(input, planeSize, rowStride, h, w, firstRow, firstColumn, bandWidth, oy0, ox0, n, width, packed);
+                _gemm.ClearPanelTail(packed, _k, width);
+                _gemm.Multiply(_k, a, rows, packed, width, output + j0, ldc, bias, null);
+            }
+        }
     }
 
     /// <summary>
