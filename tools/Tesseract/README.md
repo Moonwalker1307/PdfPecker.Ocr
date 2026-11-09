@@ -18,9 +18,8 @@ macOS; the comparison app is only run on Linux so far.
 > **Status:** Tesseract 5.5.4 with Leptonica 1.87.0 built on 2026-11-09 on Linux x64 (the build takes about ten minutes on
 > four cores), and used for the comparison in `bench/TesseractComparison` (results in its README and in
 > `bench/TesseractComparison/baseline/2026-11-09/`). Earlier builds did not copy the `tesseract` program, which CMake links
-> as `bin/tesseract`; the library was unaffected. A build into the work folder of an older version can copy the old
-> library to `out/<rid>/`, because that folder keeps `libtesseract.so.5.5.1` next to `libtesseract.so.5.5.4`; check
-> `TessVersion()` (the comparison's engine lines print it) or delete `out/work-<rid>` before building another version.
+> as `bin/tesseract`; the library was unaffected. Before 2026-11-09 a build into the work folder of an older
+> version could copy the old library to `out/<rid>/`; the script now copies the library its unversioned link names.
 
 ## What the script does
 
@@ -32,7 +31,7 @@ macOS; the comparison app is only run on Linux so far.
 3. Builds Tesseract as a shared library, Release `-O3`, with the training tools, curl and libarchive off, and links the static
    Leptonica **into** `libtesseract` (the script fails if `ldd` shows a separate Leptonica). The result is
    `out/<rid>/libtesseract.so`, plus the `tesseract` command line program next to it.
-4. Downloads `eng`, `dan`, `deu`, `fra` and `osd` from `tessdata_fast` at a pinned commit, and `eng` from `tessdata_best`, into
+4. Downloads `eng`, `dan`, `deu`, `fra` and `osd` from `tessdata_fast` at a pinned commit, and `eng` from `tessdata_best` (with a copy of the fast `osd` next to it), into
    `out/tessdata` and `out/tessdata-best`, and **verifies the SHA-256 of every file**.
 
 | Pin | Value |

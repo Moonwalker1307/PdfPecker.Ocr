@@ -10,7 +10,7 @@ PdfPecker.Ocr runs), and neither is ever shipped.
 | Engine | How it runs |
 | --- | --- |
 | `tesseract` | In process, through Tesseract's C API (`TessBaseAPIInit2` with `OEM_LSTM_ONLY`, `TessBaseAPISetImage` with raw 8-bit gray or RGB pixels, `TessBaseAPIRecognize`, `TessBaseAPIGetUTF8Text`, the result iterator for word boxes and confidences). Imported with source-generated `LibraryImport`; the library path comes from `--lib` and `NativeLibrary.SetDllImportResolver`. Models: `tessdata_fast`, the page's own language (`--tess-lang auto`; `eng+dan+deu+fra` with `multi`). Page segmentation 3, and 1 (with orientation detection) for the upside-down pages (`--tess-psm auto`). |
-| `tesseract-best` | The same, with `tessdata_best`'s `eng` model (from `--tessdata-best`, which also needs `osd.traineddata` for the upside-down pages), on the English pages only, since only `eng` is fetched. |
+| `tesseract-best` | The same, with `tessdata_best`'s `eng` model (from `--tessdata-best`, which also needs `osd.traineddata` for the upside-down pages; `build.sh` copies it there), on the English pages only, since only `eng` is fetched. |
 | `rapidocr` | A Python child process (`rapidocr_server.py`, venv with rapidocr 3.10.0 and ONNX Runtime). Pixels are sent as raw bytes over a pipe; the defaults of rapidocr's `config.yaml` apply, including its limit of 2000 px on the longest side, with word boxes on. ONNX Runtime's intra-op thread count is set from `--threads`. |
 | `pdfpecker-ocr` | In process, through `IOcrEngineAdapter` (`PdfPeckerOcrAdapter.cs`): `ImageOcr.RecognizeGray` for gray pages, read in place, and `RecognizeRgba` for colour ones, with the package's defaults and `MaxDegreeOfParallelism` set from `--threads`; `Initialize` reads a blank page, which loads the models and builds the engine's worker outside the timed runs. Built in by default from `src/PdfPecker.Ocr`; `-p:WithPdfPeckerOcr=false` leaves it out (a stub). |
 
@@ -112,7 +112,7 @@ only its fresh-process peaks were measured again.
   300 dpi (F1 0.43), and reads single-digit columns badly; rapidocr interleaves the article's columns and does not turn
   upside-down pages as a whole.
 - Tesseract best needs `osd.traineddata` next to `eng` in the `--tessdata-best` folder for the upside-down pages;
-  `tools/Tesseract/out/tessdata-best` holds only `eng`, so link `out/tessdata/osd.traineddata` into a folder with it.
+  `tools/Tesseract/build.sh` copies the fast `osd` there (builds before 2026-11-09 did not).
 
 ## Files
 

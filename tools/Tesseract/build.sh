@@ -116,7 +116,9 @@ cmake -S "$src/tesseract" -B "$work/tesseract" -G Ninja \
   -DCMAKE_INSTALL_PREFIX="$work/tesseract-install" -DCMAKE_INSTALL_RPATH='$ORIGIN'
 cmake --build "$work/tesseract" --parallel "$jobs"
 
-lib=$(find "$work/tesseract" -maxdepth 1 \( -name "libtesseract*.$ext" -o -name "libtesseract*.$ext.*" \) | head -n 1)
+# The unversioned name is a link to the library just built; the work folder can still hold an older version's files.
+lib="$work/tesseract/libtesseract.$ext"
+[ -e "$lib" ] || lib=$(find "$work/tesseract" -maxdepth 1 \( -name "libtesseract*.$ext" -o -name "libtesseract*.$ext.*" \) | head -n 1)
 [ -n "$lib" ] || { echo "libtesseract was not built" >&2; exit 1; }
 cp -L "$lib" "$out/$rid/libtesseract.$ext"
 # Tesseract 5.5's CMake build links the program as bin/tesseract; older layouts put it at the top of the build folder.
@@ -136,6 +138,8 @@ for entry in "${FAST_FILES[@]}"; do
 done
 mkdir -p "$out/tessdata-best"
 fetch "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/$TESSDATA_BEST_COMMIT/eng.traineddata" "$BEST_ENG_SHA256" "$out/tessdata-best/eng.traineddata"
+# tessdata_best has no orientation model of its own; without osd, Tesseract cannot turn upside-down pages.
+cp "$out/tessdata/osd.traineddata" "$out/tessdata-best/osd.traineddata"
 
 echo "built $out/$rid/libtesseract.$ext (Tesseract $TESSERACT_TAG, Leptonica $LEPTONICA_TAG)"
-echo "fast models in $out/tessdata, best eng in $out/tessdata-best"
+echo "fast models in $out/tessdata, best eng (with the fast osd) in $out/tessdata-best"
