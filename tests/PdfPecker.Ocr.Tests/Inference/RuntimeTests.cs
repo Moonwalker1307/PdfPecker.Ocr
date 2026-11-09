@@ -311,6 +311,64 @@ public sealed class RuntimeTests
         }
     }
 
+    [Theory]
+    [InlineData(64, 64, 1, 1, 0)] // pointwise, packed rows
+    [InlineData(64, 64, 3, 1, 1)] // stride 1, panels read in place
+    [InlineData(3, 16, 3, 1, 1)] // stride 1 read in place, too few values per output to leave out runs
+    [InlineData(16, 24, 3, 2, 1)] // stride 2, panels read from split rows
+    [InlineData(64, 24, 3, 2, 1)] // stride 2 with k above the split rows' limit, packed patches
+    public void ConvolutionsOverTheirResidualKeepTheirBitsOnEveryPath(int channels, int cout, int kernel, int stride, int pad)
+    {
+        // A convolution writes over a residual that dies with it, on each of its ways to read the input: packed,
+        // read in place, read from split rows, and gathered around the runs of equal columns, where the right part of
+        // the input is zero. The same convolution without a residual followed by an addition, with the skip off,
+        // must give the same bits.
+        var conv = ConvInts(kernel, kernel, stride, stride, pt: pad, pl: pad, pb: pad, pr: pad);
+        var withResidual = ConvInts(kernel, kernel, stride, stride, pt: pad, pl: pad, pb: pad, pr: pad, residual: true);
+        float[] noFloats = [0, 0];
+        var over = new GraphBuilder(4);
+        int r = over.Add(OpKind.Conv, [0], conv, noFloats, Weight([cout, channels, kernel, kernel], 31), Weight([cout], 32));
+        over.Add(OpKind.Conv, [0, r], withResidual, noFloats, Weight([cout, channels, kernel, kernel], 33), Weight([cout], 34));
+        var apart = new GraphBuilder(4);
+        r = apart.Add(OpKind.Conv, [0], conv, noFloats, Weight([cout, channels, kernel, kernel], 31), Weight([cout], 32));
+        int product = apart.Add(OpKind.Conv, [0], conv, noFloats, Weight([cout, channels, kernel, kernel], 33), Weight([cout], 34));
+        apart.Add(OpKind.Add, [product, r], [1, 1]);
+
+        var full = RandomTensor(23, 2, channels, 13, 100);
+        var padded = full.Clone();
+        for (int n = 0; n < 2; n++)
+            for (int c = 0; c < channels; c++)
+                for (int y = 0; y < 13; y++)
+                    padded.Span.Slice((((n * channels) + c) * 13 + y) * 100 + (n == 0 ? 41 : 70), n == 0 ? 59 : 30).Clear();
+
+        foreach (var input in new[] { full, padded })
+        {
+            foreach (var gemm in GemmKernel.Supported)
+            {
+                var overModel = OcrModel.FromDefinition(over.Model, gemm);
+                float[] expected = RunWith(OcrModel.FromDefinition(apart.Model, gemm), input, 1, skip: false);
+                foreach (int degree in new[] { 1, 3 })
+                {
+                    foreach (bool skip in new[] { false, true })
+                    {
+                        using var context = new InferenceContext(degree) { SkipsEqualColumns = skip };
+                        float[] actual = overModel.Run(input, context).Span.ToArray();
+                        var last = context.GetPlan(overModel, input.Shape).Steps[^1];
+                        Assert.Equal(last.InputLocations[1], last.OutputLocation);
+                        if (skip && input == padded) Assert.True(last.OutputRuns.HasRun(0), "The padded input has no runs.");
+                        Assert.True(expected.AsSpan().SequenceEqual(actual), $"{gemm.Name}, {degree} threads, skip {skip}, padded {input == padded}");
+                    }
+                }
+            }
+        }
+    }
+
+    private static float[] RunWith(OcrModel model, Tensor input, int degree, bool skip)
+    {
+        using var context = new InferenceContext(degree) { SkipsEqualColumns = skip };
+        return model.Run(input, context).Span.ToArray();
+    }
+
     [Fact]
     public void AnOutputNeverTakesMemoryThatAnotherInputReads()
     {
