@@ -61,7 +61,7 @@ public sealed class KernelTests
         get
         {
             var data = new TheoryData<string, string>();
-            string[] cases = ["pointwise", "pointwise-stride2", "stem3x3s2", "3x3", "3x3-dilated", "2x2-same", "1x7", "3x3-stride2x1", "5x5-asymmetric", "large-k"];
+            string[] cases = ["pointwise", "pointwise-stride2", "stem3x3s2", "3x3", "3x3-dilated", "2x2-same", "1x7", "3x3-stride2x1", "5x5-asymmetric", "3x3-stride2-wide", "large-k"];
             foreach (var kernel in GemmKernel.Supported)
                 foreach (string c in cases) data.Add(kernel.Name, c);
             return data;
@@ -84,6 +84,8 @@ public sealed class KernelTests
             "1x7" => (4, 6, 5, 40, 1, 7, 1, 1, 1, 1, 0, 3, 0, 3),
             "3x3-stride2x1" => (7, 5, 12, 21, 3, 3, 2, 1, 1, 1, 1, 1, 1, 1),
             "5x5-asymmetric" => (3, 4, 13, 11, 5, 5, 1, 2, 1, 1, 2, 1, 3, 0),
+            // Output rows of 38 pixels: whole panels of every kernel read with stride 2, and runs split across rows.
+            "3x3-stride2-wide" => (5, 13, 9, 75, 3, 3, 2, 2, 1, 1, 1, 1, 1, 1),
             _ => (96, 40, 7, 30, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1),
         };
         var x = RandomTensor(cin * 7 + h, 2, cin, h, w);

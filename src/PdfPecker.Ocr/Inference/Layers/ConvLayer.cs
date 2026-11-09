@@ -204,80 +204,135 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     /// <summary>
     /// Gathers the patches of output pixels [n0, n0 + columns) into NR-column panels: row (ci, ky, kx) of a panel holds
     /// the input value each output pixel's kernel tap reads, or zero in the padding. Panels are filled one after the
-    /// other, so the writes are sequential; within a panel, the pixels of one output row read one run of an input row
-    /// per tap, contiguous for stride 1 and every Sw-th value otherwise.
+    /// other. A panel's pixels split into runs that each lie in one output row (usually one run for the whole panel),
+    /// and each run fills its part of every row of the panel from one run of an input row per tap, contiguous for
+    /// stride 1 and every Sw-th value otherwise. Looping over the taps inside a run keeps the run's position in
+    /// registers: the bookkeeping per tap, not the copying, was most of the packing time.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void PackPatches(float* input, int channels, int h, int w, int ow, int n0, int columns, float* packed)
     {
         int nr = _gemm.NR;
         int k = _k;
-        // A panel's pixels split into at most nr runs that each lie in one output row.
-        int* runStart = stackalloc int[nr];
-        int* runLength = stackalloc int[nr];
-        int* runY = stackalloc int[nr];
-        int* runX = stackalloc int[nr];
+        int kh = Kh, kw = Kw, sw = Sw, dh = Dh, dw = Dw;
+        long planeSize = _broadcast ? 0 : (long)h * w;
         for (int j0 = 0; j0 < columns; j0 += nr)
         {
             int width = Math.Min(nr, columns - j0);
-            int runs = 0;
+            float* panel = packed + (long)j0 * k;
             for (int t = 0; t < width;)
             {
                 int n = n0 + j0 + t;
                 int oy = n / ow, ox = n - oy * ow;
                 int length = Math.Min(ow - ox, width - t);
-                runStart[runs] = t;
-                runLength[runs] = length;
-                runY[runs] = oy * Sh - Pt;
-                runX[runs] = ox * Sw - Pl;
-                runs++;
-                t += length;
-            }
-            float* dst = packed + (long)j0 * k;
-            for (int ci = 0; ci < channels; ci++)
-            {
-                float* plane = _broadcast ? input : input + (long)ci * h * w;
-                for (int ky = 0; ky < Kh; ky++)
+                int y0 = oy * Sh - Pt, x0 = ox * sw - Pl;
+                float* dst = panel + t;
+                float* plane = input;
+                for (int ci = 0; ci < channels; ci++, plane += planeSize)
                 {
-                    for (int kx = 0; kx < Kw; kx++, dst += nr)
+                    for (int ky = 0, iy = y0; ky < kh; ky++, iy += dh)
                     {
-                        for (int r = 0; r < runs; r++)
+                        if ((uint)iy >= (uint)h)
                         {
-                            float* d = dst + runStart[r];
-                            int length = runLength[r];
-                            int iy = runY[r] + ky * Dh;
-                            if ((uint)iy >= (uint)h)
-                            {
-                                new Span<float>(d, length).Clear();
-                                continue;
-                            }
-                            float* row = plane + (long)iy * w;
-                            int ix = runX[r] + kx * Dw;
-                            if (Sw == 1 && ix >= 0 && ix + length <= w)
-                            {
-                                Unsafe.CopyBlockUnaligned(d, row + ix, (uint)(length * sizeof(float)));
-                            }
-                            else if (ix >= 0 && ix + (length - 1) * Sw < w)
-                            {
-                                if (Sw == 2)
-                                {
-                                    VectorMath.CopyEven(row + ix, d, length);
-                                }
-                                else
-                                {
-                                    float* s = row + ix;
-                                    for (int t = 0; t < length; t++, s += Sw) d[t] = *s;
-                                }
-                            }
-                            else
-                            {
-                                for (int t = 0; t < length; t++, ix += Sw) d[t] = (uint)ix < (uint)w ? row[ix] : 0f;
-                            }
+                            for (int kx = 0; kx < kw; kx++, dst += nr) new Span<float>(dst, length).Clear();
+                            continue;
                         }
-                        if (width < nr) new Span<float>(dst + width, nr - width).Clear();
+
+                        float* row = plane + (long)iy * w;
+                        for (int kx = 0, ix = x0; kx < kw; kx++, ix += dw, dst += nr) CopyTap(row, w, ix, sw, dst, length);
                     }
                 }
+
+                t += length;
             }
+
+            if (width < nr)
+            {
+                for (int r = 0; r < k; r++) new Span<float>(panel + (long)r * nr + width, nr - width).Clear();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes the values of one tap for a run of <paramref name="length"/> output pixels: row[ix], row[ix + sw], ...,
+    /// with zeros where the run reaches into the padding.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void CopyTap(float* row, int w, int ix, int sw, float* dst, int length)
+    {
+        if (sw == 1)
+        {
+            if (ix >= 0 && ix + length <= w)
+            {
+                CopyRun(row + ix, dst, length);
+                return;
+            }
+
+            // Zeros before the row's start and after its end, the row's values in between.
+            int lead = Math.Clamp(-ix, 0, length);
+            int end = Math.Clamp(w - ix, lead, length);
+            for (int t = 0; t < lead; t++) dst[t] = 0f;
+            if (end > lead) CopyRun(row + ix + lead, dst + lead, end - lead);
+            for (int t = end; t < length; t++) dst[t] = 0f;
+            return;
+        }
+
+        if (ix >= 0 && ix + (length - 1) * sw < w)
+        {
+            if (sw == 2)
+            {
+                VectorMath.CopyEven(row + ix, dst, length);
+            }
+            else
+            {
+                float* s = row + ix;
+                for (int t = 0; t < length; t++, s += sw) dst[t] = *s;
+            }
+
+            return;
+        }
+
+        for (int t = 0; t < length; t++, ix += sw) dst[t] = (uint)ix < (uint)w ? row[ix] : 0f;
+    }
+
+    /// <summary>
+    /// Copies a run of at most a panel's width. A whole panel row, the usual run, is two vectors of the widest size the
+    /// panel width allows; other runs take whole vectors, the last one overlapping the one before when the length is
+    /// not a multiple. Both take far fewer instructions than a call to the block copy at these lengths.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void CopyRun(float* src, float* dst, int length)
+    {
+        if (length == 32 && Vector512.IsHardwareAccelerated)
+        {
+            Vector512.Store(Vector512.Load(src), dst);
+            Vector512.Store(Vector512.Load(src + 16), dst + 16);
+        }
+        else if (length == 16 && Vector256.IsHardwareAccelerated)
+        {
+            Vector256.Store(Vector256.Load(src), dst);
+            Vector256.Store(Vector256.Load(src + 8), dst + 8);
+        }
+        else if (length == 8 && Vector128.IsHardwareAccelerated)
+        {
+            Vector128.Store(Vector128.Load(src), dst);
+            Vector128.Store(Vector128.Load(src + 4), dst + 4);
+        }
+        else if (Vector256.IsHardwareAccelerated && length >= 8)
+        {
+            int t = 0;
+            for (; t <= length - 8; t += 8) Vector256.Store(Vector256.Load(src + t), dst + t);
+            if (t < length) Vector256.Store(Vector256.Load(src + length - 8), dst + length - 8);
+        }
+        else if (Vector128.IsHardwareAccelerated && length >= 4)
+        {
+            int t = 0;
+            for (; t <= length - 4; t += 4) Vector128.Store(Vector128.Load(src + t), dst + t);
+            if (t < length) Vector128.Store(Vector128.Load(src + length - 4), dst + length - 4);
+        }
+        else
+        {
+            for (int t = 0; t < length; t++) dst[t] = src[t];
         }
     }
 }

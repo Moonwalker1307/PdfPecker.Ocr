@@ -313,21 +313,48 @@ internal static unsafe partial class VectorMath
     }
 
     /// <summary>dst[i] = src[2 i] for i in [0, count); reads nothing past src[2 count - 2].</summary>
+    /// <remarks>
+    /// A vector block of n outputs reads 2 n values, the last of them odd and one past the block's last even one, so
+    /// the blocks stop before the end and the last n outputs come from the 2 n values that end at src[2 count - 2]:
+    /// that block starts one value early, so its odd values are the even ones of the row.
+    /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void CopyEven(float* src, float* dst, int count)
     {
         int i = 0;
-        if (Avx2.IsSupported)
+        if (Avx512F.IsSupported && count > 16)
         {
-            for (; i + 8 <= count; i += 8, src += 16)
+            var even = Vector512.Create(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30);
+            for (; i + 16 < count; i += 16)
+            {
+                float* s = src + (2 * i);
+                Avx512F.Store(dst + i, Avx512F.PermuteVar16x32x2(Avx512F.LoadVector512(s), even, Avx512F.LoadVector512(s + 16)));
+            }
+
+            float* last = src + (2 * (count - 16)) - 1;
+            var odd = Vector512.Create(1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31);
+            Avx512F.Store(dst + count - 16, Avx512F.PermuteVar16x32x2(Avx512F.LoadVector512(last), odd, Avx512F.LoadVector512(last + 16)));
+            return;
+        }
+
+        if (Avx2.IsSupported && count > 8)
+        {
+            for (; i + 8 < count; i += 8)
             {
                 // Shuffle picks elements 0 and 2 of each half-lane pair, giving (s0 s2 s8 s10 | s4 s6 s12 s14); the
                 // permute puts the 64-bit pairs in order.
-                var even = Avx.Shuffle(Avx.LoadVector256(src), Avx.LoadVector256(src + 8), 0b10_00_10_00);
+                float* s = src + (2 * i);
+                var even = Avx.Shuffle(Avx.LoadVector256(s), Avx.LoadVector256(s + 8), 0b10_00_10_00);
                 Avx.Store(dst + i, Avx2.Permute4x64(even.AsDouble(), 0b11_01_10_00).AsSingle());
             }
+
+            float* last = src + (2 * (count - 8)) - 1;
+            var odd = Avx.Shuffle(Avx.LoadVector256(last), Avx.LoadVector256(last + 8), 0b11_01_11_01);
+            Avx.Store(dst + count - 8, Avx2.Permute4x64(odd.AsDouble(), 0b11_01_10_00).AsSingle());
+            return;
         }
-        for (; i < count; i++, src += 2) dst[i] = *src;
+
+        for (; i < count; i++) dst[i] = src[2 * i];
     }
 
     /// <summary>dst[i] = a[i] * s.</summary>
