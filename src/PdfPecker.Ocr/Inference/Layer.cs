@@ -38,9 +38,13 @@ internal abstract class Layer
     /// <summary>Runs the layer for one step of a plan.</summary>
     public abstract void Execute(Step step, InferenceContext context);
 
-    /// <summary>Creates the layer for a node of a model definition.</summary>
-    public static Layer Create(NodeDefinition node, ModelDefinition model, GemmKernel gemm) => node.Op switch
+    /// <summary>
+    /// Creates the layer for a node of a model definition; <paramref name="int8Pointwise"/> runs 1x1 convolutions in 8
+    /// bits where the processor can (an experiment, see <see cref="Experiments"/>).
+    /// </summary>
+    public static Layer Create(NodeDefinition node, ModelDefinition model, GemmKernel gemm, bool int8Pointwise = false) => node.Op switch
     {
+        OpKind.Conv when int8Pointwise && Int8Gemm.IsSupported && Int8PointwiseConvLayer.Qualifies(node, model) => new Int8PointwiseConvLayer(node, model),
         OpKind.Conv => ConvLayer.CreateConv(node, model, gemm),
         OpKind.ConvTranspose => new ConvTransposeLayer(node, model, gemm),
         OpKind.MaxPool => new PoolLayer(node, max: true),

@@ -85,7 +85,7 @@ static class Stages
         }
 
         var inv = CultureInfo.InvariantCulture;
-        Console.WriteLine($"PdfPecker.Ocr {OcrInfo.Version}, .NET {Environment.Version}, {Environment.ProcessorCount} cores, MaxDegreeOfParallelism {threads}");
+        Console.WriteLine($"PdfPecker.Ocr {OcrInfo.Version}, .NET {Environment.Version}, {Environment.ProcessorCount} cores, MaxDegreeOfParallelism {threads}, experiments {Experiments.Describe()}");
         Console.WriteLine($"A4 invoice page at 300 dpi: {width} x {height} px ({(isGray ? "gray" : "RGB")}), {lines} lines, {runs} warm runs");
         Console.WriteLine();
         Console.WriteLine(string.Create(inv, $"Cold first call (PdfOcr.Recognize, includes model load, JIT, worker): {cold:F0} ms"));
@@ -128,7 +128,7 @@ static class Stages
         double warm = Runner.PeakRssMb();
         var gc = GC.GetGCMemoryInfo();
         var inv = CultureInfo.InvariantCulture;
-        Console.WriteLine($"PdfPecker.Ocr {OcrInfo.Version}, .NET {Environment.Version}, MaxDegreeOfParallelism {threads}, GC gen0 budget {Environment.GetEnvironmentVariable("DOTNET_GCgen0size") ?? "default"}");
+        Console.WriteLine($"PdfPecker.Ocr {OcrInfo.Version}, .NET {Environment.Version}, MaxDegreeOfParallelism {threads}, experiments {Experiments.Describe()}, GC gen0 budget {Environment.GetEnvironmentVariable("DOTNET_GCgen0size") ?? "default"}");
         Console.WriteLine(string.Create(inv, $"OCR alone on a {width} x {height} gray page (held by the caller, {gray.Length / 1048576.0:F1} MB):"));
         Console.WriteLine(string.Create(inv, $"  resident before the first call {before:F0} MB{(reset ? "" : " (peak reset refused: running peak)")}"));
         Console.WriteLine(string.Create(inv, $"  peak during the cold call {cold:F0} MB (it allocated {coldAlloc:F0} MB: models, plans, buffers)"));

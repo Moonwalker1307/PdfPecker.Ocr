@@ -21,6 +21,12 @@ using OcrBench;
 //                                                   corpus pages with every network layer timed (Profile.cs)
 //        dotnet run -c Release -p:OcrInternals=true -- layers [--threads n] [--runs n] [--top n]
 //                                                   each network's time on that page layer by layer
+//        dotnet run -c Release -p:OcrInternals=true -- int8-pairs [--threads n] [--runs n]
+//                                                   the float and the experimental 8-bit networks on that page, in turns
+//                                                   in one process
+//        dotnet run -c Release -p:OcrInternals=true -- int8-kernels
+//                                                   the float and the experimental 8-bit products of 1x1 convolution
+//                                                   shapes on one thread
 //        the API cases are on by default (-p:OcrApi=false turns them off); -p:OcrInternals=true adds the stage cases.
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
@@ -54,6 +60,31 @@ if (args.Length > 0 && args[0] == "stages")
     return 0;
 #else
     Console.Error.WriteLine("The stages command needs a build with -p:OcrInternals=true.");
+    return 2;
+#endif
+}
+
+if (args.Length > 0 && args[0] == "int8-pairs")
+{
+#if OCR_INTERNALS
+    int it = int.TryParse(ArgValue("--threads"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var t4) ? t4 : Environment.ProcessorCount;
+    int ir = int.TryParse(ArgValue("--runs"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var r4) ? r4 : 7;
+    Int8Pairs.Run(it, ir);
+    return 0;
+#else
+    Console.Error.WriteLine("The int8-pairs command needs a build with -p:OcrInternals=true.");
+    return 2;
+#endif
+}
+
+if (args.Length > 0 && args[0] == "int8-kernels")
+{
+#if OCR_INTERNALS
+    Int8Kernels.Run();
+    Int8Kernels.Layers();
+    return 0;
+#else
+    Console.Error.WriteLine("The int8-kernels command needs a build with -p:OcrInternals=true.");
     return 2;
 #endif
 }

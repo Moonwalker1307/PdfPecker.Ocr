@@ -19,6 +19,7 @@ configure the package itself (`OcrOptions`) is in the XML doc comments and the R
 | Variable | Used by | Effect |
 | --- | --- | --- |
 | `PDFPECKER_OCR_UPDATE_GOLDEN=1` | `GoldenTests` | Rewrites the golden baselines instead of comparing. |
+| `PDFPECKER_OCR_EXPERIMENT` | `Inference/Experiments.cs`, read once before the models load | Output-changing experiments, all off by default and not for production: a comma-separated list of `int8-rec`, `int8-det` and `int8-cls` (the 1x1 convolutions of the recogniser, detector or orientation classifier in 8-bit integers on processors with AVX-VNNI, from .NET 9 on). The goldens and references hold only with it unset. |
 | `SOURCE_DATE_EPOCH` | PdfPecker, through the searchable PDF writer | When no creation date is set, fixes the dates and file identifier, so the same input gives a byte-identical PDF. |
 
 ## CI

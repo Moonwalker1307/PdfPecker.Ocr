@@ -15,7 +15,10 @@ Each module has tests of its own: tensor shapes and storage, every kernel agains
 random inputs of awkward sizes (lengths that are not multiples of the vector width, one-pixel images, single
 channels), the graph executor and its buffer plan, the detection post-processing on hand-made probability maps, CTC
 decoding, word splitting, reading order, hOCR and the searchable layer. A kernel with several SIMD paths is tested on
-each path the machine offers and on its scalar path, and the paths must agree.
+each path the machine offers and on its scalar path, and the paths must agree. The experimental 8-bit 1x1 convolution
+(`PDFPECKER_OCR_EXPERIMENT`, see `CONFIG.md`) is tested against its scalar reference bit for bit and against the float
+convolution within the quantisation error, on processors with AVX-VNNI; the goldens and the references hold with the
+experiments off.
 
 ## ONNX Runtime reference tests
 

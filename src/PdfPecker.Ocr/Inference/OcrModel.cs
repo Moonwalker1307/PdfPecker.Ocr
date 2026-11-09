@@ -11,7 +11,7 @@ internal sealed unsafe class OcrModel
 {
     private readonly int[] _inputShape;
 
-    private OcrModel(ModelDefinition definition, GemmKernel gemm)
+    private OcrModel(ModelDefinition definition, GemmKernel gemm, bool int8Pointwise)
     {
         Name = definition.Name;
         Notice = definition.Notice;
@@ -19,7 +19,7 @@ internal sealed unsafe class OcrModel
         Characters = definition.Characters;
         Gemm = gemm;
         var layers = new List<Layer>(definition.Nodes.Count);
-        foreach (var node in definition.Nodes) layers.Add(Layer.Create(node, definition, gemm));
+        foreach (var node in definition.Nodes) layers.Add(Layer.Create(node, definition, gemm, int8Pointwise));
         Layers = layers;
         if (layers.Count == 0) throw new InvalidDataException("The model has no layers.");
     }
@@ -49,14 +49,18 @@ internal sealed unsafe class OcrModel
 
     internal IReadOnlyList<Layer> Layers { get; }
 
-    /// <summary>Loads a model from the file format.</summary>
-    public static OcrModel Load(ReadOnlySpan<byte> data, GemmKernel? gemm = null) => FromDefinition(ModelDefinition.Deserialize(data), gemm);
+    /// <summary>
+    /// Loads a model from the file format; <paramref name="int8Pointwise"/> runs its 1x1 convolutions in 8 bits where the
+    /// processor can (an experiment that changes the output, see <see cref="Experiments"/>).
+    /// </summary>
+    public static OcrModel Load(ReadOnlySpan<byte> data, GemmKernel? gemm = null, bool int8Pointwise = false) =>
+        FromDefinition(ModelDefinition.Deserialize(data), gemm, int8Pointwise);
 
     /// <summary>Builds a model from a definition, as the tests and the model builder do.</summary>
-    public static OcrModel FromDefinition(ModelDefinition definition, GemmKernel? gemm = null)
+    public static OcrModel FromDefinition(ModelDefinition definition, GemmKernel? gemm = null, bool int8Pointwise = false)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        return new OcrModel(definition, gemm ?? GemmKernel.Best);
+        return new OcrModel(definition, gemm ?? GemmKernel.Best, int8Pointwise);
     }
 
     /// <summary>

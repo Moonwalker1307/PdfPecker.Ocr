@@ -44,10 +44,22 @@ internal static class ModelStore
     public static string[] Characters => Recognition.Characters;
 
     /// <summary>Loads a bundled model by its short name (det, rec or cls).</summary>
-    internal static OcrModel Load(string name)
+    internal static OcrModel Load(string name) => Load(name, name switch
+    {
+        "det" => Experiments.Int8Detection,
+        "rec" => Experiments.Int8Recognition,
+        "cls" => Experiments.Int8Orientation,
+        _ => false,
+    });
+
+    /// <summary>
+    /// Loads a bundled model with its 1x1 convolutions in 8 bits or not, whatever <see cref="Experiments"/> says, for
+    /// benchmarks that run both side by side.
+    /// </summary>
+    internal static OcrModel Load(string name, bool int8Pointwise)
     {
         using var data = Inflate(name);
-        return OcrModel.Load(data.GetBuffer().AsSpan(0, (int)data.Length));
+        return OcrModel.Load(data.GetBuffer().AsSpan(0, (int)data.Length), int8Pointwise: int8Pointwise);
     }
 
     /// <summary>The model file of a bundled model, inflated; the model data is the stream's buffer up to its length.</summary>

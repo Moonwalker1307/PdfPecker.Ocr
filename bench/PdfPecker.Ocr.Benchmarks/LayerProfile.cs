@@ -38,7 +38,7 @@ static unsafe class LayerProfile
         pipeline.Run(view, 300);
 
         var inv = CultureInfo.InvariantCulture;
-        Console.WriteLine($"PdfPecker.Ocr {OcrInfo.Version}, .NET {Environment.Version}, {Environment.ProcessorCount} cores, MaxDegreeOfParallelism {threads}, GEMM {GemmKernel.Best.Name}");
+        Console.WriteLine($"PdfPecker.Ocr {OcrInfo.Version}, .NET {Environment.Version}, {Environment.ProcessorCount} cores, MaxDegreeOfParallelism {threads}, GEMM {GemmKernel.Best.Name}, experiments {Experiments.Describe()}");
         Console.WriteLine($"A4 invoice page at 300 dpi, {runs} timed runs after one warm-up; per page, median over runs");
         double all = 0;
         var tables = new List<(string Name, Recording Net, double[] Ms)>();
@@ -134,6 +134,7 @@ static unsafe class LayerProfile
     static string Kind(Layer layer) => layer switch
     {
         PdfPecker.Ocr.Inference.Layers.GemmConvLayer => layer.Node.Ints[0] == 1 && layer.Node.Ints[1] == 1 ? "conv1x1" : "conv",
+        PdfPecker.Ocr.Inference.Layers.Int8PointwiseConvLayer => "conv1x1-int8",
         PdfPecker.Ocr.Inference.Layers.DepthwiseConvLayer => "depthwise",
         PdfPecker.Ocr.Inference.Layers.ArgMaxHeadLayer => "ArgMaxHead",
         _ => layer.Node.Op.ToString(),
