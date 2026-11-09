@@ -151,6 +151,32 @@ internal sealed unsafe class GemmKernel
         }
     }
 
+    /// <summary>
+    /// Packs the rows of a row-major block (activations, row stride ld) that <paramref name="rowIndex"/> lists, in that
+    /// order, into MR-row panels, as <see cref="PackARows(float*, nint, int, int, float*)"/> packs consecutive ones.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public void PackARows(float* src, nint ld, ReadOnlySpan<int> rowIndex, int k, float* dst)
+    {
+        int mr = MR, rows = rowIndex.Length;
+        for (int p = 0; p < rows; p += mr)
+        {
+            int h = Math.Min(mr, rows - p);
+            float* d = dst + (nint)p * k;
+            for (int r = 0; r < mr; r++, d++)
+            {
+                if (r >= h)
+                {
+                    for (int kk = 0; kk < k; kk++) d[(nint)kk * mr] = 0f;
+                    continue;
+                }
+
+                float* s = src + rowIndex[p + r] * ld;
+                for (int kk = 0; kk < k; kk++) d[(nint)kk * mr] = s[kk];
+            }
+        }
+    }
+
     /// <summary>Packs rows [0, rows) of a rows x k row-major block (activations, row stride ld) into MR-row panels.</summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void PackARows(float* src, nint ld, int rows, int k, float* dst)
