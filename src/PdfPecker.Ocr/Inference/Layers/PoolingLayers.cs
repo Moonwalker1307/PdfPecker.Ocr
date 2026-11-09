@@ -56,6 +56,12 @@ internal sealed unsafe class PoolLayer : Layer
     // input is overwritten before its last reader. Writing in place lets the stem's input share memory with its output.
     public override int InPlaceInput(int[][] inputs, int[] output) => IsMax2x2Stride1 ? 0 : -1;
 
+    public override void FindRuns(Step step) => WindowRuns(step.InputRuns[0], step.OutputRuns, step.OutputShape[3]);
+
+    /// <summary>The runs of an output of the given width from those of the input, for this layer or one inside a fused layer.</summary>
+    internal void WindowRuns(ColumnRuns input, ColumnRuns output, int outputWidth) =>
+        output.FromWindow(input, 3, _kw, _sw, 1, _pl, outputWidth);
+
     private bool IsMax2x2Stride1 => _max && _kh == 2 && _kw == 2 && _sh == 1 && _sw == 1 && _pt == 0 && _pl == 0;
 
     public override long ScratchPerWorker(Step step, InferenceContext context) =>

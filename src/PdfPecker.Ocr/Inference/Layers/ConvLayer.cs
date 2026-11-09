@@ -114,6 +114,18 @@ internal abstract class ConvLayer : Layer
         if (HasResidual && !inputs[1].AsSpan().SequenceEqual(output)) throw Unsupported("The residual does not match the convolution output.");
         return output;
     }
+
+    // An output column is in a run when every column its taps read is; the rows of a window do not matter, since every
+    // row's columns are equal along the run.
+    public override void FindRuns(Step step)
+    {
+        WindowRuns(step.InputRuns[0], step.OutputRuns, step.OutputShape[3]);
+        if (HasResidual) step.OutputRuns.Intersect(step.InputRuns[1]);
+    }
+
+    /// <summary>The runs of an output of the given width from those of the input, for this layer or one inside a fused layer.</summary>
+    internal void WindowRuns(ColumnRuns input, ColumnRuns output, int outputWidth) =>
+        output.FromWindow(input, 3, Kw, Sw, Dw, Pl, outputWidth);
 }
 
 /// <summary>
@@ -185,35 +197,65 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     /// <summary>The most columns of a packed tile: its panels of B then fill about 256 KB.</summary>
     private int TileBudget => Math.Clamp(65536 / _k / _gemm.NR * _gemm.NR, _gemm.NR, 2048);
 
+    // The products of a gathered tile follow its packed panels in the worker's scratch, a cache line further on.
+    private const int ProductOffset = 16;
+
+    /// <summary>
+    /// The fewest columns of a run worth leaving out: a gap splits a panel in two, whose pieces are copied, which costs
+    /// about as much per output channel as two thousand multiply-adds, while a skipped column saves k of them. The
+    /// stem's convolution of the three colour planes (k = 27) is cheaper to compute in full.
+    /// </summary>
+    private int MinimumGap => _k < 32 ? int.MaxValue : Math.Max(2, (2048 + _k - 1) / _k);
+
     // The output may take the residual's memory: each tile reads the residual only where it writes, and copies that
     // part to its scratch before writing, so a residual block, the largest value of the block, needs no memory of its own.
     public override int InPlaceInput(int[][] inputs, int[] output) => HasResidual ? 1 : -1;
 
     public override long ScratchPerWorker(Step step, InferenceContext context)
     {
-        int ow = step.OutputShape[3];
-        int tileColumns = StepTileColumns(step.InputShapes[0], step.OutputShape);
-        long work = WorkFloats(step.InputShapes[0], ow, tileColumns);
-        // Room for the tile's part of a residual that the output writes over: at most every row by the tile's columns.
-        return HasResidual ? Align(work) + (long)GemmKernel.RoundUp(Cout, _gemm.MR) * tileColumns : work;
+        int[] x = step.InputShapes[0], o = step.OutputShape;
+        long work = WorkFloats(x, o);
+        // Room for the tile's part of a residual that the output writes over: at most every row by the widest tile's
+        // columns.
+        return HasResidual ? Align(work) + (long)GemmKernel.RoundUp(Cout, _gemm.MR) * WidestTile(x, o) : work;
     }
 
-    /// <summary>The columns of the step's tiles: whole output rows for a stride-2 convolution read in place.</summary>
+    /// <summary>The columns of the step's plain tiles: whole output rows for a stride-2 convolution read in place.</summary>
     private int StepTileColumns(int[] x, int[] output)
     {
         int ow = output[3];
         return ReadsInPlace(x, ow) && Sw == 2 ? SplitTileColumns(ow) : TileColumns(output[2] * ow);
     }
 
-    /// <summary>
-    /// The floats a tile works in before the copy of a residual: the packed tile, or for panels read in place one
-    /// packed panel and, for a stride of 2, the split rows.
-    /// </summary>
-    private long WorkFloats(int[] x, int ow, int tileColumns)
+    /// <summary>The most columns of any tile of the step, plain or gathered (<see cref="GatheredTile"/>).</summary>
+    private int WidestTile(int[] x, int[] output)
     {
-        if (!ReadsInPlace(x, ow)) return _gemm.PackedBSize(_k, tileColumns);
-        long panel = _gemm.PackedBSize(_k, _gemm.NR);
-        return Sw == 1 ? panel : panel + (long)SplitRows * 2 * HalfStride(ow);
+        int plain = StepTileColumns(x, output);
+        return MinimumGap == int.MaxValue ? plain : Math.Max(plain, TileColumns(output[2] * output[3]));
+    }
+
+    /// <summary>
+    /// The floats a worker's tile works in before the copy of a residual: the packed tile, or for panels read in place
+    /// one packed panel and, for a stride of 2, the split rows; and for a convolution that may leave out runs, a
+    /// gathered tile's packed panels and its block of products.
+    /// </summary>
+    private long WorkFloats(int[] x, int[] output)
+    {
+        int ow = output[3];
+        int columns = output[2] * ow;
+        long work;
+        if (!ReadsInPlace(x, ow))
+        {
+            work = _gemm.PackedBSize(_k, TileColumns(columns));
+        }
+        else
+        {
+            long panel = _gemm.PackedBSize(_k, _gemm.NR);
+            work = Sw == 1 ? panel : panel + (long)SplitRows * 2 * HalfStride(ow);
+        }
+
+        if (MinimumGap != int.MaxValue) work = Math.Max(work, _gemm.PackedBSize(_k, TileColumns(columns)) + ProductOffset + ((long)_gemm.MR * _gemm.NR));
+        return work;
     }
 
     /// <summary>
@@ -261,6 +303,19 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     {
         int ow = step.OutputShape[3];
         int columns = step.OutputShape[2] * ow;
+        if (step.OutputRuns.Any(3, MinimumGap + 1))
+        {
+            // Only the columns outside the runs and the first of each run are computed; the fill copies that one over
+            // the rest of its run in every row.
+            var gathered = context.RunTiling;
+            if (gathered.Build(step.OutputRuns, step.OutputShape[2], ow, TileColumns(columns), _gemm.NR, Cout, _gemm.MR, MinimumGap))
+            {
+                context.For(gathered.Count, step, &GatheredTile);
+                step.OutputRuns.FillLastAxis(step.Output, step.OutputShape, context, MinimumGap);
+                return;
+            }
+        }
+
         step.Tiling ??= Tiling.For(step.OutputShape[0], columns, StepTileColumns(step.InputShapes[0], step.OutputShape), Cout, _gemm.MR);
         if (step.State is null && ReadsInPlace(step.InputShapes[0], ow)) step.State = TapOffsets(step.InputShapes[0], ow);
         context.For(step.Tiling.Count, step, &Tile);
@@ -315,10 +370,15 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         }
 
         if (layer._pointwise) gemm.PackBRows(input + n0, planeOut, layer._k, columns, packed);
-        else layer.PackPatches(input, layer._broadcast ? 0 : (long)x[2] * x[3], x[3], x[2], x[3], 0, 0, ow, 0, 0, n0, columns, packed);
+        else
+        {
+            layer.PackPatches(input, layer._broadcast ? 0 : (long)x[2] * x[3], x[3], x[2], x[3], 0, 0, ow, 0, 0, n0, columns, packed);
+            gemm.ClearPanelTail(packed, layer._k, columns);
+        }
+
         float* output = step.Output;
         long baseOffset = (long)n * layer.Cout * planeOut + (long)m0 * planeOut + n0;
-        var epilogue = layer.TileEpilogue(step, baseOffset, rows, columns, planeOut, packed + Align(layer.WorkFloats(x, ow, tiling.TileColumns)));
+        var epilogue = layer.TileEpilogue(step, baseOffset, rows, columns, planeOut, packed);
         fixed (float* weights = layer._weights, bias = layer._bias)
             gemm.Multiply(layer._k, weights + (long)m0 * layer._k, rows, packed, columns, output + baseOffset, planeOut, bias + m0, null, epilogue);
     }
@@ -326,16 +386,125 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     /// <summary>
     /// The epilogue of the tile at <paramref name="baseOffset"/> in the output, <paramref name="rows"/> channels by
     /// <paramref name="columns"/> pixels. When the output writes over the residual, the tile's part of the residual is
-    /// copied to <paramref name="copy"/> here, before anything of the tile is written, and the epilogue reads the copy,
-    /// whose rows lie as far apart as the tile's columns. The values and the order of the additions are unchanged.
+    /// copied here, before anything of the tile is written, to the worker's scratch after what the tile works in
+    /// (<see cref="ResidualCopy"/>), and the epilogue reads the copy, whose rows lie as far apart as the tile's columns.
+    /// The values and the order of the additions are unchanged.
     /// </summary>
-    private Epilogue TileEpilogue(Step step, long baseOffset, int rows, int columns, int planeOut, float* copy)
+    private Epilogue TileEpilogue(Step step, long baseOffset, int rows, int columns, int planeOut, float* scratch)
     {
         if (!HasResidual) return new Epilogue(Activation, Alpha, Beta, null);
         float* residual = step.Input(1) + baseOffset;
         if (step.Input(1) != step.Output) return new Epilogue(Activation, Alpha, Beta, residual);
+        float* copy = ResidualCopy(step, scratch);
         for (int r = 0; r < rows; r++) new ReadOnlySpan<float>(residual + (long)r * planeOut, columns).CopyTo(new Span<float>(copy + (long)r * columns, columns));
         return new Epilogue(Activation, Alpha, Beta, copy, columns);
+    }
+
+    /// <summary>Where a tile keeps its copy of a residual that the output writes over, in the worker's scratch.</summary>
+    private float* ResidualCopy(Step step, float* scratch) => scratch + Align(WorkFloats(step.InputShapes[0], step.OutputShape));
+
+    /// <summary>
+    /// A tile of the columns a run leaves to compute, gathered from the pieces of the output plane they lie in: the
+    /// pieces are packed side by side into one set of panels. Panels that lie within one piece are multiplied straight
+    /// into the output, as the plain tile does; a panel that spans two pieces goes to scratch and is copied piece by
+    /// piece, finished with the operations of the plain epilogue in the same order, so every value is the same. When
+    /// the output writes over the residual, the tile first copies the residual of its gathered columns to scratch, side
+    /// by side as they are packed, and reads it there.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void GatheredTile(object state, int tile, int worker)
+    {
+        var step = (Step)state;
+        var layer = (GemmConvLayer)step.Layer;
+        var gemm = layer._gemm;
+        var tiling = step.Context.RunTiling;
+        tiling.Decode(tile, out int n, out int v0, out int columns, out int m0, out int rows);
+        int[] x = step.InputShapes[0];
+        int ow = step.OutputShape[3];
+        int planeOut = step.OutputShape[2] * ow;
+        float* input = step.Input(0) + (long)n * x[1] * x[2] * x[3];
+        long planeIn = layer._broadcast ? 0 : (long)x[2] * x[3];
+        float* packed = step.Context.Scratch(worker);
+        float* product = packed + gemm.PackedBSize(layer._k, columns) + ProductOffset;
+        int first = tiling.FirstPiece(n, v0, out int firstSkip);
+        for (int p = first, at = 0, skip = firstSkip; at < columns; p++, skip = 0)
+        {
+            int length = Math.Min(tiling.PieceLength(p) - skip, columns - at);
+            int start = tiling.PieceStart(p) + skip;
+            if (layer._pointwise) gemm.PackBRowsAt(input + start, planeOut, layer._k, length, packed, at);
+            else layer.PackPatches(input, planeIn, x[3], x[2], x[3], 0, 0, ow, 0, 0, start, length, packed, at);
+            at += length;
+        }
+
+        gemm.ClearPanelTail(packed, layer._k, columns);
+        float* output = step.Output + (long)n * layer.Cout * planeOut + (long)m0 * planeOut;
+        float* residual = layer.HasResidual ? step.Input(1) + (long)n * layer.Cout * planeOut + (long)m0 * planeOut : null;
+        float* copy = null;
+        if (residual != null && step.Input(1) == step.Output)
+        {
+            // The output writes over the residual: the tile's part of it goes to scratch before the tile writes.
+            copy = layer.ResidualCopy(step, packed);
+            for (int p = first, at = 0, skip = firstSkip; at < columns; p++, skip = 0)
+            {
+                int length = Math.Min(tiling.PieceLength(p) - skip, columns - at);
+                long start = tiling.PieceStart(p) + skip;
+                for (int r = 0; r < rows; r++)
+                    new ReadOnlySpan<float>(residual + ((long)r * planeOut) + start, length).CopyTo(new Span<float>(copy + ((long)r * columns) + at, length));
+                at += length;
+            }
+        }
+
+        int nr = gemm.NR, k = layer._k;
+        var activation = new Epilogue(layer.Activation, layer.Alpha, layer.Beta, null);
+        fixed (float* weights = layer._weights, bias = layer._bias)
+        {
+            // One panel of rows at a time across the whole tile, so that its weights stay in the first-level cache.
+            for (int i = 0; i < rows; i += gemm.MR)
+            {
+                int h = Math.Min(gemm.MR, rows - i);
+                float* a = weights + (long)(m0 + i) * k;
+                float* outRows = output + (long)i * planeOut;
+                float* resRows = residual == null ? null : residual + (long)i * planeOut;
+                float* copyRows = copy == null ? null : copy + (long)i * columns;
+                for (int v = 0; v < columns;)
+                {
+                    int piece = tiling.FirstPiece(n, v0 + v, out int into);
+                    int remaining = tiling.PieceLength(piece) - into, left = columns - v;
+                    long start = tiling.PieceStart(piece) + into;
+                    if (remaining >= left || remaining >= nr)
+                    {
+                        // Whole panels within one piece go straight to their place, finished there as in the plain tile.
+                        int span = remaining >= left ? left : remaining / nr * nr;
+                        var epilogue = copyRows != null ? new Epilogue(layer.Activation, layer.Alpha, layer.Beta, copyRows + v, columns)
+                            : new Epilogue(layer.Activation, layer.Alpha, layer.Beta, resRows == null ? null : resRows + start);
+                        gemm.Multiply(k, a, h, packed + (long)v * k, span, outRows + start, planeOut, bias + m0 + i, null, epilogue);
+                        v += span;
+                        continue;
+                    }
+
+                    // A panel that spans pieces goes to scratch with its activation, and each piece of it to its place,
+                    // with the residual added after the activation as the plain epilogue adds it.
+                    int w = Math.Min(nr, left);
+                    gemm.Multiply(k, a, h, packed + (long)v * k, w, product, nr, bias + m0 + i, null, activation);
+                    for (int r = 0; r < h; r++)
+                    {
+                        float* src = product + (long)r * nr;
+                        long row = (long)r * planeOut;
+                        for (int q = piece, at = 0, skip = into; at < w; q++, skip = 0)
+                        {
+                            int length = Math.Min(tiling.PieceLength(q) - skip, w - at);
+                            long offset = row + tiling.PieceStart(q) + skip;
+                            if (copyRows != null) VectorMath.Add(src + at, copyRows + ((long)r * columns) + v + at, outRows + offset, length);
+                            else if (resRows != null) VectorMath.Add(src + at, resRows + offset, outRows + offset, length);
+                            else CopyRun(src + at, outRows + offset, length);
+                            at += length;
+                        }
+                    }
+
+                    v += w;
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -363,6 +532,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
             {
                 int count = Math.Min(tile, columns - n0);
                 PackPatches(input, _broadcast ? 0 : inputPlane, rowStride, h, w, firstRow, firstColumn, width, oy0, ox0, n0, count, packed);
+                _gemm.ClearPanelTail(packed, _k, count);
                 _gemm.Multiply(_k, weights, Cout, packed, count, output + n0, (nint)outputPlane, bias, null, epilogue);
             }
         }
@@ -388,7 +558,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         float* output = step.Output + baseOffset;
 
         // A residual that the output writes over is copied before the first panel writes.
-        var epilogue = TileEpilogue(step, baseOffset, rows, columns, planeOut, packed + Align(WorkFloats(step.InputShapes[0], ow, columns)));
+        var epilogue = TileEpilogue(step, baseOffset, rows, columns, planeOut, packed);
 
         // The first input row and column a panel's taps read must lie within these bounds for every tap to read inside.
         int rowEnd = h - ((Kh - 1) * Dh);
@@ -411,6 +581,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
                 else
                 {
                     PackPatches(input, _broadcast ? 0 : (long)h * w, w, h, w, 0, 0, ow, 0, 0, n, width, packed);
+                    _gemm.ClearPanelTail(packed, _k, width);
                     _gemm.Multiply(_k, a, rows, packed, width, output + j0, planeOut, bias + m0, null);
                 }
             }
@@ -440,7 +611,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         float* output = step.Output + baseOffset;
 
         // A residual that the output writes over is copied before the first panel writes.
-        var epilogue = TileEpilogue(step, baseOffset, rows, columns, planeOut, packed + Align(WorkFloats(step.InputShapes[0], ow, columns)));
+        var epilogue = TileEpilogue(step, baseOffset, rows, columns, planeOut, packed);
         int half = HalfStride(ow);
         float* split = packed + _gemm.PackedBSize(_k, nr);
         long planeSize = _broadcast ? 0 : (long)h * w;
@@ -499,6 +670,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
                 int n = n0 + j0;
                 if (n / ow == (n + width - 1) / ow) continue;
                 PackPatches(input, planeSize, w, h, w, 0, 0, ow, 0, 0, n, width, packed);
+                _gemm.ClearPanelTail(packed, _k, width);
                 _gemm.Multiply(_k, a, rows, packed, width, output + j0, planeOut, bias + m0, null);
             }
         }
@@ -528,8 +700,9 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     }
 
     /// <summary>
-    /// Gathers the patches of output pixels [n0, n0 + columns) of a block into NR-column panels: row (ci, ky, kx) of a
-    /// panel holds the input value each output pixel's kernel tap reads, or zero in the padding. The block's pixels go
+    /// Gathers the patches of output pixels [n0, n0 + columns) of a block into NR-column panels, as columns [first,
+    /// first + columns) of them (lanes after the last are left for <see cref="GemmKernel.ClearPanelTail"/>): row
+    /// (ci, ky, kx) of a panel holds the input value each output pixel's kernel tap reads, or zero in the padding. The block's pixels go
     /// row by row, <paramref name="bandWidth"/> to a row, from output pixel (<paramref name="oy0"/>, <paramref name="ox0"/>);
     /// for a whole layer the block is the output map. The input holds the rows of an h x w map from
     /// <paramref name="firstRow"/> and its columns from <paramref name="firstColumn"/>, <paramref name="rowStride"/>
@@ -541,7 +714,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void PackPatches(float* input, long planeSize, long rowStride, int h, int w, int firstRow, int firstColumn, int bandWidth,
-        int oy0, int ox0, int n0, int columns, float* packed)
+        int oy0, int ox0, int n0, int columns, float* packed, int first = 0)
     {
         int nr = _gemm.NR;
         int k = _k;
@@ -549,13 +722,14 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         int kh = Kh, kw = Kw, sw = Sw, dh = Dh, dw = Dw;
         // The map's first channel as if the window held it whole; only rows and columns the window holds are read.
         float* origin = input - (long)firstRow * rowStride - firstColumn;
-        for (int j0 = 0; j0 < columns; j0 += nr)
+        for (int pos = first, end = first + columns; pos < end;)
         {
-            int width = Math.Min(nr, columns - j0);
-            float* panel = packed + (long)j0 * k;
+            int lane = pos % nr;
+            int width = Math.Min(nr - lane, end - pos);
+            float* panel = packed + ((long)(pos - lane) * k) + lane;
             for (int t = 0; t < width;)
             {
-                int n = n0 + j0 + t;
+                int n = n0 + (pos - first) + t;
                 int ly = n / bandWidth, lx = n - ly * bandWidth;
                 int length = Math.Min(bandWidth - lx, width - t);
                 int y0 = (oy0 + ly) * Sh - Pt, x0 = (ox0 + lx) * sw - Pl;
@@ -593,10 +767,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
                 t += length;
             }
 
-            if (width < nr)
-            {
-                for (int r = 0; r < k; r++) new Span<float>(panel + (long)r * nr + width, nr - width).Clear();
-            }
+            pos += width;
         }
     }
 
@@ -978,6 +1149,128 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
         Vector512.Store(VectorMath.ActivateWide(a2, Activation, Alpha, Beta), dst[2]);
         Vector512.Store(VectorMath.ActivateWide(a3, Activation, Alpha, Beta), dst[3]);
     }
+}
+
+/// <summary>
+/// The tiles of a convolution that computes only the columns outside the output's runs and the first column of each
+/// run (see <see cref="ColumnRuns"/>). Per batch item, the output pixels in row-major order split into pieces that end
+/// where a row's run starts after its first column and resume where it ends; the pieces of an item are numbered on
+/// from one to the next as if they were one row of columns, and those columns are tiled as <see cref="Tiling"/> tiles
+/// a plane: in blocks of whole panels and rows in blocks. Kept by the context and rebuilt for each run of a
+/// layer, since the runs change with the lines of a batch; only one convolution runs at a time.
+/// </summary>
+internal sealed class RunTiling
+{
+    private int[] _pieceStart = new int[64], _pieceLength = new int[64], _pieceColumn = new int[64];
+    private int[] _itemPiece = new int[8];
+    private int[] _tileItem = new int[64], _tileColumn = new int[64], _tileColumns = new int[64];
+    private int _tiles, _rowBlocks, _rowBlockPanels, _panel, _rows;
+
+    public int Count => _tiles * _rowBlocks;
+
+    /// <summary>
+    /// Builds the pieces and tiles for output planes of <paramref name="height"/> x <paramref name="width"/>, leaving
+    /// out runs of at least <paramref name="minimumGap"/> columns after their first; false when no item has one.
+    /// </summary>
+    public bool Build(ColumnRuns runs, int height, int width, int tileColumns, int panelWidth, int rows, int panel, int minimumGap)
+    {
+        int pieces = 0;
+        _tiles = 0;
+        bool skips = false;
+        int plane = height * width;
+        if (_itemPiece.Length < runs.Batch + 1) _itemPiece = new int[runs.Batch + 1];
+        for (int n = 0; n < runs.Batch; n++)
+        {
+            _itemPiece[n] = pieces;
+            int p = 0, column = 0;
+            if (runs.HasRun(n) && runs.End[n] - runs.Start[n] - 1 >= minimumGap)
+            {
+                int s = runs.Start[n], e = runs.End[n];
+                for (int y = 0; y < height; y++)
+                {
+                    int stop = (y * width) + s + 1;
+                    AddPiece(ref pieces, p, stop - p, ref column);
+                    p = (y * width) + e;
+                }
+
+                skips = true;
+            }
+
+            if (p < plane) AddPiece(ref pieces, p, plane - p, ref column);
+
+            // The item's columns in tiles of whole panels, as the plain tiling splits a plane.
+            int size = Tiling.Balanced(column, tileColumns, panelWidth);
+            for (int v = 0; v < column; v += size) AddTile(n, v, Math.Min(size, column - v));
+        }
+
+        _itemPiece[runs.Batch] = pieces;
+        if (!skips) return false;
+        _panel = panel;
+        _rows = rows;
+        int panels = (rows + panel - 1) / panel;
+        int wanted = Math.Clamp((16 + _tiles - 1) / _tiles, 1, panels);
+        _rowBlockPanels = (panels + wanted - 1) / wanted;
+        _rowBlocks = (panels + _rowBlockPanels - 1) / _rowBlockPanels;
+        return true;
+    }
+
+    private void AddPiece(ref int pieces, int start, int length, ref int column)
+    {
+        if (length <= 0) return;
+        if (pieces == _pieceStart.Length)
+        {
+            Array.Resize(ref _pieceStart, pieces * 2);
+            Array.Resize(ref _pieceLength, pieces * 2);
+            Array.Resize(ref _pieceColumn, pieces * 2);
+        }
+
+        _pieceStart[pieces] = start;
+        _pieceLength[pieces] = length;
+        _pieceColumn[pieces] = column;
+        pieces++;
+        column += length;
+    }
+
+    private void AddTile(int n, int column, int columns)
+    {
+        if (_tiles == _tileItem.Length)
+        {
+            Array.Resize(ref _tileItem, _tiles * 2);
+            Array.Resize(ref _tileColumn, _tiles * 2);
+            Array.Resize(ref _tileColumns, _tiles * 2);
+        }
+
+        _tileItem[_tiles] = n;
+        _tileColumn[_tiles] = column;
+        _tileColumns[_tiles] = columns;
+        _tiles++;
+    }
+
+    /// <summary>A tile: its batch item, its first gathered column and their number, and its block of output rows.</summary>
+    public void Decode(int tile, out int batch, out int column, out int columns, out int row, out int rows)
+    {
+        int rowBlock = tile % _rowBlocks;
+        int t = tile / _rowBlocks;
+        batch = _tileItem[t];
+        column = _tileColumn[t];
+        columns = _tileColumns[t];
+        row = rowBlock * _rowBlockPanels * _panel;
+        rows = Math.Min(_rowBlockPanels * _panel, _rows - row);
+    }
+
+    /// <summary>The piece of item n that holds its gathered column, and how far into the piece that column is.</summary>
+    public int FirstPiece(int n, int column, out int skip)
+    {
+        int p = _itemPiece[n];
+        while (p + 1 < _itemPiece[n + 1] && _pieceColumn[p + 1] <= column) p++;
+        skip = column - _pieceColumn[p];
+        return p;
+    }
+
+    /// <summary>Where a piece starts in its item's output plane.</summary>
+    public int PieceStart(int piece) => _pieceStart[piece];
+
+    public int PieceLength(int piece) => _pieceLength[piece];
 }
 
 /// <summary>

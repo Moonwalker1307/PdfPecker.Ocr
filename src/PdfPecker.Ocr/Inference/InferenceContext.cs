@@ -26,6 +26,7 @@ internal sealed unsafe class InferenceContext : IDisposable
     private long _arenaFloats;
     private float[]?[] _scratch;
     private bool _disposed;
+    private Layers.RunTiling? _runTiling;
 
     /// <summary>Creates a context that uses at most the given number of threads for one run.</summary>
     public InferenceContext(int maxDegreeOfParallelism)
@@ -38,6 +39,12 @@ internal sealed unsafe class InferenceContext : IDisposable
 
     /// <summary>The largest number of threads one run uses.</summary>
     public int MaxDegreeOfParallelism { get; }
+
+    /// <summary>
+    /// The tiles of the convolution that is leaving out the columns of runs (see <see cref="ColumnRuns"/>), rebuilt by
+    /// each such layer when it runs: layers run one at a time, so one serves them all and its arrays are reused.
+    /// </summary>
+    internal Layers.RunTiling RunTiling => _runTiling ??= new Layers.RunTiling();
 
     /// <summary>Checked between the operators of a run, so a long run can be stopped.</summary>
     public CancellationToken CancellationToken { get; set; }

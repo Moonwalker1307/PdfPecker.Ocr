@@ -56,6 +56,18 @@ internal sealed unsafe class ConcatLayer : Layer
         return output;
     }
 
+    public override void FindRuns(Step step)
+    {
+        var output = step.OutputRuns;
+        int axis = step.InputRuns[0].Axis;
+        output.Clear();
+        if (axis <= 0 || axis == Axis(step.OutputShape.Length)) return;
+        for (int i = 0; i < _factors.Length; i++)
+            if (_factors[i] != (1, 1)) return;
+        output.CopyFrom(step.InputRuns[0], axis);
+        for (int i = 1; i < step.InputRuns.Length; i++) output.Intersect(step.InputRuns[i]);
+    }
+
     /// <summary>True when each input's slice of the output is one contiguous block.</summary>
     public bool CanAliasInputs(Step step)
     {
@@ -148,6 +160,14 @@ internal sealed unsafe class TransposeLayer : Layer
         return _perm.Select(p => x[p]).ToArray();
     }
 
+    // The batch axis must stay first, so that the runs still belong to the same items.
+    public override void FindRuns(Step step)
+    {
+        int axis = step.InputRuns[0].Axis;
+        if (axis <= 0 || _perm[0] != 0) step.OutputRuns.Clear();
+        else step.OutputRuns.CopyFrom(step.InputRuns[0], Array.IndexOf(_perm, axis));
+    }
+
     public override void Execute(Step step, InferenceContext context)
     {
         int[] x = step.InputShapes[0];
@@ -188,6 +208,28 @@ internal sealed unsafe class TransposeLayer : Layer
 internal sealed unsafe class ReshapeLayer(NodeDefinition node) : Layer(node)
 {
     public override bool IsView => true;
+
+    // The run's axis survives when the axes before it hold as many values as before and it keeps its length: then every
+    // value of it is at the same place with the same index along it.
+    public override void FindRuns(Step step)
+    {
+        int axis = step.InputRuns[0].Axis;
+        int[] x = step.InputShapes[0], o = step.OutputShape;
+        step.OutputRuns.Clear();
+        if (axis <= 0 || o.Length == 0 || o[0] != x[0]) return;
+        long before = 1;
+        for (int d = 0; d < axis; d++) before *= x[d];
+        long product = 1;
+        for (int d = 0; d < o.Length; d++)
+        {
+            if (product == before && o[d] == x[axis] && d > 0)
+            {
+                step.OutputRuns.CopyFrom(step.InputRuns[0], d);
+                return;
+            }
+            product *= o[d];
+        }
+    }
 
     public override int[] OutputShape(int[][] inputs)
     {

@@ -42,6 +42,8 @@ internal sealed unsafe class LayerNormLayer : Layer
 
     public override int InPlaceInput(int[][] inputs, int[] output) => 0;
 
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: true);
+
     public override void Execute(Step step, InferenceContext context)
     {
         int c = _gamma.Length;
@@ -134,6 +136,8 @@ internal sealed unsafe class LinearLayer : Layer
         if (_hasResidual && !inputs[1].AsSpan().SequenceEqual(output)) throw Unsupported("The residual does not match the linear output.");
         return output;
     }
+
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: true);
 
     /// <summary>True when the layer is a plain product plus bias, with no activation or residual.</summary>
     public bool IsPlain => _activation == ActivationKind.None && !_hasResidual;
@@ -262,6 +266,10 @@ internal sealed unsafe class AttentionLayer : Layer
     // does not change any result.
     private static readonly bool Wide = VectorMath.Wide && Width == 8;
     private static readonly int Lanes = Wide ? 16 : Width;
+
+    // Every query is computed alike from its own row and all the keys, so equal rows of a run stay equal; the run
+    // must lie along the tokens, which leaves only axis 1.
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: true);
 
     /// <summary>The scratch of one head: q, k transposed, v with rows padded to whole vectors, and one row of scores.</summary>
     private static (int KeyStride, int ValueStride, long Floats) Layout(int t, int d)
@@ -396,6 +404,8 @@ internal sealed unsafe class SoftmaxLayer(NodeDefinition node) : Layer(node)
 
     public override int InPlaceInput(int[][] inputs, int[] output) => 0;
 
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: true);
+
     public override void Execute(Step step, InferenceContext context)
     {
         int perTile = Rows.PerTile(step.OutputShape[^1]);
@@ -459,6 +469,8 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         output[^1] = 2;
         return output;
     }
+
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: true);
 
     // The packed rows come first in the shared scratch, then the chunk's logits on a 64-byte boundary, then the largest
     // logit of each of the chunk's rows in each column block of the product (the blocks do not depend on the rows).

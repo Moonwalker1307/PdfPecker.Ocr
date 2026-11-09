@@ -87,6 +87,20 @@ internal sealed unsafe class StemLayer : Layer
         return ShapesFor(inputs[0]).F;
     }
 
+    // The output's runs are those the separate layers find: each inner map's from the map it reads, the concatenation's
+    // where both of its parts have one, and the output's from the concatenation's.
+    public override void FindRuns(Step step)
+    {
+        var g = Plan(step);
+        Shapes s = g.Shapes;
+        _first.WindowRuns(step.InputRuns[0], g.RunsA, s.A[3]);
+        _reduce.WindowRuns(g.RunsA, g.RunsB, s.B[3]);
+        _expand.WindowRuns(g.RunsB, g.RunsC, s.C[3]);
+        _pool.WindowRuns(g.RunsA, g.RunsD, s.A[3]);
+        g.RunsD.Intersect(g.RunsC);
+        _last.WindowRuns(g.RunsD, step.OutputRuns, s.F[3]);
+    }
+
     // Each worker's windows are its part of the step's shared scratch, which the plan places in the arena: while the
     // stem runs, the arena holds little else.
     public override long SharedScratch(Step step) => Plan(step).Scratch * step.Context.MaxDegreeOfParallelism;
@@ -193,7 +207,21 @@ internal sealed unsafe class StemLayer : Layer
             }
 
             Scratch = Align(windows + Align(FBlockFloats) + packed);
+            int batch = shapes.X[0];
+            RunsA = new ColumnRuns(batch);
+            RunsB = new ColumnRuns(batch);
+            RunsC = new ColumnRuns(batch);
+            RunsD = new ColumnRuns(batch);
         }
+
+        /// <summary>The runs of A, B, C and D (then of the concatenation) while the step's runs are found.</summary>
+        public ColumnRuns RunsA { get; }
+
+        public ColumnRuns RunsB { get; }
+
+        public ColumnRuns RunsC { get; }
+
+        public ColumnRuns RunsD { get; }
 
         public Shapes Shapes { get; }
 
