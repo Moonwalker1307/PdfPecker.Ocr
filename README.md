@@ -171,8 +171,9 @@ collector, the default for console apps, suits this work.
 PdfPecker.Ocr's code is licensed under the [MIT license](LICENSE). The model weights embedded in the package are
 derived from PaddleOCR's models, converted to ONNX by the RapidOCR authors, and are licensed under the Apache License,
 Version 2.0; [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) has the attribution, the notice of the changes made to
-them and the licence text. Both licences allow commercial use. The package's licence expression is
-`MIT AND Apache-2.0`.
+them and the licence text. The polygon offset used by text detection is a port of Clipper, under the Boost Software
+License 1.0, whose text is in the same file. All three licences allow commercial use. The package's licence expression
+is `MIT AND Apache-2.0 AND BSL-1.0`.
 
 ## Contributing
 

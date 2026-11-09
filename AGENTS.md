@@ -4,8 +4,9 @@ Guidance for coding agents (and people) working in this repository. `CLAUDE.md` 
 other agents read the same rules.
 
 PdfPecker.Ocr is a dependency-free OCR package for .NET in the PdfPecker family: it reads printed text from images and
-scanned PDFs and makes scanned PDFs searchable with an invisible text layer. It runs PaddleOCR's PP-OCRv6 small models
-(detection, recognition and a 0/180 degree line orientation classifier) on a neural network runtime of its own, in C#.
+scanned PDFs and makes scanned PDFs searchable with an invisible text layer. It runs PaddleOCR's PP-OCRv6 small
+detection and recognition models and the PP-OCR mobile v2.0 0/180 degree line orientation classifier on a neural
+network runtime of its own, in C#.
 The NuGet package depends only on the released [PdfPecker](https://www.nuget.org/packages/PdfPecker) package, which it
 uses for image decoding, PDF rendering and PDF writing through PdfPecker's public API; the library itself lives in
 [Moonwalker1307/PdfPecker](https://github.com/Moonwalker1307/PdfPecker).
@@ -37,15 +38,16 @@ wins here.
 - **No native code and no network.** The package ships no native binaries, does not P/Invoke into anything outside the
   .NET runtime, and does not use ONNX Runtime, Tesseract or a GPU. It never downloads anything: the models are
   embedded resources.
-- **Models are generated data.** `src/PdfPecker.Ocr/Models/*.bin` are written by `tools/ModelBuilder` from the ONNX
-  files in the rapidocr wheel on PyPI, pinned by SHA-256. Change the builder, never its output, and keep the model
+- **Models are generated data.** `src/PdfPecker.Ocr/Models/*.bin.deflate` are written by `tools/ModelBuilder` from the
+  ONNX files in the rapidocr wheel on PyPI, pinned by SHA-256. Change the builder, never its output, and keep the model
   notices in `THIRD-PARTY-NOTICES.md` accurate: the weights are Apache-2.0, copyright Baidu and/or the PaddleOCR rights
   holders, and the converted files must say that and how they were changed. A new model, a new source or a change to
   what the builder does to the weights updates the notices in the same pull request.
-- **Licences.** The code is MIT (`LICENSE`, unchanged); the package's licence expression is `MIT AND Apache-2.0`, and
-  it carries `THIRD-PARTY-NOTICES.md` with the full Apache-2.0 text. Pre- and post-processing follows RapidOCR and
-  PaddleOCR (both Apache-2.0); it is written as our own C# code from their Python code, not translated line by line
-  from anything under another licence. Never put a licence that is not OSI- or FSF-approved in
+- **Licences.** The code is MIT (`LICENSE`, unchanged); the package's licence expression is
+  `MIT AND Apache-2.0 AND BSL-1.0`, and it carries `THIRD-PARTY-NOTICES.md` with the full Apache-2.0 and Boost texts.
+  Pre- and post-processing follows RapidOCR and PaddleOCR (both Apache-2.0); the minimum-area rectangle follows OpenCV
+  (Apache-2.0) and the polygon offset is a port of Clipper 6.4 (BSL-1.0), both credited in the notices. Take nothing
+  from code under any other licence, and nothing copyleft. Never put a licence that is not OSI- or FSF-approved in
   `PackageLicenseExpression`.
 - **No breaking API changes before 2.0** once 0.1.0 is released. `dotnet pack` checks the public API against the last
   release from then on (`RELEASING.md`); a change it rejects needs a new overload or type instead, not a suppression.
@@ -87,7 +89,7 @@ wins here.
     original pages with PdfPecker.
   - `Input/` – images and PDF pages to pixels through PdfPecker.
 - `tools/ModelBuilder/` – downloads the rapidocr wheel from PyPI (pinned by SHA-256), reads the ONNX files with its own
-  protobuf reader, simplifies the graph and writes `src/PdfPecker.Ocr/Models/*.bin`.
+  protobuf reader, simplifies the graph and writes `src/PdfPecker.Ocr/Models/*.bin.deflate`.
 - `tools/OnnxReference/` – Python, dev only: runs ONNX Runtime on fixed inputs and writes the reference outputs the
   tests compare with.
 - `tests/PdfPecker.Ocr.Tests/` – xUnit: kernels, model outputs against the ONNX Runtime references, the pipeline
@@ -126,7 +128,7 @@ must be unchanged unless the output change is intended. If only one runtime is i
   why. A refactor or a pure speed-up must leave every golden unchanged.
 - **Model regeneration**: run `tools/ModelBuilder`, commit its output with the builder change, regenerate the ONNX
   Runtime references if the inputs changed, and update `THIRD-PARTY-NOTICES.md` when the source, the hashes or what is
-  done to the weights changes. Never hand-edit `Models/*.bin`.
+  done to the weights changes. Never hand-edit `Models/*.bin.deflate`.
 - **Kernel and inference changes**: the reference tests (model outputs within 1e-3 of ONNX Runtime) must pass on every
   SIMD path the kernel has, the scalar one included; add a reference test for a new kernel or fusion. Compare speed and
   allocations with `bench/compare-versions.sh <base-ref>` on one machine and put the numbers in the PR.
@@ -143,7 +145,7 @@ must be unchanged unless the output change is intended. If only one runtime is i
 - **Untrusted input** (images, PDFs, pixel buffers, sizes): add resource limits, a fuzz target in
   `fuzz/PdfPecker.Ocr.Fuzz` (see `fuzz/README.md`), and for each bug fix a regression test in `HostileInputTests`.
 - **Generated data**: change the generator, never its output.
-  - `tools/ModelBuilder` → `src/PdfPecker.Ocr/Models/*.bin`
+  - `tools/ModelBuilder` → `src/PdfPecker.Ocr/Models/*.bin.deflate`
   - `tools/OnnxReference` → the reference outputs in `tests/PdfPecker.Ocr.Tests/Fixtures`
 - **CI**: actions are pinned to the same commit SHAs as PdfPecker's workflows; update both together.
 - **Releases**: follow `RELEASING.md`; only the repository owner publishes a release.
@@ -159,7 +161,8 @@ must be unchanged unless the output change is intended. If only one runtime is i
 - Per-operation allocations in the inference loop; buffers come from the plan made when the model loads.
 - Results that depend on thread count or timing, such as parallel reductions in an unfixed order.
 - Hand-editing generated model data, or dropping the model notices.
-- Committing real scans, fuzz findings, benchmark outputs or the downloaded wheel.
+- Committing real scans, fuzz findings, benchmark outputs or the downloaded wheel. The one exception is the dated
+  comparison run under `bench/TesseractComparison/baseline/`, which the README's performance table quotes.
 - Publishing, tagging or creating a GitHub release; that is the owner's step.
 
 ## Working mindset

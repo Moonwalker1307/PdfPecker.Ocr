@@ -20,7 +20,7 @@
     <PackageProjectUrl>https://github.com/Moonwalker1307/PdfPecker.Ocr</PackageProjectUrl>
     <!-- The code is MIT and the embedded model weights are Apache-2.0; both are OSI-approved, so nuget.org takes the
          expression. The notices file, packed below, carries the attribution and licence text Apache-2.0 asks for. -->
-    <PackageLicenseExpression>MIT AND Apache-2.0</PackageLicenseExpression>
+    <PackageLicenseExpression>MIT AND Apache-2.0 AND BSL-1.0</PackageLicenseExpression>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <!-- Package validation stays off until 0.1.0 is on nuget.org: it compares the public API with a published

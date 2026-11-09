@@ -2,7 +2,8 @@
 
 PdfPecker.Ocr is licensed under the MIT License (see `LICENSE`). The package bundles neural network model data that
 is derived from third-party works under other licences. Those works, their licences and the changes made to them are
-listed here. This file ships with the package. In SPDX terms the package is `MIT AND Apache-2.0`.
+listed here. This file ships with the package. In SPDX terms the package is `MIT AND Apache-2.0 AND BSL-1.0`: the polygon offset in
+`Detection/Geometry.cs` is a port of Clipper (Boost Software License 1.0, below).
 
 The package depends on the [PdfPecker](https://www.nuget.org/packages/PdfPecker) NuGet package, which is installed
 separately and carries its own notices; none of its code is copied into this package.
