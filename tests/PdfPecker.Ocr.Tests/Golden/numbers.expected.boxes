@@ -1,0 +1,35 @@
+page 1772x1122 dpi 300 lines 6 confidence 1.00
+line 103,117 902x49 angle -0 conf 1.00 | Order 48213 placed on 2026-03-15 at 09:42
+  word 112,117 121x49 conf 1.00 | Order
+  word 243,117 121x49 conf 1.00 | 48213
+  word 383,117 129x49 conf 1.00 | placed
+  word 530,117 47x49 conf 1.00 | on
+  word 596,117 227x49 conf 1.00 | 2026-03-15
+  word 842,117 39x49 conf 1.00 | at
+  word 891,117 113x49 conf 1.00 | 09:42
+line 101,186 838x48 angle -0 conf 0.99 | Amount due: $1,299.99 or EUR 1.184,50
+  word 109,186 166x47 conf 1.00 | Amount
+  word 282,186 95x47 conf 1.00 | due:
+  word 384,186 205x47 conf 1.00 | $1,299.99
+  word 604,187 40x47 conf 1.00 | or
+  word 659,187 87x47 conf 1.00 | EUR
+  word 761,187 178x47 conf 1.00 | 1.184,50
+line 104,256 664x46 angle -0 conf 0.99 | Discount 12.5% until 31/12/2026
+  word 113,256 183x46 conf 1.00 | Discount
+  word 305,256 114x46 conf 1.00 | 12.5%
+  word 443,256 91x46 conf 1.00 | until
+  word 543,256 221x46 conf 1.00 | 31/12/2026
+line 103,325 663x50 angle -0 conf 0.99 | Contact: support@example.com
+  word 112,325 173x50 conf 1.00 | Contact:
+  word 296,325 457x50 conf 1.00 | support@example.com
+line 100,390 987x56 angle 0 conf 1.00 | Web: https://www.example.org/orders?id=48213
+  word 110,392 106x54 conf 1.00 | Web:
+  word 228,390 859x56 conf 1.00 | https://www.example.org/orders?id=48213
+line 101,459 729x53 angle -0 conf 1.00 | Phone: +44 20 7946 0958, ext. 314
+  word 110,459 147x51 conf 1.00 | Phone:
+  word 266,460 77x51 conf 1.00 | +44
+  word 361,460 51x51 conf 1.00 | 20
+  word 420,460 102x51 conf 1.00 | 7946
+  word 540,461 118x51 conf 1.00 | 0958,
+  word 666,461 84x50 conf 1.00 | ext.
+  word 751,462 75x50 conf 1.00 | 314

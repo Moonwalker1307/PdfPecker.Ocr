@@ -1,0 +1,43 @@
+page 1772x1004 dpi 300 lines 5 confidence 0.99
+line 113,130 375x49 angle -0 conf 1.00 | Madame, Monsieur,
+  word 130,130 165x48 conf 1.00 | Madame,
+  word 311,132 177x47 conf 1.00 | Monsieur,
+line 111,196 874x52 angle 0 conf 1.00 | Nous avons bien reçu votre lettre du 12 février.
+  word 130,198 87x50 conf 1.00 | Nous
+  word 230,197 103x50 conf 1.00 | avons
+  word 346,197 79x50 conf 1.00 | bien
+  word 438,197 79x50 conf 1.00 | reçu
+  word 530,197 95x50 conf 1.00 | votre
+  word 629,197 95x50 conf 1.00 | lettre
+  word 738,196 45x50 conf 1.00 | du
+  word 796,196 45x50 conf 1.00 | 12
+  word 854,196 131x50 conf 1.00 | février.
+line 110,261 923x57 angle -0 conf 1.00 | Le dîner aura lieu à côté de l'église Saint-Étienne.
+  word 124,261 47x57 conf 1.00 | Le
+  word 181,261 95x57 conf 1.00 | dîner
+  word 285,261 76x57 conf 1.00 | aura
+  word 371,261 66x57 conf 1.00 | lieu
+  word 456,261 19x57 conf 1.00 | à
+  word 494,261 66x57 conf 1.00 | côté
+  word 579,261 38x57 conf 1.00 | de
+  word 627,261 133x57 conf 1.00 | l'église
+  word 769,261 264x57 conf 1.00 | Saint-Étienne.
+line 113,335 833x51 angle -0 conf 0.98 | Où était le cœur de l'été ? Déjà à Noël, hélas.
+  word 132,335 43x48 conf 1.00 | Où
+  word 188,335 83x48 conf 1.00 | était
+  word 276,335 35x48 conf 1.00 | le
+  word 324,336 92x49 conf 0.99 | cœur
+  word 430,336 35x49 conf 1.00 | de
+  word 478,336 76x49 conf 1.00 | l'été
+  word 568,336 19x49 conf 1.00 | ?
+  word 601,336 85x49 conf 1.00 | Déjà
+  word 699,336 19x49 conf 1.00 | à
+  word 732,336 102x49 conf 1.00 | Noël,
+  word 840,337 106x49 conf 1.00 | hélas.
+line 112,401 876x57 angle -0 conf 0.99 | Veuillez agréer nos salutations très distinguées.
+  word 125,401 143x54 conf 0.96 | Veuillez
+  word 284,402 117x54 conf 1.00 | agréer
+  word 408,402 64x54 conf 1.00 | nos
+  word 480,402 199x54 conf 1.00 | salutations
+  word 687,403 74x54 conf 1.00 | très
+  word 768,403 220x55 conf 1.00 | distinguées.

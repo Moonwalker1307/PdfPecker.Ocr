@@ -1,5 +1,5 @@
 # Source and text files are checked out with LF on every platform, so tests that compare text do not depend on a
-# Windows checkout's autocrlf setting. The test fixture folders carry their own .gitattributes that turn conversion off.
+# Windows checkout's autocrlf setting.
 * text=auto eol=lf
 
 # Binary files must never be touched by line-ending conversion.
@@ -25,4 +25,6 @@
 *.glob binary
 *.br binary
 *.bin binary
+# The compressed model data (src/PdfPecker.Ocr/Models/*.bin.deflate).
+*.deflate binary
 *.gz binary

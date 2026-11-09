@@ -1,0 +1,6 @@
+Order 48213 placed on 2026-03-15 at 09:42
+Amount due: $1,299.99 or EUR 1.184,50
+Discount 12.5% until 31/12/2026
+Contact: support@example.com
+Web: https://www.example.org/orders?id=48213
+Phone: +44 20 7946 0958, ext. 314

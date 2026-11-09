@@ -4,8 +4,9 @@ Guidance for coding agents (and people) working in this repository. `CLAUDE.md` 
 other agents read the same rules.
 
 PdfPecker.Ocr is a dependency-free OCR package for .NET in the PdfPecker family: it reads printed text from images and
-scanned PDFs and makes scanned PDFs searchable with an invisible text layer. It runs PaddleOCR's PP-OCRv6 small models
-(detection, recognition and a 0/180 degree line orientation classifier) on a neural network runtime of its own, in C#.
+scanned PDFs and makes scanned PDFs searchable with an invisible text layer. It runs PaddleOCR's PP-OCRv6 small
+detection and recognition models and the PP-OCR mobile v2.0 0/180 degree line orientation classifier on a neural
+network runtime of its own, in C#.
 The NuGet package depends only on the released [PdfPecker](https://www.nuget.org/packages/PdfPecker) package, which it
 uses for image decoding, PDF rendering and PDF writing through PdfPecker's public API; the library itself lives in
 [Moonwalker1307/PdfPecker](https://github.com/Moonwalker1307/PdfPecker).
@@ -37,15 +38,16 @@ wins here.
 - **No native code and no network.** The package ships no native binaries, does not P/Invoke into anything outside the
   .NET runtime, and does not use ONNX Runtime, Tesseract or a GPU. It never downloads anything: the models are
   embedded resources.
-- **Models are generated data.** `src/PdfPecker.Ocr/Models/*.bin` are written by `tools/ModelBuilder` from the ONNX
-  files in the rapidocr wheel on PyPI, pinned by SHA-256. Change the builder, never its output, and keep the model
+- **Models are generated data.** `src/PdfPecker.Ocr/Models/*.bin.deflate` are written by `tools/ModelBuilder` from the
+  ONNX files in the rapidocr wheel on PyPI, pinned by SHA-256. Change the builder, never its output, and keep the model
   notices in `THIRD-PARTY-NOTICES.md` accurate: the weights are Apache-2.0, copyright Baidu and/or the PaddleOCR rights
   holders, and the converted files must say that and how they were changed. A new model, a new source or a change to
   what the builder does to the weights updates the notices in the same pull request.
-- **Licences.** The code is MIT (`LICENSE`, unchanged); the package's licence expression is `MIT AND Apache-2.0`, and
-  it carries `THIRD-PARTY-NOTICES.md` with the full Apache-2.0 text. Pre- and post-processing follows RapidOCR and
-  PaddleOCR (both Apache-2.0); it is written as our own C# code from their Python code, not translated line by line
-  from anything under another licence. Never put a licence that is not OSI- or FSF-approved in
+- **Licences.** The code is MIT (`LICENSE`, unchanged); the package's licence expression is
+  `MIT AND Apache-2.0 AND BSL-1.0`, and it carries `THIRD-PARTY-NOTICES.md` with the full Apache-2.0 and Boost texts.
+  Pre- and post-processing follows RapidOCR and PaddleOCR (both Apache-2.0); the minimum-area rectangle follows OpenCV
+  (Apache-2.0) and the polygon offset is a port of Clipper 6.4 (BSL-1.0), both credited in the notices. Take nothing
+  from code under any other licence, and nothing copyleft. Never put a licence that is not OSI- or FSF-approved in
   `PackageLicenseExpression`.
 - **No breaking API changes before 2.0** once 0.1.0 is released. `dotnet pack` checks the public API against the last
   release from then on (`RELEASING.md`); a change it rejects needs a new overload or type instead, not a suppression.
@@ -72,23 +74,27 @@ wins here.
 ## Repo map
 
 - `src/PdfPecker.Ocr/` – the package. The public API sits at the top level (`ImageOcr`, `PdfOcr`, `OcrOptions`,
-  `OcrDocument`, `OcrPage`, `OcrLine`, `OcrWord`, `OcrQuad`, `OcrBox`, `OcrInfo`). Below it:
+  `OcrPageMode`, `OcrDocument`, `OcrPage`, `OcrLine`, `OcrWord`, `OcrQuad`, `OcrPoint`, `OcrBox`, `OcrInfo`). Below it:
   - `Inference/` – tensors, the graph executor and the kernels (GEMM, convolutions, depthwise convolutions,
-    activations, normalisation, attention), with buffers planned when a model loads.
+    activations, normalisation, attention), with buffers planned when a model loads; `ModelNetwork` puts a model
+    behind the pipeline's `INetwork` seam without copying its input or output.
   - `Models/` – the generated model data (embedded resources), its loader and `ModelStore`, which loads the detection,
     recognition and orientation models lazily and holds the character list.
   - `Detection/` – the differentiable binarisation post-processing that turns the detection map into text quads.
   - `Recognition/` – line crops, the orientation step, CTC decoding and words with their positions.
-  - `Layout/` – lines into reading order, and the `OcrPage` built from them.
+  - `Layout/` – lines into reading order, and the `OcrPage` built from them; `OcrPipeline` runs one page through
+    every stage, `OcrEngine` is the recognizer behind the public API (the default settings, threads, the mapping to
+    `OcrPage`), and `EnginePool` keeps the workers (context, networks, pipeline) between calls.
   - `Pdf/` – the searchable text layer (a glyphless font, invisible text scaled to each word), stamped onto the
     original pages with PdfPecker.
   - `Input/` – images and PDF pages to pixels through PdfPecker.
 - `tools/ModelBuilder/` – downloads the rapidocr wheel from PyPI (pinned by SHA-256), reads the ONNX files with its own
-  protobuf reader, simplifies the graph and writes `src/PdfPecker.Ocr/Models/*.bin`.
+  protobuf reader, simplifies the graph and writes `src/PdfPecker.Ocr/Models/*.bin.deflate`.
 - `tools/OnnxReference/` – Python, dev only: runs ONNX Runtime on fixed inputs and writes the reference outputs the
   tests compare with.
-- `tests/PdfPecker.Ocr.Tests/` – xUnit: kernels, model outputs against the ONNX Runtime references, the pipeline,
-  golden tests, searchable PDF goldens and `HostileInputTests`. `Fixtures/` holds inputs, `Golden/` the baselines.
+- `tests/PdfPecker.Ocr.Tests/` – xUnit: kernels, model outputs against the ONNX Runtime references, the pipeline
+  against rapidocr's recorded outputs, end-to-end tests of the public API on rendered pages (`EndToEnd/`), golden
+  tests, searchable PDF goldens and `HostileInputTests`. `Fixtures/` holds inputs, `Golden/` the baselines.
 - `fuzz/PdfPecker.Ocr.Fuzz/` – the dependency-free mutation fuzzer; targets register in `Targets.cs`.
 - `bench/PdfPecker.Ocr.Benchmarks/` – the timing and allocation harness (no BenchmarkDotNet), and
   `bench/compare-versions.sh`, which runs two versions in turns on one machine.
@@ -96,7 +102,8 @@ wins here.
   git tags, called through its C API from a Native AOT comparison app, with a synthetic corpus and its ground truth.
   Tesseract never ships in the package. `tools/Tesseract/sbom.cdx.json` lists the commits it builds, which the daily
   vulnerability scan checks; change it with the pins.
-- `samples/PdfPecker.Ocr.Sample` – a console app that prints the text of an image; CI publishes it with Native AOT.
+- `samples/PdfPecker.Ocr.Sample` – a console app that prints the text of an image or a scanned PDF, or writes hOCR or
+  a searchable PDF; CI publishes it with Native AOT and checks the text it reads on `sample.png`.
 - `.github/workflows/` – `nuget.yml`, `codeql.yml`, `fuzz.yml`, `perf.yml`, `vulnerability-scan.yml`,
   `dependabot-auto-merge.yml`; see `CONFIG.md`.
 
@@ -121,7 +128,7 @@ must be unchanged unless the output change is intended. If only one runtime is i
   why. A refactor or a pure speed-up must leave every golden unchanged.
 - **Model regeneration**: run `tools/ModelBuilder`, commit its output with the builder change, regenerate the ONNX
   Runtime references if the inputs changed, and update `THIRD-PARTY-NOTICES.md` when the source, the hashes or what is
-  done to the weights changes. Never hand-edit `Models/*.bin`.
+  done to the weights changes. Never hand-edit `Models/*.bin.deflate`.
 - **Kernel and inference changes**: the reference tests (model outputs within 1e-3 of ONNX Runtime) must pass on every
   SIMD path the kernel has, the scalar one included; add a reference test for a new kernel or fusion. Compare speed and
   allocations with `bench/compare-versions.sh <base-ref>` on one machine and put the numbers in the PR.
@@ -138,7 +145,7 @@ must be unchanged unless the output change is intended. If only one runtime is i
 - **Untrusted input** (images, PDFs, pixel buffers, sizes): add resource limits, a fuzz target in
   `fuzz/PdfPecker.Ocr.Fuzz` (see `fuzz/README.md`), and for each bug fix a regression test in `HostileInputTests`.
 - **Generated data**: change the generator, never its output.
-  - `tools/ModelBuilder` → `src/PdfPecker.Ocr/Models/*.bin`
+  - `tools/ModelBuilder` → `src/PdfPecker.Ocr/Models/*.bin.deflate`
   - `tools/OnnxReference` → the reference outputs in `tests/PdfPecker.Ocr.Tests/Fixtures`
 - **CI**: actions are pinned to the same commit SHAs as PdfPecker's workflows; update both together.
 - **Releases**: follow `RELEASING.md`; only the repository owner publishes a release.
@@ -154,7 +161,8 @@ must be unchanged unless the output change is intended. If only one runtime is i
 - Per-operation allocations in the inference loop; buffers come from the plan made when the model loads.
 - Results that depend on thread count or timing, such as parallel reductions in an unfixed order.
 - Hand-editing generated model data, or dropping the model notices.
-- Committing real scans, fuzz findings, benchmark outputs or the downloaded wheel.
+- Committing real scans, fuzz findings, benchmark outputs or the downloaded wheel. The one exception is the dated
+  comparison run under `bench/TesseractComparison/baseline/`, which the README's performance table quotes.
 - Publishing, tagging or creating a GitHub release; that is the owner's step.
 
 ## Working mindset
@@ -190,3 +198,9 @@ must be unchanged unless the output change is intended. If only one runtime is i
   wrong text; damaged-input limits belong in the code's own work budget, counted before allocating.
 - Cloud VMs and GitHub runners differ too much in CPU to compare a single benchmark run with an earlier one; only
   version-against-version runs on one machine are meaningful.
+- Native AOT builds target a baseline processor unless `IlcInstructionSet` says otherwise, so the AVX2, FMA and
+  AVX-512 kernels are skipped and an A4 page takes two and a half to four times as long as under the JIT. The
+  Tesseract comparison sets `native`; a published sample without it is slow, not broken.
+- An idle engine worker keeps the buffers of the largest page it read (an activation arena of about 96 MB after an
+  A4 page at 300 dpi) until `EnginePool` disposes it after 30 seconds without a call; tests and benchmarks that need a
+  cold start call `EnginePool.Clear()`.

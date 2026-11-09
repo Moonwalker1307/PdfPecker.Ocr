@@ -1,0 +1,26 @@
+page 1772x827 dpi 300 lines 3 confidence 0.99
+line 110,124 686x64 angle -0 conf 0.99 | A faded copy of a copy of a letter
+  word 125,124 22x62 conf 1.00 | A
+  word 167,124 106x62 conf 1.00 | faded
+  word 293,125 95x62 conf 1.00 | copy
+  word 408,125 42x62 conf 1.00 | of
+  word 460,126 22x62 conf 1.00 | a
+  word 491,126 94x62 conf 1.00 | copy
+  word 604,126 42x61 conf 1.00 | of
+  word 656,126 21x61 conf 1.00 | a
+  word 687,127 109x61 conf 1.00 | letter
+line 111,200 693x62 angle -0 conf 0.99 | still holds most of its words today.
+  word 116,200 88x59 conf 1.00 | still
+  word 213,200 108x59 conf 1.00 | holds
+  word 341,201 89x59 conf 1.00 | most
+  word 439,201 40x59 conf 1.00 | of
+  word 489,202 50x59 conf 1.00 | its
+  word 559,202 120x59 conf 1.00 | words
+  word 688,202 116x60 conf 1.00 | today.
+line 111,276 665x58 angle -0 conf 1.00 | Received 5 June 2026, file 31-B.
+  word 125,276 177x58 conf 1.00 | Received
+  word 319,276 21x58 conf 1.00 | 5
+  word 358,276 89x58 conf 1.00 | June
+  word 464,276 118x58 conf 1.00 | 2026,
+  word 591,276 60x58 conf 1.00 | file
+  word 668,276 108x58 conf 1.00 | 31-B.

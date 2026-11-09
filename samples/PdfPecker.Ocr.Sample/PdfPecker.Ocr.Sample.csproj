@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- A small console app that reads the text of an image file. CI publishes it with Native AOT and runs it, which shows
-       that the package works trimmed and ahead-of-time compiled; IsAotCompatible on the library only turns on the
-       analyzers. -->
+  <!-- A small console app that reads the text of an image or a scanned PDF, and can write hOCR or a searchable PDF. CI
+       publishes it with Native AOT and runs it on sample.png, which shows that the package works trimmed and
+       ahead-of-time compiled; IsAotCompatible on the library only turns on the analyzers. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>

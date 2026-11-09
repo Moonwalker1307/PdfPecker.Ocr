@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Compares PdfPecker.Ocr with Tesseract (called in-process through its C API) and with rapidocr (a Python reference)
+       on the synthetic corpus of tools/Corpus. Published with Native AOT so that the measurements of a .NET engine are
+       those of the shipped kind of build. Dev tooling only: nothing here is packed. See README.md.
+
+       PdfPecker.Ocr is built in by default: the app references src/PdfPecker.Ocr and compiles the real adapter.
+       -p:WithPdfPeckerOcr=false leaves it out (the adapter is then a stub), for measuring only the other engines. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishAot>true</PublishAot>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <!-- Native AOT compiles for a baseline processor unless told otherwise, and PdfPecker.Ocr's kernels then run without
+         AVX2, FMA and AVX-512: an A4 page took two and a half to four times as long as with the JIT, which picks them at
+         run time. The app runs on the machine it measures, so it is compiled for that machine's processor. -->
+    <IlcInstructionSet Condition="'$(IlcInstructionSet)' == ''">native</IlcInstructionSet>
+    <StripSymbols>true</StripSymbols>
+    <RootNamespace>TesseractComparison</RootNamespace>
+    <AssemblyName>TesseractComparison</AssemblyName>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <WithPdfPeckerOcr Condition="'$(WithPdfPeckerOcr)' == ''">true</WithPdfPeckerOcr>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(WithPdfPeckerOcr)' == 'true'">
+    <DefineConstants>$(DefineConstants);PDFPECKER_OCR</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(WithPdfPeckerOcr)' == 'true'">
+    <ProjectReference Include="../../src/PdfPecker.Ocr/PdfPecker.Ocr.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="rapidocr_server.py" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Remove="corpus/**" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,54 @@
+page 1654x531 dpi 300 lines 4 confidence 1.00
+line 69,74 933x34 angle -0 conf 1.00 | Terms: goods remain our property until paid in full. Claims within 8 days.
+  word 77,74 86x34 conf 1.00 | Terms:
+  word 173,74 75x34 conf 1.00 | goods
+  word 258,74 86x34 conf 1.00 | remain
+  word 354,74 41x34 conf 1.00 | our
+  word 405,74 103x34 conf 1.00 | property
+  word 518,74 58x34 conf 1.00 | until
+  word 580,74 52x34 conf 1.00 | paid
+  word 642,74 18x34 conf 1.00 | in
+  word 671,74 52x34 conf 1.00 | full.
+  word 733,74 80x34 conf 1.00 | Claims
+  word 829,74 69x34 conf 1.00 | within
+  word 908,74 13x34 conf 1.00 | 8
+  word 931,74 69x34 conf 1.00 | days.
+line 66,128 1003x37 angle -0 conf 0.99 | Prices exclude delivery. Interest of 1.5% a month is charged on late payment.
+  word 74,128 76x34 conf 1.00 | Prices
+  word 164,128 93x34 conf 1.00 | exclude
+  word 272,129 110x34 conf 1.00 | delivery.
+  word 385,129 99x34 conf 1.00 | Interest
+  word 493,129 25x34 conf 1.00 | of
+  word 521,129 59x34 conf 1.00 | 1.5%
+  word 600,130 14x34 conf 1.00 | a
+  word 623,130 76x34 conf 1.00 | month
+  word 708,130 25x34 conf 1.00 | is
+  word 742,130 99x34 conf 1.00 | charged
+  word 855,130 25x34 conf 1.00 | on
+  word 889,130 48x34 conf 1.00 | late
+  word 951,131 118x34 conf 1.00 | payment.
+line 69,184 819x31 angle -0 conf 0.99 | Registered office: 12 Mill Lane, Bristol BS1 4AB. Company no. 01234567.
+  word 76,184 115x31 conf 1.00 | Registered
+  word 200,184 69x31 conf 1.00 | office:
+  word 277,184 22x31 conf 1.00 | 12
+  word 313,184 38x31 conf 1.00 | Mill
+  word 354,184 64x31 conf 1.00 | Lane,
+  word 421,184 74x31 conf 1.00 | Bristol
+  word 499,184 43x31 conf 1.00 | BS1
+  word 555,184 53x31 conf 1.00 | 4AB.
+  word 617,184 100x31 conf 1.00 | Company
+  word 725,184 38x31 conf 1.00 | no.
+  word 772,184 115x31 conf 1.00 | 01234567.
+line 67,234 640x33 angle -0 conf 1.00 | This offer is valid for 30 days from the date shown above.
+  word 75,234 42x31 conf 1.00 | This
+  word 127,234 48x31 conf 1.00 | offer
+  word 184,234 16x31 conf 1.00 | is
+  word 210,234 48x31 conf 1.00 | valid
+  word 268,234 27x31 conf 1.00 | for
+  word 305,234 22x31 conf 1.00 | 30
+  word 336,234 54x32 conf 1.00 | days
+  word 395,235 43x32 conf 1.00 | from
+  word 454,235 32x32 conf 1.00 | the
+  word 497,235 43x32 conf 1.00 | date
+  word 551,235 71x32 conf 1.00 | shown
+  word 632,235 75x32 conf 1.00 | above.

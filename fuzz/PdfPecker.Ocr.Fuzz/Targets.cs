@@ -12,8 +12,11 @@ internal static class Targets
     /// <summary>Every target that --list prints and --target all runs.</summary>
     public static IReadOnlyList<Target> All { get; } = new[]
     {
-        OcrSmokeTarget.Target,
-        // Planned (see fuzz/README.md): ocr-image, ocr-pixels, ocr-pdf, searchable-layer.
+        OcrImageTarget.Target,
+        OcrPixelsTarget.Target,
+        OcrPdfTarget.Target,
+        SearchableLayerTarget.Target,
+        TiffPagesTarget.Target,
     };
 
     // Targets that fail on purpose, to check that the supervisor copes with a fatal crash and with a thread that cannot be
