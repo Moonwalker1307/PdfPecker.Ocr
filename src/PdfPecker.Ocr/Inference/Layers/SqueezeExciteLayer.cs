@@ -69,6 +69,13 @@ internal sealed unsafe class SqueezeExciteLayer : Layer
 
     public override int InPlaceInput(int[][] inputs, int[] output) => 0;
 
+    // Each channel plane is scaled by one value, the same for all its columns; channels are scaled differently.
+    public override void FindRuns(Step step)
+    {
+        if (step.InputRuns[0].Axis >= 2) KeepRuns(step, mixesLast: false);
+        else step.OutputRuns.Clear();
+    }
+
     public override long SharedScratch(Step step) => (long)step.OutputShape[0] * _channels * 2;
 
     public override long ScratchPerWorker(Step step, InferenceContext context) => _hiddenStride + _channelStride;

@@ -97,6 +97,35 @@ internal sealed unsafe class GemmKernel
         return padded;
     }
 
+    /// <summary>
+    /// Packs columns [0, cols) of a k x ld row-major block into the NR-column panels at dst as columns [first, first +
+    /// cols), so that pieces of several blocks fill one set of panels. Lanes after the last piece are left as they are;
+    /// <see cref="ClearPanelTail"/> zeroes them.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public void PackBRowsAt(float* src, nint ld, int k, int cols, float* dst, int first)
+    {
+        int nr = NR;
+        for (int pos = first, end = first + cols; pos < end;)
+        {
+            int lane = pos % nr;
+            int w = Math.Min(nr - lane, end - pos);
+            float* d = dst + ((nint)(pos - lane) * k) + lane;
+            float* s = src + (pos - first);
+            for (int kk = 0; kk < k; kk++, s += ld, d += nr) Unsafe.CopyBlockUnaligned(d, s, (uint)(w * sizeof(float)));
+            pos += w;
+        }
+    }
+
+    /// <summary>Zeroes the lanes after column cols of the last NR-column panel of a k-row packing.</summary>
+    public void ClearPanelTail(float* dst, int k, int cols)
+    {
+        int used = cols % NR;
+        if (used == 0) return;
+        float* panel = dst + ((nint)(cols - used) * k);
+        for (int r = 0; r < k; r++) new Span<float>(panel + ((nint)r * NR) + used, NR - used).Clear();
+    }
+
     /// <summary>Packs columns [0, cols) of a k x ld row-major block (activations) into NR-column panels at dst.</summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void PackBRows(float* src, nint ld, int k, int cols, float* dst)

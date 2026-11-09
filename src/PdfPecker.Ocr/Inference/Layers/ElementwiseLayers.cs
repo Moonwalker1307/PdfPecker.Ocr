@@ -55,6 +55,12 @@ internal sealed unsafe class BinaryLayer : Layer
         return -1;
     }
 
+    public override void FindRuns(Step step)
+    {
+        if (Upsamples) step.OutputRuns.Clear();
+        else KeepRuns(step, mixesLast: false);
+    }
+
     /// <summary>The upsampled path enlarges each row of the smaller map once into scratch, for all the rows it covers.</summary>
     public override long ScratchPerWorker(Step step, InferenceContext context) => Upsamples ? step.OutputShape[3] : 0;
 
@@ -201,6 +207,8 @@ internal sealed unsafe class ActivationLayer : Layer
     public override int[] OutputShape(int[][] inputs) => (int[])inputs[0].Clone();
 
     public override int InPlaceInput(int[][] inputs, int[] output) => 0;
+
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: false);
 
     public override void Execute(Step step, InferenceContext context) =>
         context.For((Tensor.ElementCount(step.OutputShape) + ChunkSize - 1) / ChunkSize, step, &Chunk);

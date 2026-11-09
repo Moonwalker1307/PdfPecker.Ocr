@@ -156,6 +156,7 @@ internal sealed unsafe class OcrModel
             frame.Input = input;
             frame.Output = outputPointer + offset;
             var token = context.CancellationToken;
+            plan.FindRuns(input);
             foreach (var step in plan.Steps)
             {
                 token.ThrowIfCancellationRequested();

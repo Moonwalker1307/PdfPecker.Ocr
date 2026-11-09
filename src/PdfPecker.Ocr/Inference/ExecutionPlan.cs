@@ -55,6 +55,12 @@ internal sealed unsafe class Step(Layer layer, int[][] inputShapes, int[] output
     /// <summary>Whatever else a layer keeps for this step between runs, made on first use.</summary>
     public object? State { get; set; }
 
+    /// <summary>Where the inputs hold equal columns in this run (see <see cref="ColumnRuns"/>).</summary>
+    public ColumnRuns[] InputRuns { get; set; } = [];
+
+    /// <summary>Where the output holds equal columns in this run, set by the layer before the run.</summary>
+    public ColumnRuns OutputRuns { get; set; } = new(0);
+
     public float* Input(int index) => Frame.Resolve(InputLocations[index]);
 
     public float* Output => Frame.Resolve(OutputLocation);
@@ -70,12 +76,16 @@ internal sealed class ExecutionPlan
 {
     private const int Alignment = 16;
 
-    private ExecutionPlan(int[] inputShape, Step[] steps, Frame frame)
+    private ExecutionPlan(int[] inputShape, Step[] steps, Frame frame, ColumnRuns inputRuns)
     {
         InputShape = inputShape;
         Steps = steps;
         Frame = frame;
+        InputRuns = inputRuns;
     }
+
+    /// <summary>Where the input holds equal columns in this run.</summary>
+    private ColumnRuns InputRuns { get; }
 
     public int[] InputShape { get; }
 
@@ -235,7 +245,8 @@ internal sealed class ExecutionPlan
             return new Location(BufferKind.Arena, rootOffset[root] + at);
         }
 
-        var plan = new ExecutionPlan((int[])inputShape.Clone(), steps, frame)
+        var runs = shapes.Select(s => new ColumnRuns(s.Length > 0 ? s[0] : 1)).ToArray();
+        var plan = new ExecutionPlan((int[])inputShape.Clone(), steps, frame, runs[0])
         {
             ArenaFloats = arena,
             OutputLength = checked((int)sizes[outputRoot]),
@@ -246,11 +257,55 @@ internal sealed class ExecutionPlan
             var step = steps[i];
             step.InputLocations = layers[i].Node.Inputs.Select(LocationOf).ToArray();
             step.OutputLocation = LocationOf(i + 1);
+            step.InputRuns = layers[i].Node.Inputs.Select(v => runs[v]).ToArray();
+            step.OutputRuns = runs[i + 1];
             perWorker = Math.Max(perWorker, layers[i].ScratchPerWorker(step, context));
             shared = Math.Max(shared, layers[i].SharedScratch(step));
         }
         plan.ScratchPerWorker = perWorker;
         plan.SharedScratch = shared;
         return plan;
+    }
+
+    /// <summary>
+    /// Finds the columns of this run's values that are known to be equal (see <see cref="ColumnRuns"/>): the trailing
+    /// columns of each batch item of a [N, C, H, W] input that are equal to its last column, and from them those of
+    /// every layer's output.
+    /// </summary>
+    public unsafe void FindRuns(float* input)
+    {
+        var runs = InputRuns;
+        runs.Clear();
+        if (ColumnRuns.Enabled && InputShape.Length == 4 && InputShape[3] > 2)
+        {
+            int w = InputShape[3];
+            long rows = (long)InputShape[1] * InputShape[2];
+            runs.Reset(3);
+            for (int n = 0; n < InputShape[0]; n++)
+                runs.Set(n, TrailingRun((int*)input + (n * rows * w), rows, w), w);
+        }
+
+        bool any = runs.Any(3);
+        foreach (var step in Steps)
+        {
+            if (any) step.Layer.FindRuns(step);
+            else step.OutputRuns.Clear();
+        }
+    }
+
+    /// <summary>The first column from which every column of the rows equals the last, compared as bits.</summary>
+    private static unsafe int TrailingRun(int* item, long rows, int w)
+    {
+        int start = 0;
+        for (long r = 0; r < rows; r++)
+        {
+            int* row = item + (r * w);
+            int last = row[w - 1];
+            int x = w - 1;
+            while (x > start && row[x - 1] == last) x--;
+            start = x;
+            if (start == w - 1) break;
+        }
+        return start;
     }
 }
