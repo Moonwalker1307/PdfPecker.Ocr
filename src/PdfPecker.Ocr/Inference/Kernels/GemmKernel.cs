@@ -204,14 +204,14 @@ internal sealed unsafe class GemmKernel
     }
 
     /// <summary>
-    /// C[rows x NR] = A x B + rowBias for one panel of B that is read where it lies instead of packed: step kk of k
-    /// reads the NR values at b + offsets[kk], such as one tap's run of an input row. The sums are the ones
-    /// <see cref="Multiply"/> computes from the same values packed, in the same order. There is no epilogue: callers
-    /// apply it to a whole tile. A partial block of rows goes through edge, MR x NR floats the caller provides, so that
-    /// a call per panel does not clear a buffer of its own on the stack.
+    /// C[rows x cols] = A x B + rowBias for one panel of B, cols at most NR, that is read where it lies instead of
+    /// packed: step kk of k reads the NR values at b + offsets[kk], such as one tap's run of an input row, all of which
+    /// must be readable. The sums are the ones <see cref="Multiply"/> computes from the same values packed, in the same
+    /// order. There is no epilogue: callers apply it to a whole tile. A partial block goes through edge, MR x NR floats
+    /// the caller provides, so that a call per panel does not clear a buffer of its own on the stack.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public void MultiplyDirect(int k, float* aPanels, int rows, float* b, int* offsets, float* c, nint ldc, float* rowBias, float* edge)
+    public void MultiplyDirect(int k, float* aPanels, int rows, float* b, int* offsets, float* c, nint ldc, float* rowBias, float* edge, int cols)
     {
         int mr = MR, nr = NR;
         var kernel = _direct;
@@ -220,7 +220,7 @@ internal sealed unsafe class GemmKernel
             int h = Math.Min(mr, rows - i);
             float* ap = aPanels + (nint)i * k;
             float* rb = rowBias == null ? null : rowBias + i;
-            if (h == mr)
+            if (h == mr && cols == nr)
             {
                 kernel(k, ap, b, offsets, c + i * ldc, ldc, rb);
             }
@@ -228,7 +228,7 @@ internal sealed unsafe class GemmKernel
             {
                 kernel(k, ap, b, offsets, edge, nr, rb);
                 for (int r = 0; r < h; r++)
-                    Unsafe.CopyBlockUnaligned(c + (i + r) * ldc, edge + r * nr, (uint)(nr * sizeof(float)));
+                    Unsafe.CopyBlockUnaligned(c + (i + r) * ldc, edge + r * nr, (uint)(cols * sizeof(float)));
             }
         }
     }
