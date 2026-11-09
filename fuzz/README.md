@@ -13,7 +13,7 @@ allocating, not in the fuzzer.
 
 ```
 dotnet build -c Release fuzz/PdfPecker.Ocr.Fuzz
-dotnet fuzz/PdfPecker.Ocr.Fuzz/bin/Release/net10.0/PdfPecker.Ocr.Fuzz.dll --target ocr-smoke --duration 2m --out fuzz-findings
+dotnet fuzz/PdfPecker.Ocr.Fuzz/bin/Release/net10.0/PdfPecker.Ocr.Fuzz.dll --target ocr-image --duration 5m --jobs 2 --out fuzz-findings
 ```
 
 | Option | Meaning |
@@ -39,21 +39,21 @@ folder: a saved finding read back as a seed would hang every worker on the same 
 
 ## Targets
 
-| Target | Status | What it does |
-| --- | --- | --- |
-| `ocr-smoke` | In place | A placeholder that reads `OcrInfo.Version`, so the supervisor, workers, mutations and `fuzz.yml` can be checked end to end before the real targets exist. It never finds anything; remove it once the targets below are in. |
-| `ocr-image` | Planned | Mutated PNG, JPEG, WebP, TIFF, BMP and GIF files through `ImageOcr.Recognize`. Seeds: the test fixtures and the pages `SeedContext.RenderedImages` renders with PdfPecker. |
-| `ocr-pixels` | Planned | Random raw pixel buffers through `ImageOcr.RecognizeRgba` and `RecognizeGray`. The first bytes of the input choose the width, height and channel count (including zero, negative, huge and mismatched sizes), the rest are the pixels, so the buffer length and the stated size disagree in every way. `ArgumentException` is the documented failure for a buffer that does not match its size. |
-| `ocr-pdf` | Planned | Mutated PDFs through `PdfOcr.MakeSearchable` with `OcrPageMode.Force`, so every page is rendered and recognised. Seeds: `SeedContext.GeneratedPdfs` and the scanned fixtures. |
-| `searchable-layer` | Planned | Random `OcrPage` data (text with control characters, lone surrogates and right-to-left runs, quads that are degenerate, inverted, rotated or far off the page, NaN and infinite coordinates, confidence outside 0 to 1) through the searchable PDF layer writer and `PdfStamper.Stamp`. The output must open again with PdfPecker. |
+| Target | What it does |
+| --- | --- |
+| `ocr-image` | Mutated PNG, JPEG, WebP, TIFF, BMP and GIF files through `ImageOcr.Recognize`, with `MaxPixels` at 250,000 and one thread. Seeds: image fixtures in the tests, the pages `SeedContext.RenderedImages` renders with PdfPecker, and a GIF and a BMP written by `SeedContext.GeneratedGifAndBmp`. |
+| `ocr-pixels` | Raw pixel buffers through `ImageOcr.RecognizeRgba` and `RecognizeGray`. The first bytes of the input choose gray or RGBA, the options (minimum confidence, rotation, one or two threads) and the width and height as 16- or 32-bit numbers (including zero, negative, huge and mismatched sizes); a flag takes the height from the buffer's length instead, so mutated buffers still reach the models. The rest are the pixels. `ArgumentException` is the documented failure for a size below 1 or a buffer that does not hold its size, and a result must have the image's size and confidences from 0 to 1. |
+| `ocr-pdf` | Mutated PDFs at 50 dpi with `MaxPixels` at 400,000. Inputs of odd length go through `PdfOcr.MakeSearchable` with `OcrPageMode.Force`, so every page is rendered, read and stamped; even lengths through `PdfOcr.Recognize` with the default page mode, which extracts text first. Seeds: PDF fixtures, `SeedContext.GeneratedPdfs` and those pages as scans (`SeedContext.ScannedPdfs`). |
+| `searchable-layer` | Random OCR results (page sizes in pixels and points, resolutions, quads that are degenerate, inverted, turned or far off the page, NaN and infinite coordinates, texts with control characters, lone surrogates, marks and right-to-left letters, more distinct characters than the font has codes, confidences outside 0 to 1) through `SearchableLayer.Write` and `PdfStamper.Stamp` onto one to three scanned pages. Nothing is expected to fail, and the layer and the stamped PDF must open again with PdfPecker's text extraction. |
 
-The model targets are slow per input compared with a parser, so they set `MaxSize` and `MinTimeout` to match: a seed
-page at 72 dpi is a few hundred milliseconds of work, and a mutated size field can ask for far more pixels than that,
-which `OcrOptions.MaxPixels` must refuse before any buffer is allocated.
+The model targets are slow per input compared with a parser, so they set `MaxSize` and `MinTimeout` and cap the
+resolution and `MaxPixels` to match: a seed page is tens to a few hundred milliseconds of work, and a mutated size
+field can ask for far more pixels than that, which the pixel budget must refuse or read smaller before the stated size
+is decoded or allocated.
 
 ## Adding a target
 
-1. Add a file under `Targets/`, a static class with a `Target` property, like `Targets/OcrSmokeTarget.cs`. Give it a
+1. Add a file under `Targets/`, a static class with a `Target` property, like `Targets/OcrImageTarget.cs`. Give it a
    name, the extension of its saved inputs, a `Run` that passes the cancellation token on, its seeds and, when its API
    documents more failure modes than the common ones, `ExtraExpected`.
 2. Add one line for it to `Targets.All` in `Targets.cs`.

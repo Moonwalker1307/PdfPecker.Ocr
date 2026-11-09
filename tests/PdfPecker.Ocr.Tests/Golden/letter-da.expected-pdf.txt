@@ -1,0 +1,243 @@
+%PDF-1.7
+obj 1 0
+<< /Type /Catalog /Pages 3 0 R >>
+obj 2 0
+<< /Producer <5064665065636b6572> /CreationDate <443a32303236313130383132303030305a> >>
+obj 3 0
+<< /Type /Pages /Count 1 /Kids [4 0 R] >>
+obj 4 0
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 425.28 340.08] /Resources << /ProcSet [/PDF /Text /ImageB /ImageC /ImageI] /Font << >> /XObject << /Im1 6 0 R /Stamp 5 0 R >> >> /Contents [7 0 R 8 0 R] >>
+obj 7 0
+<< /Length * >>
+stream (29 bytes)
+q
+1 0 0 1 0 0 cm
+/Stamp Do
+Q
+endstream
+obj 6 0
+<< /Type /XObject /Subtype /Image /Width 1772 /Height 1417 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length * >>
+binary stream (7532772 bytes) sha256 2ECEB8D07E696EE20A1BDFC15D0AB3F496498130292398B06A38036E646EE243
+obj 8 0
+<< /Length * >>
+stream (40 bytes)
+q 425.25 0 0 339.75 0 0.33 cm /Im1 Do Q
+endstream
+obj 5 0
+<< /Type /XObject /Subtype /Form /BBox [0 0 425.28 340.08] /Matrix [1 0 0 1 0 0] /Resources << /Font << /OCR 9 0 R >> >> /Filter /FlateDecode /Length * >>
+stream (4844 bytes)
+q
+3 Tr
+BT
+/OCR 11.0855 Tf 99.7406 Tz 1 -0.0038 0.0038 1 29.2191 301.0075 Tm <0001000200030004000500060007000800050009000A> Tj
+/OCR 11.1413 Tf 98.1457 Tz 1 -0.0038 0.0038 1 85.0022 300.7619 Tm <000B00040005000A> Tj
+/OCR 11.1643 Tf 79.9556 Tz 1 -0.0038 0.0038 1 103.7891 300.6801 Tm <000C000D000A> Tj
+/OCR 11.2095 Tf 100.6301 Tz 1 -0.0038 0.0038 1 115.1081 300.6371 Tm <0005000E00080004000F000300040010000A> Tj
+/OCR 11.2636 Tf 91.4595 Tz 1 -0.0038 0.0038 1 162.652 300.4291 Tm <0011001200110013> Tj
+ET
+BT
+/OCR 12.9249 Tf 96.3854 Tz 1 -0.0059 0.0059 1 29.0618 275.2114 Tm <0001001400100004000A> Tj
+/OCR 12.8631 Tf 76.7396 Tz 1 -0.0059 0.0059 1 55.3598 275.0756 Tm <00150002001000040005000A> Tj
+/OCR 12.7716 Tf 64.8787 Tz 1 -0.0059 0.0059 1 85.7235 274.9147 Tm <001600170010001800040003001900040010001A> Tj
+ET
+BT
+/OCR 12.2282 Tf 81.8845 Tz 1 -0.0017 0.0017 1 30.0385 251.8024 Tm <001B0007001C000A> Tj
+/OCR 12.2083 Tf 70.4087 Tz 1 -0.0017 0.0017 1 48.7867 251.7772 Tm <001D000E0010000A> Tj
+/OCR 12.1919 Tf 70.3143 Tz 1 -0.0017 0.0017 1 63.3239 251.7576 Tm <000B001E0018000A> Tj
+/OCR 12.1721 Tf 78.0947 Tz 1 -0.0017 0.0017 1 77.8222 251.7373 Tm <0003001000040008000A> Tj
+/OCR 12.1512 Tf 88.185 Tz 1 -0.0017 0.0017 1 100.5269 251.7075 Tm <000E001A000A> Tj
+/OCR 12.1338 Tf 69.9792 Tz 1 -0.0017 0.0017 1 114.9257 251.6878 Tm <001D000E0010000A> Tj
+/OCR 12.1176 Tf 71.0544 Tz 1 -0.0017 0.0017 1 131.3344 251.666 Tm <000B0004000A> Tj
+/OCR 12.0958 Tf 62.9745 Tz 1 -0.0017 0.0017 1 143.6082 251.6478 Tm <001D001F000E001800180004000A> Tj
+/OCR 12.066 Tf 75.3831 Tz 1 -0.0017 0.0017 1 170.1056 251.612 Tm <00140003001F00040010000A> Tj
+/OCR 12.042 Tf 69.4497 Tz 1 -0.0017 0.0017 1 196.4725 251.5775 Tm <001D00100007000A> Tj
+/OCR 12.0154 Tf 75.9307 Tz 1 -0.0017 0.0017 1 212.634 251.5539 Tm <00060007000800040005000D> Tj
+ET
+BT
+/OCR 12.72 Tf 68.4224 Tz 1 0 0 1 30.2008 235.344 Tm <0020001E000A> Tj
+/OCR 12.72 Tf 78.456 Tz 1 0 0 1 42.942 235.344 Tm <001A001F0014000B00040010000A> Tj
+/OCR 12.72 Tf 68.4224 Tz 1 0 0 1 74.7953 235.344 Tm <000E0021000A> Tj
+/OCR 12.72 Tf 56.7447 Tz 1 0 0 1 87.5366 235.344 Tm <0018001E001F000A> Tj
+/OCR 12.72 Tf 51.7279 Tz 1 0 0 1 100.2778 235.344 Tm <00070018000A> Tj
+/OCR 12.72 Tf 68.4224 Tz 1 0 0 1 110.8956 235.344 Tm <00210004000A> Tj
+/OCR 12.72 Tf 67.8743 Tz 1 0 0 1 121.5133 235.344 Tm <001900040010000A> Tj
+/OCR 12.72 Tf 85.117 Tz 1 0 0 1 136.3782 235.344 Tm <00220023000A> Tj
+/OCR 12.72 Tf 75.9476 Tz 1 0 0 1 151.243 235.344 Tm <0024000700050002000A> Tj
+/OCR 12.72 Tf 70.0665 Tz 1 0 0 1 174.602 235.344 Tm <001E000A> Tj
+/OCR 12.72 Tf 74.1138 Tz 1 0 0 1 180.9727 235.344 Tm <00050014002100180004000A> Tj
+/OCR 12.72 Tf 81.7117 Tz 1 0 0 1 208.5788 235.344 Tm <000F002300050004000B000D> Tj
+ET
+BT
+/OCR 12.72 Tf 85.4755 Tz 1 0 0 1 29.815 218.784 Tm <002500260021001C000A> Tj
+/OCR 12.72 Tf 70.7518 Tz 1 0 0 1 55.3056 218.784 Tm <00070018000A> Tj
+/OCR 12.72 Tf 68.7756 Tz 1 0 0 1 65.9268 218.784 Tm <00180007001A0004000A> Tj
+/OCR 12.72 Tf 81.7403 Tz 1 0 0 1 87.169 218.784 Tm <000800070010000F0018000A> Tj
+/OCR 12.72 Tf 69.4343 Tz 1 0 0 1 114.7839 218.784 Tm <001800020019000A> Tj
+/OCR 12.72 Tf 85.4755 Tz 1 0 0 1 131.7777 218.784 Tm <000F0004000B0009000A> Tj
+/OCR 12.72 Tf 69.4344 Tz 1 0 0 1 155.1442 218.784 Tm <001D000E0010000A> Tj
+/OCR 12.72 Tf 73.6836 Tz 1 0 0 1 170.0137 218.784 Tm <0008001E0005000B00040005000A> Tj
+/OCR 12.72 Tf 70.7518 Tz 1 0 0 1 201.8771 218.784 Tm <00040010000A> Tj
+/OCR 12.72 Tf 75.2264 Tz 1 0 0 1 214.6224 218.784 Tm <001C000E001F000B> Tj
+ET
+BT
+/OCR 12.96 Tf 66.9613 Tz 1 0 0 1 30.3217 202.752 Tm <00080004000B000A> Tj
+/OCR 12.96 Tf 70.4208 Tz 1 0 0 1 47.5846 202.752 Tm <00210018001000070005000B000400050009000A> Tj
+/OCR 12.96 Tf 67.1416 Tz 1 0 0 1 90.7417 202.752 Tm <000E001A000A> Tj
+/OCR 12.96 Tf 77.881 Tz 1 0 0 1 103.6889 202.752 Tm <001D00140010001A00040005000A> Tj
+/OCR 12.96 Tf 55.6808 Tz 1 0 0 1 138.2146 202.752 Tm <002100040019001F00040010000A> Tj
+/OCR 12.96 Tf 78.0614 Tz 1 0 0 1 164.1089 202.752 Tm <001C00260005000A> Tj
+/OCR 12.96 Tf 50.4914 Tz 1 0 0 1 183.5296 202.752 Tm <0018000E000A> Tj
+/OCR 12.96 Tf 80.1371 Tz 1 0 0 1 194.3189 202.752 Tm <001A00070005001A0004000A> Tj
+/OCR 12.96 Tf 67.1416 Tz 1 0 0 1 224.5289 202.752 Tm <000E000F000A> Tj
+/OCR 12.96 Tf 69.4657 Tz 1 0 0 1 241.7917 202.752 Tm <000B0007001A00040005000D> Tj
+ET
+BT
+/OCR 12.9303 Tf 90.0115 Tz 1 -0.0042 0.0042 1 29.683 178.7358 Tm <002700070005001A0004000A> Tj
+/OCR 12.8732 Tf 68.8413 Tz 1 -0.0042 0.0042 1 62.6061 178.6136 Tm <0006001E001F0021000500040010000A> Tj
+/OCR 12.8348 Tf 59.003 Tz 1 -0.0042 0.0042 1 95.2487 178.496 Tm <001D00100007000A> Tj
+/OCR 12.8039 Tf 70.0727 Tz 1 -0.0042 0.0042 1 112.5446 178.4316 Tm <002800210004000A> Tj
+/OCR 12.7768 Tf 88.1045 Tz 1 -0.0042 0.0042 1 129.7623 178.3682 Tm <000E001A000A> Tj
+/OCR 12.7409 Tf 75.3053 Tz 1 -0.0042 0.0042 1 144.764 178.3105 Tm <00290019000200100005> Tj
+ET
+Q
+endstream
+obj 9 0
+<< /Type /Font /Subtype /Type0 /BaseFont /OcrGlyphless /Encoding /Identity-H /DescendantFonts [10 0 R] /ToUnicode 11 0 R >>
+obj 10 0
+<< /Type /Font /Subtype /CIDFontType2 /BaseFont /OcrGlyphless /CIDSystemInfo << /Registry <41646f6265> /Ordering <4964656e74697479> /Supplement 0 >> /FontDescriptor 12 0 R /DW 500 /CIDToGIDMap 13 0 R >>
+obj 11 0
+<< /Filter /FlateDecode /Length * >>
+stream (899 bytes)
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+41 beginbfchar
+<0001> <004B>
+<0002> <00F8>
+<0003> <0062>
+<0004> <0065>
+<0005> <006E>
+<0006> <0068>
+<0007> <0061>
+<0008> <0076>
+<0009> <002C>
+<000A> <0020>
+<000B> <0064>
+<000C> <0033>
+<000D> <002E>
+<000E> <006F>
+<000F> <006D>
+<0010> <0072>
+<0011> <0032>
+<0012> <0030>
+<0013> <0036>
+<0014> <00E6>
+<0015> <0053>
+<0016> <0041>
+<0017> <0045>
+<0018> <0074>
+<0019> <006A>
+<001A> <0067>
+<001B> <0054>
+<001C> <006B>
+<001D> <0066>
+<001E> <0069>
+<001F> <006C>
+<0020> <0056>
+<0021> <0073>
+<0022> <0070>
+<0023> <00E5>
+<0024> <0046>
+<0025> <0048>
+<0026> <0075>
+<0027> <004D>
+<0028> <00C5>
+<0029> <0042>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
+obj 12 0
+<< /Type /FontDescriptor /FontName /OcrGlyphless /Flags 5 /FontBBox [0 -200 500 800] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 14 0 R >>
+obj 13 0
+<< /Filter /FlateDecode /Length * >>
+binary stream (84 bytes) sha256 FE1EC18B57FA8413CFAA3B70344082A7AD35AF4D7861F4FF0C895214B0972EE4
+obj 14 0
+<< /Filter /FlateDecode /Length1 696 /Length * >>
+binary stream (696 bytes) sha256 EC1F2B7B61319A035D2D913A70BEAA03CBE3F2455F740DB8513C1148A8BB38E2
+trailer
+<< /Size 15 /Root 1 0 R /Info 2 0 R >>
+extracted text
+page 1 425.3x340.1
+line 29.2,30.6 154.0x11.3 angle 0 | København, den 3. november 2026
+  word 29.2,30.2 55.3x11.1 | København,
+  word 85.0,30.4 16.4x11.1 | den
+  word 103.8,30.5 8.9x11.2 | 3.
+  word 115.1,30.5 45.1x11.2 | november
+  word 162.7,30.6 20.6x11.3 | 2026
+line 29.1,54.5 98.1x12.9 angle 0 | Kære Søren AErtebjerg
+  word 29.1,54.5 24.9x12.9 | Kære
+  word 55.4,54.7 24.7x12.9 | Søren
+  word 85.7,54.9 41.4x12.8 | AErtebjerg
+line 30.0,78.5 210.0x12.2 angle 0 | Tak for dit brev og for de flotte æbler fra haven.
+  word 30.0,78.5 15.0x12.2 | Tak
+  word 48.8,78.5 12.9x12.2 | for
+  word 63.3,78.6 12.9x12.2 | dit
+  word 77.8,78.6 19.0x12.2 | brev
+  word 100.5,78.7 10.7x12.2 | og
+  word 114.9,78.7 12.7x12.1 | for
+  word 131.3,78.7 8.6x12.1 | de
+  word 143.6,78.8 22.9x12.1 | flotte
+  word 170.1,78.8 22.7x12.1 | æbler
+  word 196.5,78.9 12.5x12.0 | fra
+  word 212.6,78.9 27.4x12.0 | haven.
+line 30.2,94.6 209.6x12.7 angle 0 | Vi glæder os til at se jer på Fanø i næste måned.
+  word 30.2,94.6 8.7x12.7 | Vi
+  word 42.9,94.6 29.9x12.7 | glæder
+  word 74.8,94.6 8.7x12.7 | os
+  word 87.5,94.6 10.8x12.7 | til
+  word 100.3,94.6 6.6x12.7 | at
+  word 110.9,94.6 8.7x12.7 | se
+  word 121.5,94.6 13.0x12.7 | jer
+  word 136.4,94.6 10.8x12.7 | på
+  word 151.2,94.6 19.3x12.7 | Fanø
+  word 174.6,94.6 4.5x12.7 | i
+  word 181.0,94.6 23.6x12.7 | næste
+  word 208.6,94.6 31.2x12.7 | måned.
+line 29.8,111.1 203.9x12.7 angle 0 | Husk at tage varmt tøj med, for vinden er kold
+  word 29.8,111.1 21.7x12.7 | Husk
+  word 55.3,111.1 9.0x12.7 | at
+  word 65.9,111.1 17.5x12.7 | tage
+  word 87.2,111.1 26.0x12.7 | varmt
+  word 114.8,111.1 13.2x12.7 | tøj
+  word 131.8,111.1 21.7x12.7 | med,
+  word 155.1,111.1 13.2x12.7 | for
+  word 170.0,111.1 28.1x12.7 | vinden
+  word 201.9,111.1 9.0x12.7 | er
+  word 214.6,111.1 19.1x12.7 | kold
+line 30.3,127.0 238.5x13.0 angle 0 | ved stranden, og færgen sejler kun to gange om dagen.
+  word 30.3,127.0 13.0x13.0 | ved
+  word 47.6,127.0 41.1x13.0 | stranden,
+  word 90.7,127.0 8.7x13.0 | og
+  word 103.7,127.0 30.3x13.0 | færgen
+  word 138.2,127.0 21.6x13.0 | sejler
+  word 164.1,127.0 15.2x13.0 | kun
+  word 183.5,127.0 6.5x13.0 | to
+  word 194.3,127.0 26.0x13.0 | gange
+  word 224.5,127.0 8.7x13.0 | om
+  word 241.8,127.0 27.0x13.0 | dagen.
+line 29.7,151.0 139.1x12.9 angle 0 | Mange hilsner fra Åse og Bjørn
+  word 29.7,151.0 29.1x12.9 | Mange
+  word 62.6,151.2 31.0x12.9 | hilsner
+  word 95.2,151.3 11.4x12.8 | fra
+  word 112.5,151.4 13.5x12.8 | Åse
+  word 129.8,151.5 11.3x12.8 | og
+  word 144.8,151.6 24.0x12.7 | Bjørn

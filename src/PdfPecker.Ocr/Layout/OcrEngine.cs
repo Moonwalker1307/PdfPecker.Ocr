@@ -62,6 +62,14 @@ internal sealed class OcrEngine : IPageRecognizer
     internal static OcrPage Recognize(PixelView page, int pageIndex, float dpi, OcrOptions options, int threads, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (IsUniform(page))
+        {
+            // A page of one colour holds no text, yet the detector would still run on at least 736 pixels a side (small
+            // pages are scaled up to that), which made a blank page cost over 100 ms whatever its size, and on some
+            // colours it found a stray box that read as a character. Blank pages are common in scans.
+            return new OcrPage(pageIndex, page.Width, page.Height, dpi, []);
+        }
+
         var recognition = RecognitionOptions(options);
         EngineWorker worker = EnginePool.Rent(threads);
         PageResult result;
@@ -79,6 +87,18 @@ internal sealed class OcrEngine : IPageRecognizer
 
         EnginePool.Return(worker);
         return ToPage(result, pageIndex);
+    }
+
+    /// <summary>
+    /// Whether every pixel of the page is the same, alpha included: the data repeats with the period of one pixel, which
+    /// one vectorised comparison finds.
+    /// </summary>
+    internal static bool IsUniform(PixelView page)
+    {
+        // PixelView has checked that width x height x channels bytes are there, so the product fits in an int.
+        ReadOnlySpan<byte> data = page.Data[..(page.Width * page.Height * page.Channels)];
+        int channels = page.Channels;
+        return data[channels..].SequenceEqual(data[..^channels]);
     }
 
     /// <summary>The public page for a pipeline result: the same lines, words, quads and confidences.</summary>

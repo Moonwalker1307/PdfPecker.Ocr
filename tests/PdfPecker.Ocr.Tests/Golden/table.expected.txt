@@ -1,0 +1,20 @@
+Country
+Capital
+Population
+Area km²
+Norway
+Oslo
+5,550,203
+385,207
+Denmark
+Copenhagen
+5,961,249
+42,933
+Iceland
+Reykjavík
+387,758
+103,000
+Finland
+Helsinki
+5,603,851
+338,455

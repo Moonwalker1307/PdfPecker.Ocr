@@ -1,0 +1,42 @@
+page 1890x886 dpi 300 lines 20 confidence 1.00
+line 132,120 172x52 angle -0 conf 1.00 | Country
+  word 142,120 162x52 conf 1.00 | Country
+line 358,116 154x58 angle -0 conf 1.00 | Capital
+  word 372,116 140x58 conf 1.00 | Capital
+line 656,117 230x55 angle -0 conf 1.00 | Population
+  word 668,117 214x55 conf 1.00 | Population
+line 934,120 191x47 angle -0 conf 1.00 | Area km²
+  word 941,120 96x47 conf 1.00 | Area
+  word 1042,120 80x47 conf 1.00 | km²
+line 127,183 161x62 angle -2 conf 1.00 | Norway
+  word 138,183 149x62 conf 1.00 | Norway
+line 357,182 104x61 angle -0 conf 1.00 | Oslo
+  word 372,182 81x61 conf 1.00 | Oslo
+line 654,183 203x60 angle -1 conf 1.00 | 5,550,203
+  word 668,183 182x60 conf 1.00 | 5,550,203
+line 929,185 169x57 angle -0 conf 1.00 | 385,207
+  word 942,185 154x57 conf 1.00 | 385,207
+line 132,255 183x52 angle -0 conf 1.00 | Denmark
+  word 141,255 172x52 conf 1.00 | Denmark
+line 359,255 253x56 angle -0 conf 1.00 | Copenhagen
+  word 370,255 238x56 conf 1.00 | Copenhagen
+line 654,254 201x56 angle -1 conf 1.00 | 5,961,249
+  word 666,254 188x56 conf 1.00 | 5,961,249
+line 929,254 146x57 angle -0 conf 1.00 | 42,933
+  word 942,254 125x57 conf 1.00 | 42,933
+line 130,323 149x53 angle -0 conf 1.00 | Iceland
+  word 133,323 144x53 conf 1.00 | Iceland
+line 358,323 197x57 angle -0 conf 1.00 | Reykjavík
+  word 372,323 182x57 conf 1.00 | Reykjavík
+line 656,325 166x53 angle -0 conf 1.00 | 387,758
+  word 668,325 144x53 conf 1.00 | 387,758
+line 931,325 164x53 angle -0 conf 1.00 | 103,000
+  word 943,325 144x53 conf 1.00 | 103,000
+line 129,390 154x57 angle -0 conf 1.00 | Finland
+  word 143,390 133x57 conf 1.00 | Finland
+line 357,390 160x53 angle -0 conf 1.00 | Helsinki
+  word 370,390 147x53 conf 1.00 | Helsinki
+line 656,394 200x52 angle -0 conf 1.00 | 5,603,851
+  word 667,394 185x52 conf 1.00 | 5,603,851
+line 929,391 167x57 angle -0 conf 1.00 | 338,455
+  word 942,391 144x57 conf 1.00 | 338,455

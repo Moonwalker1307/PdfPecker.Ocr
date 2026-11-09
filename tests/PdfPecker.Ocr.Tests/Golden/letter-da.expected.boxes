@@ -1,0 +1,65 @@
+page 1772x1417 dpi 300 lines 7 confidence 1.00
+line 114,128 651x46 angle -0 conf 1.00 | København, den 3. november 2026
+  word 122,128 230x46 conf 1.00 | København,
+  word 360,128 61x46 conf 1.00 | den
+  word 429,128 45x46 conf 1.00 | 3.
+  word 483,128 184x46 conf 1.00 | november
+  word 675,128 90x46 conf 1.00 | 2026
+line 111,229 423x53 angle -0 conf 1.00 | Kære Søren AErtebjerg
+  word 122,229 100x51 conf 1.00 | Kære
+  word 234,230 107x51 conf 1.00 | Søren
+  word 353,231 181x51 conf 1.00 | AErtebjerg
+line 114,330 886x49 angle -0 conf 1.00 | Tak for dit brev og for de flotte æbler fra haven.
+  word 125,330 60x49 conf 1.00 | Tak
+  word 199,330 60x49 conf 1.00 | for
+  word 264,330 52x49 conf 1.00 | dit
+  word 330,330 77x49 conf 1.00 | brev
+  word 420,330 44x49 conf 1.00 | og
+  word 478,330 52x49 conf 1.00 | for
+  word 543,330 44x49 conf 1.00 | de
+  word 592,330 101x49 conf 1.00 | flotte
+  word 707,330 101x49 conf 1.00 | æbler
+  word 822,330 44x49 conf 1.00 | fra
+  word 880,330 120x49 conf 1.00 | haven.
+line 112,393 887x57 angle 0 conf 1.00 | Vi glæder os til at se jer på Fanø i næste måned.
+  word 126,395 38x55 conf 1.00 | Vi
+  word 182,395 122x55 conf 1.00 | glæder
+  word 312,394 38x55 conf 1.00 | os
+  word 358,394 47x55 conf 1.00 | til
+  word 414,394 38x55 conf 1.00 | at
+  word 460,394 38x55 conf 1.00 | se
+  word 506,394 56x55 conf 1.00 | jer
+  word 570,394 38x55 conf 1.00 | på
+  word 625,394 92x55 conf 1.00 | Fanø
+  word 726,394 19x54 conf 1.00 | i
+  word 753,393 101x55 conf 1.00 | næste
+  word 872,393 127x54 conf 1.00 | måned.
+line 111,463 864x53 angle -0 conf 0.99 | Husk at tage varmt tøj med, for vinden er kold
+  word 124,463 90x53 conf 1.00 | Husk
+  word 230,463 37x53 conf 1.00 | at
+  word 274,463 72x53 conf 1.00 | tage
+  word 363,463 108x53 conf 1.00 | varmt
+  word 478,463 55x53 conf 1.00 | tøj
+  word 549,463 90x53 conf 1.00 | med,
+  word 646,463 55x53 conf 1.00 | for
+  word 708,463 125x53 conf 1.00 | vinden
+  word 850,463 28x53 conf 1.00 | er
+  word 894,463 81x53 conf 1.00 | kold
+line 112,528 1009x55 angle -0 conf 1.00 | ved stranden, og færgen sejler kun to gange om dagen.
+  word 124,528 64x53 conf 1.00 | ved
+  word 195,528 171x53 conf 1.00 | stranden,
+  word 382,528 38x53 conf 1.00 | og
+  word 436,528 119x54 conf 1.00 | færgen
+  word 570,528 101x54 conf 1.00 | sejler
+  word 687,529 66x54 conf 1.00 | kun
+  word 760,529 39x54 conf 1.00 | to
+  word 814,529 102x54 conf 1.00 | gange
+  word 932,529 48x54 conf 1.00 | om
+  word 1005,529 116x54 conf 1.00 | dagen.
+line 111,630 595x55 angle -0 conf 1.00 | Mange hilsner fra Åse og Bjørn
+  word 132,630 120x53 conf 1.00 | Mange
+  word 258,631 128x53 conf 1.00 | hilsner
+  word 400,631 47x53 conf 1.00 | fra
+  word 462,632 65x53 conf 0.99 | Åse
+  word 542,632 47x52 conf 1.00 | og
+  word 603,632 99x53 conf 1.00 | Bjørn

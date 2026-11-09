@@ -1,0 +1,29 @@
+page 1772x945 dpi 300 lines 4 confidence 0.99
+line 121,123 706x66 angle -0 conf 1.00 | Blue text on a pale yellow band
+  word 136,123 95x63 conf 1.00 | Blue
+  word 241,123 85x64 conf 1.00 | text
+  word 346,124 43x64 conf 1.00 | on
+  word 410,124 22x64 conf 1.00 | a
+  word 452,124 86x64 conf 1.00 | pale
+  word 558,124 129x64 conf 1.00 | yellow
+  word 719,125 98x64 conf 1.00 | band
+line 118,241 567x71 angle -0 conf 0.99 | White text on dark green
+  word 134,241 125x69 conf 1.00 | White
+  word 270,242 91x68 conf 1.00 | text
+  word 371,242 46x68 conf 1.00 | on
+  word 439,243 91x68 conf 1.00 | dark
+  word 551,243 125x69 conf 1.00 | green
+line 123,367 673x66 angle -0 conf 1.00 | Light gray text on white paper
+  word 138,367 108x63 conf 1.00 | Light
+  word 253,367 97x64 conf 1.00 | gray
+  word 359,368 87x64 conf 1.00 | text
+  word 465,368 45x64 conf 1.00 | on
+  word 528,368 120x64 conf 1.00 | white
+  word 657,369 131x64 conf 1.00 | paper
+line 122,489 690x65 angle -0 conf 0.99 | Red text on a pink background
+  word 135,489 90x62 conf 1.00 | Red
+  word 239,490 89x62 conf 1.00 | text
+  word 333,490 58x62 conf 1.00 | on
+  word 405,491 26x62 conf 1.00 | a
+  word 447,491 88x62 conf 1.00 | pink
+  word 549,491 260x63 conf 1.00 | background

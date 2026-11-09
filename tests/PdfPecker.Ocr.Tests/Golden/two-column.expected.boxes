@@ -1,0 +1,68 @@
+page 2008x1122 dpi 300 lines 11 confidence 1.00
+line 99,108 1028x67 angle -0 conf 1.00 | Harbour lights return to the old town
+  word 113,108 230x67 conf 1.00 | Harbour
+  word 347,108 163x67 conf 1.00 | lights
+  word 526,108 163x67 conf 1.00 | return
+  word 705,108 51x67 conf 1.00 | to
+  word 783,108 84x67 conf 1.00 | the
+  word 884,108 84x67 conf 1.00 | old
+  word 984,108 129x67 conf 1.00 | town
+line 103,232 457x48 angle -0 conf 1.00 | After two years of repairs
+  word 114,232 90x48 conf 1.00 | After
+  word 210,232 66x48 conf 1.00 | two
+  word 290,232 90x48 conf 1.00 | years
+  word 394,232 34x48 conf 1.00 | of
+  word 442,232 114x48 conf 1.00 | repairs
+line 102,296 455x51 angle -0 conf 0.99 | the lighthouse on the pier
+  word 105,296 58x48 conf 1.00 | the
+  word 169,296 186x49 conf 1.00 | lighthouse
+  word 368,298 34x48 conf 1.00 | on
+  word 416,298 58x48 conf 1.00 | the
+  word 488,299 66x48 conf 1.00 | pier
+line 99,362 445x51 angle -0 conf 1.00 | shines again every night,
+  word 110,362 107x49 conf 1.00 | shines
+  word 230,363 91x49 conf 1.00 | again
+  word 333,364 98x49 conf 1.00 | every
+  word 445,364 99x49 conf 1.00 | night,
+line 102,428 455x53 angle -1 conf 1.00 | and the ferry captains say
+  word 113,428 59x49 conf 1.00 | and
+  word 177,429 59x49 conf 1.00 | the
+  word 248,430 82x49 conf 1.00 | ferry
+  word 344,431 138x50 conf 1.00 | captains
+  word 496,432 59x49 conf 1.00 | say
+line 99,492 454x50 angle -0 conf 1.00 | the entrance is safer now.
+  word 110,492 50x47 conf 1.00 | the
+  word 172,492 144x48 conf 1.00 | entrance
+  word 329,494 34x47 conf 1.00 | is
+  word 368,494 89x48 conf 1.00 | safer
+  word 470,494 83x48 conf 1.00 | now.
+line 1071,232 464x47 angle -0 conf 1.00 | The town council paid for
+  word 1081,232 67x47 conf 1.00 | The
+  word 1151,232 91x47 conf 1.00 | town
+  word 1253,232 138x47 conf 1.00 | council
+  word 1394,232 75x47 conf 1.00 | paid
+  word 1480,232 51x47 conf 1.00 | for
+line 1069,295 501x53 angle -0 conf 1.00 | new lamps and a stone wall,
+  word 1080,295 62x50 conf 1.00 | new
+  word 1155,295 113x51 conf 1.00 | lamps
+  word 1273,296 63x51 conf 1.00 | and
+  word 1350,296 20x51 conf 1.00 | a
+  word 1384,296 89x51 conf 1.00 | stone
+  word 1486,297 84x51 conf 1.00 | wall,
+line 1069,361 440x51 angle -0 conf 1.00 | while volunteers painted
+  word 1080,361 91x49 conf 1.00 | while
+  word 1184,362 187x49 conf 1.00 | volunteers
+  word 1383,363 123x49 conf 1.00 | painted
+line 1071,429 423x46 angle -0 conf 0.98 | the tower white and red
+  word 1073,429 58x46 conf 1.00 | the
+  word 1141,429 104x46 conf 0.99 | tower
+  word 1256,429 96x46 conf 1.00 | white
+  word 1363,429 58x46 conf 1.00 | and
+  word 1432,429 58x46 conf 1.00 | red
+line 1069,493 437x51 angle -0 conf 0.99 | in the first week of May.
+  word 1072,493 35x48 conf 1.00 | in
+  word 1120,493 51x48 conf 1.00 | the
+  word 1184,494 74x49 conf 1.00 | first
+  word 1272,494 82x49 conf 1.00 | week
+  word 1375,495 34x48 conf 1.00 | of
+  word 1423,495 83x49 conf 1.00 | May.

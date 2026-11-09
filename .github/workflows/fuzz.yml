@@ -37,7 +37,10 @@ jobs:
       - id: pick
         env:
           ALL: >-
-            ocr-smoke
+            ocr-image
+            ocr-pixels
+            ocr-pdf
+            searchable-layer
           TARGET: ${{ github.event_name == 'schedule' && 'all' || inputs.target }}
         run: |
           if [ "$TARGET" = "all" ]; then

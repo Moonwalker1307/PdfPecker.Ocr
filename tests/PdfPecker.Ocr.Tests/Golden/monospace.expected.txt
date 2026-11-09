@@ -1,0 +1,5 @@
+int total = 0;
+for (int i = 0; i < 10; i++)
+total += values[i] * 2;
+return total; // sum of doubled values
+id=0x7F3A status=0K count=128

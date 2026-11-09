@@ -1,0 +1,39 @@
+page 1772x1004 dpi 300 lines 5 confidence 0.99
+line 113,127 690x56 angle -0 conf 0.99 | Sehr geehrte Damen und Herren,
+  word 123,127 95x53 conf 1.00 | Sehr
+  word 229,127 158x54 conf 1.00 | geehrte
+  word 399,128 141x54 conf 1.00 | Damen
+  word 561,128 70x54 conf 1.00 | und
+  word 652,129 151x54 conf 1.00 | Herren,
+line 112,194 967x58 angle -0 conf 1.00 | die Übergabe der Schlüssel erfolgt am Montag.
+  word 123,194 57x53 conf 1.00 | die
+  word 202,194 190x54 conf 1.00 | Übergabe
+  word 414,196 66x53 conf 1.00 | der
+  word 494,196 199x54 conf 1.00 | Schlüssel
+  word 697,197 129x54 conf 1.00 | erfolgt
+  word 838,198 49x53 conf 1.00 | am
+  word 917,198 162x54 conf 1.00 | Montag.
+line 114,266 975x50 angle -0 conf 1.00 | Bitte prüfen Sie die Maße der Fußböden vorher.
+  word 124,266 88x50 conf 1.00 | Bitte
+  word 224,266 130x50 conf 1.00 | prüfen
+  word 374,266 55x50 conf 1.00 | Sie
+  word 449,266 55x50 conf 1.00 | die
+  word 524,266 113x50 conf 1.00 | Maße
+  word 649,266 72x50 conf 1.00 | der
+  word 732,266 205x50 conf 1.00 | Fußböden
+  word 949,266 140x50 conf 1.00 | vorher.
+line 112,334 1089x56 angle -0 conf 0.99 | Für Rückfragen stehen wir Ihnen gern zur Verfügung.
+  word 125,334 68x56 conf 1.00 | Für
+  word 209,334 226x56 conf 1.00 | Rückfragen
+  word 451,334 133x56 conf 1.00 | stehen
+  word 600,334 59x56 conf 1.00 | wir
+  word 666,334 114x56 conf 0.99 | Ihnen
+  word 806,334 77x56 conf 1.00 | gern
+  word 908,334 59x56 conf 1.00 | zur
+  word 983,334 217x56 conf 1.00 | Verfügung.
+line 113,402 793x54 angle -0 conf 0.98 | Mit freundlichen Grüßen aus Lüneburg
+  word 123,402 64x50 conf 1.00 | Mit
+  word 189,402 256x51 conf 1.00 | freundlichen
+  word 464,404 148x51 conf 1.00 | Grüßen
+  word 630,405 65x50 conf 1.00 | aus
+  word 713,405 190x51 conf 1.00 | Lüneburg

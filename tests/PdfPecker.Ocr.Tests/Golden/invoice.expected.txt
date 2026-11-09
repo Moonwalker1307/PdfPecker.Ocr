@@ -1,0 +1,26 @@
+Invoice 2026-0731
+Example Customer Ltd.
+Harbour Road 17
+4006 Stavanger, Norway
+Invoice date: 14 October 2026
+Due date: 13 November 2026
+Description
+Qty
+Unit price
+Amount
+Design workshop
+2
+1,450.00
+2,900.00
+Printed brochures
+500
+1.20
+600.00
+Delivery
+1
+85.00
+85.00
+Subtotal 3,585.00
+VAT 25% 896.25
+Total due NOK 4,481.25
+Bank account 9710.05.12345, reference 2026-0731.
