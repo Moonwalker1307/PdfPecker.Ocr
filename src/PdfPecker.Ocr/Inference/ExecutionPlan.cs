@@ -326,11 +326,11 @@ internal sealed class ExecutionPlan
     /// columns of each batch item of a [N, C, H, W] input that are equal to its last column, and from them those of
     /// every layer's output.
     /// </summary>
-    public unsafe void FindRuns(float* input)
+    public unsafe void FindRuns(float* input, InferenceContext context)
     {
         var runs = InputRuns;
         runs.Clear();
-        if (ColumnRuns.Enabled && InputShape.Length == 4 && InputShape[3] > 2)
+        if (context.SkipsEqualColumns && InputShape.Length == 4 && InputShape[3] > 2)
         {
             int w = InputShape[3];
             long rows = (long)InputShape[1] * InputShape[2];

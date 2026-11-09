@@ -46,6 +46,13 @@ internal sealed unsafe class InferenceContext : IDisposable
     /// </summary>
     internal Layers.RunTiling RunTiling => _runTiling ??= new Layers.RunTiling();
 
+    /// <summary>
+    /// Whether runs find the columns of their values that are known to be equal and leave them out (see
+    /// <see cref="ColumnRuns"/>). Always on outside the tests that compare the skip with the full computation; the
+    /// output is the same either way.
+    /// </summary>
+    public bool SkipsEqualColumns { get; set; } = true;
+
     /// <summary>Checked between the operators of a run, so a long run can be stopped.</summary>
     public CancellationToken CancellationToken { get; set; }
 

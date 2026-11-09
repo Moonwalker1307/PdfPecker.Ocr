@@ -13,7 +13,8 @@ namespace PdfPecker.Ocr.Inference;
 /// others, which gives every bit of the full computation.
 /// </summary>
 /// <remarks>
-/// The runs are found anew for each input (<see cref="ExecutionPlan.FindRuns"/>): the input's trailing columns that are
+/// The runs are found anew for each input (<see cref="ExecutionPlan.FindRuns"/>), unless the context turns them off
+/// (<see cref="InferenceContext.SkipsEqualColumns"/>): the input's trailing columns that are
 /// equal to its last one, then each layer's <see cref="Layer.FindRuns"/> from those of its inputs. A layer that does not
 /// know how its columns map to its inputs' finds none, and so do all layers after it, so the runs are only ever smaller
 /// than what is really equal.
@@ -25,9 +26,6 @@ internal sealed class ColumnRuns
         Start = new int[batch];
         End = new int[batch];
     }
-
-    /// <summary>Whether layers may skip the columns of runs; off only in tests that compare with the full computation.</summary>
-    internal static bool Enabled { get; set; } = true;
 
     /// <summary>The axis the runs lie along, or -1 when nothing is known to be equal.</summary>
     public int Axis { get; private set; } = -1;

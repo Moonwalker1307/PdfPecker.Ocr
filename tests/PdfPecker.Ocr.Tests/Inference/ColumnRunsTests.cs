@@ -38,17 +38,9 @@ public sealed class ColumnRunsTests
 
     private static float[] Run(OcrModel model, Tensor input, int threads, bool skip)
     {
-        bool before = ColumnRuns.Enabled;
-        ColumnRuns.Enabled = skip;
-        try
-        {
-            using var context = new InferenceContext(threads);
-            return model.Run(input, context).Span.ToArray();
-        }
-        finally
-        {
-            ColumnRuns.Enabled = before;
-        }
+        // The switch belongs to the context, so tests of other classes that run at the same time keep the skip on.
+        using var context = new InferenceContext(threads) { SkipsEqualColumns = skip };
+        return model.Run(input, context).Span.ToArray();
     }
 
     [Theory]
@@ -96,6 +88,11 @@ public sealed class ColumnRunsTests
         Assert.True(last.End[1] - last.Start[1] > 40, $"run [{last.Start[1]}, {last.End[1]})");
         Assert.False(last.HasRun(3));
         Assert.Contains(steps, s => s.Layer is PdfPecker.Ocr.Inference.Layers.SqueezeExciteLayer && s.OutputRuns.HasRun(1));
+
+        // A context with the skip off finds none, so that the comparisons above compare two different computations.
+        using var full = new InferenceContext(1) { SkipsEqualColumns = false };
+        model.Run(input, full);
+        Assert.All(full.GetPlan(model, input.Shape).Steps, s => Assert.Equal(-1, s.OutputRuns.Axis));
     }
 
     [Fact]
