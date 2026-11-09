@@ -3,8 +3,9 @@
 Text recognition (OCR) for .NET with no native dependencies: reads printed text from images and scanned PDFs, and
 makes scanned PDFs searchable by adding an invisible text layer.
 
-PdfPecker.Ocr runs PaddleOCR's PP-OCRv6 small models on a neural network runtime of its own, written in C#. It does not
-ship native binaries, call ONNX Runtime or Tesseract, or need a GPU or a network connection. Its only dependency is the
+PdfPecker.Ocr runs PaddleOCR's PP-OCRv6 small detection and recognition models, and its PP-OCR mobile v2.0 line
+orientation classifier, on a neural network runtime of its own, written in C#. It does not ship native binaries, call
+ONNX Runtime or Tesseract, or need a GPU or a network connection. Its only dependency is the
 [PdfPecker](https://www.nuget.org/packages/PdfPecker) package, which it uses to decode images, render PDF pages and
 write the text layer.
 
@@ -85,8 +86,8 @@ number of processors) working inside the networks; the threads and buffers are k
 1. **Input.** Images are decoded and PDF pages rendered (at `OcrOptions.Dpi`, 300 by default) by PdfPecker.
 2. **Detection.** The PP-OCRv6 small detection model marks where text is; the probability map it returns is turned
    into one quadrilateral per text line, so slanted lines keep their angle.
-3. **Orientation.** Each line is cut out and straightened, and a small classifier turns lines that are upside down
-   (`OcrOptions.DetectRotation`).
+3. **Orientation.** Each line is cut out and straightened, and a small classifier (PP-OCR mobile v2.0) turns lines
+   that are upside down (`OcrOptions.DetectRotation`).
 4. **Recognition.** The PP-OCRv6 small recognition model reads each line, and its output is decoded into characters
    with a confidence and a position along the line, from which the words and their boxes come.
 5. **Layout.** Lines are put into reading order, top to bottom and left to right, column by column.
