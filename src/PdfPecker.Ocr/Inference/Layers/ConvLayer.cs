@@ -118,6 +118,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     private readonly bool _pointwise;
     private readonly int _k;
     private readonly bool _broadcast;
+    private readonly bool _inPlace;
 
     public GemmConvLayer(NodeDefinition node, ModelDefinition model, GemmKernel gemm)
         : base(node, model)
@@ -127,6 +128,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         _weights = gemm.PackA(Weight(node, model, 0).Data, Cout, _k);
         _bias = gemm.PadBias(Weight(node, model, 1).Data, Cout);
         _pointwise = Kh == 1 && Kw == 1 && Sh == 1 && Sw == 1 && Pt == 0 && Pl == 0 && Pb == 0 && Pr == 0;
+        _inPlace = !_pointwise && Sw == 1;
     }
 
     private GemmConvLayer(GemmConvLayer source)
@@ -137,6 +139,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         _weights = source._weights;
         _bias = source._bias;
         _pointwise = source._pointwise;
+        _inPlace = source._inPlace;
         _broadcast = true;
     }
 
@@ -170,14 +173,43 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     public override long ScratchPerWorker(Step step, InferenceContext context)
     {
         int columns = step.OutputShape[2] * step.OutputShape[3];
-        return _gemm.PackedBSize(_k, TileColumns(columns));
+        return _gemm.PackedBSize(_k, ReadsInPlace(step.InputShapes[0]) ? _gemm.NR : TileColumns(columns));
+    }
+
+    /// <summary>
+    /// True when the panels of B can be read from the input where they lie (<see cref="TileInPlace"/>): a horizontal
+    /// stride of 1, so that one tap's values for a panel are a run of one input row, and tap offsets that fit an int.
+    /// </summary>
+    private bool ReadsInPlace(int[] x)
+    {
+        if (!_inPlace) return false;
+        long plane = _broadcast ? 0 : (long)x[2] * x[3];
+        return (CinPerGroup - 1) * plane + ((long)(Kh - 1) * Dh * x[3]) + ((long)(Kw - 1) * Dw) <= int.MaxValue;
     }
 
     public override void Execute(Step step, InferenceContext context)
     {
         int columns = step.OutputShape[2] * step.OutputShape[3];
         step.Tiling ??= Tiling.For(step.OutputShape[0], columns, TileColumns(columns), Cout, _gemm.MR);
+        if (step.State is null && ReadsInPlace(step.InputShapes[0])) step.State = TapOffsets(step.InputShapes[0]);
         context.For(step.Tiling.Count, step, &Tile);
+    }
+
+    /// <summary>Where each row of B, tap (ci, ky, kx), reads from a panel's first value in the first input row it uses.</summary>
+    private int[] TapOffsets(int[] x)
+    {
+        int w = x[3];
+        long plane = _broadcast ? 0 : (long)x[2] * w;
+        var offsets = GC.AllocateArray<int>(_k, pinned: true);
+        for (int ci = 0, i = 0; ci < CinPerGroup; ci++)
+        {
+            for (int ky = 0; ky < Kh; ky++)
+            {
+                for (int kx = 0; kx < Kw; kx++) offsets[i++] = (int)((ci * plane) + ((long)ky * Dh * w) + ((long)kx * Dw));
+            }
+        }
+
+        return offsets;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -193,6 +225,12 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         int planeOut = oh * ow;
         float* input = step.Input(0) + (long)n * x[1] * x[2] * x[3];
         float* packed = step.Context.Scratch(worker);
+        if (step.State is int[] offsets)
+        {
+            layer.TileInPlace(step, input, x[2], x[3], ow, n, n0, columns, m0, rows, offsets, packed);
+            return;
+        }
+
         if (layer._pointwise) gemm.PackBRows(input + n0, planeOut, layer._k, columns, packed);
         else layer.PackPatches(input, layer.CinPerGroup, x[2], x[3], ow, n0, columns, packed);
         float* output = step.Output;
@@ -200,6 +238,57 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         var epilogue = new Epilogue(layer.Activation, layer.Alpha, layer.Beta, layer.HasResidual ? step.Input(1) + baseOffset : null);
         fixed (float* weights = layer._weights, bias = layer._bias)
             gemm.Multiply(layer._k, weights + (long)m0 * layer._k, rows, packed, columns, output + baseOffset, planeOut, bias + m0, null, epilogue);
+    }
+
+    /// <summary>
+    /// One tile of a convolution with a horizontal stride of 1, panel by panel. A panel whose pixels lie in one output
+    /// row and whose taps all read inside the input is not packed: each tap's NR values are a run of one input row, so
+    /// the kernel reads them where they are, at the tap's offset from the panel's first value. Packing such a panel
+    /// cost about as much as multiplying it for the detector's and recogniser's first convolutions, whose few output
+    /// channels use each packed value only 12 to 48 times. Panels at the edges and across the end of an output row are
+    /// packed as before. Both multiply the same values in the same order.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private void TileInPlace(Step step, float* input, int h, int w, int ow, int batch, int n0, int columns, int m0, int rows, int[] offsets, float* packed)
+    {
+        int nr = _gemm.NR;
+        int planeOut = step.OutputShape[2] * ow;
+        long baseOffset = (long)batch * Cout * planeOut + (long)m0 * planeOut + n0;
+        float* output = step.Output + baseOffset;
+        float* residual = HasResidual ? step.Input(1) + baseOffset : null;
+
+        // The first input row and column a panel's taps read must lie within these bounds for every tap to read inside.
+        int rowEnd = h - ((Kh - 1) * Dh);
+        int columnLast = w - ((Kw - 1) * Dw) - nr;
+        float* edge = stackalloc float[12 * 32];
+        fixed (float* weights = _weights, bias = _bias)
+        fixed (int* tapOffsets = offsets)
+        {
+            float* a = weights + (long)m0 * _k;
+            for (int j0 = 0; j0 < columns; j0 += nr)
+            {
+                int width = Math.Min(nr, columns - j0);
+                int n = n0 + j0;
+                int oy = n / ow, ox = n - oy * ow;
+                int iy = oy * Sh - Pt, ix = ox - Pl;
+                if (width == nr && ox + nr <= ow && iy >= 0 && iy < rowEnd && ix >= 0 && ix <= columnLast)
+                {
+                    _gemm.MultiplyDirect(_k, a, rows, input + (long)iy * w + ix, tapOffsets, output + j0, planeOut, bias + m0, edge);
+                }
+                else
+                {
+                    PackPatches(input, CinPerGroup, h, w, ow, n, width, packed);
+                    _gemm.Multiply(_k, a, rows, packed, width, output + j0, planeOut, bias + m0, null);
+                }
+            }
+        }
+
+        // The activation and the residual once for the tile, a block of rows at a time while it is still in the cache;
+        // each value is treated alone, so the result is the same as per panel.
+        var epilogue = new Epilogue(Activation, Alpha, Beta, residual);
+        if (epilogue.IsEmpty) return;
+        int mr = _gemm.MR;
+        for (int i = 0; i < rows; i += mr) epilogue.Apply(output + (nint)i * planeOut, planeOut, (nint)i * planeOut, Math.Min(mr, rows - i), columns);
     }
 
     /// <summary>
