@@ -245,6 +245,39 @@ public sealed class RuntimeTests
     }
 
     [Fact]
+    public void OutputsWrittenOverTheirInputsKeepTheirBits()
+    {
+        // A convolution's output may take the memory of a residual that dies with it. A one-input concatenation copies
+        // the model's input into the arena, where its memory can be taken; the same layers reading the model's input,
+        // whose memory is never written, must give the same bits.
+        var x = RandomTensor(21, 2, 64, 23, 37);
+        var residualOver = new GraphBuilder(4);
+        int copy = residualOver.Add(OpKind.Concat, [0], [1, 1, 1]);
+        int a = residualOver.Add(OpKind.Conv, [0], ConvInts(1, 1, act: ActivationKind.HardSwish), [1 / 6f, 0.5f], Weight([96, 64, 1, 1], 1), Weight([96], 2));
+        residualOver.Add(OpKind.Conv, [a, copy], ConvInts(1, 1, residual: true), [0, 0], Weight([64, 96, 1, 1], 3), Weight([64], 4));
+        var residualApart = new GraphBuilder(4);
+        a = residualApart.Add(OpKind.Conv, [0], ConvInts(1, 1, act: ActivationKind.HardSwish), [1 / 6f, 0.5f], Weight([96, 64, 1, 1], 1), Weight([96], 2));
+        residualApart.Add(OpKind.Conv, [a, 0], ConvInts(1, 1, residual: true), [0, 0], Weight([64, 96, 1, 1], 3), Weight([64], 4));
+
+        foreach (var (over, apart) in new[] { (residualOver, residualApart) })
+        {
+            foreach (var kernel in GemmKernel.Supported)
+            {
+                var model = OcrModel.FromDefinition(over.Model, kernel);
+                using (var context = new InferenceContext(1))
+                {
+                    var last = context.GetPlan(model, x.Shape).Steps[^1];
+                    Assert.Equal(last.InputLocations[^1], last.OutputLocation);
+                }
+
+                float[] expected = apart.Run(x, kernel, degree: 1).Span.ToArray();
+                foreach (int degree in new[] { 1, 3 })
+                    Assert.True(expected.AsSpan().SequenceEqual(over.Run(x, kernel, degree).Span), $"{kernel.Name} with {degree} threads");
+            }
+        }
+    }
+
+    [Fact]
     public void LayersAreDeterministicAcrossDegrees()
     {
         // The detector and recogniser above cover the layers they use at their shapes; this covers the tiling of a
