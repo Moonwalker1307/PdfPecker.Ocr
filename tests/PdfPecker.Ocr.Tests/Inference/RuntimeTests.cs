@@ -312,6 +312,34 @@ public sealed class RuntimeTests
     }
 
     [Fact]
+    public void AnOutputNeverTakesMemoryThatAnotherInputReads()
+    {
+        // The residual dies at the convolution, but a view of the same memory is its other input: writing over the
+        // residual would overwrite what the matrix product still reads. The plan must give the output memory of its own.
+        var x = RandomTensor(22, 2, 64, 23, 37);
+        var shared = new GraphBuilder(4);
+        int copy = shared.Add(OpKind.Concat, [0], [1, 1, 1]);
+        int view = shared.Add(OpKind.Reshape, [copy], [0, 0, 0, 0]);
+        shared.Add(OpKind.Conv, [view, copy], ConvInts(1, 1, residual: true), [0, 0], Weight([64, 64, 1, 1], 7), Weight([64], 8));
+        var apart = new GraphBuilder(4);
+        apart.Add(OpKind.Conv, [0, 0], ConvInts(1, 1, residual: true), [0, 0], Weight([64, 64, 1, 1], 7), Weight([64], 8));
+
+        foreach (var kernel in GemmKernel.Supported)
+        {
+            var model = OcrModel.FromDefinition(shared.Model, kernel);
+            using (var context = new InferenceContext(1))
+            {
+                var last = context.GetPlan(model, x.Shape).Steps[^1];
+                Assert.NotEqual(last.InputLocations[1], last.OutputLocation);
+            }
+
+            float[] expected = apart.Run(x, kernel, degree: 1).Span.ToArray();
+            foreach (int degree in new[] { 1, 3 })
+                Assert.True(expected.AsSpan().SequenceEqual(shared.Run(x, kernel, degree).Span), $"{kernel.Name} with {degree} threads");
+        }
+    }
+
+    [Fact]
     public void LayersAreDeterministicAcrossDegrees()
     {
         // The detector and recogniser above cover the layers they use at their shapes; this covers the tiling of a

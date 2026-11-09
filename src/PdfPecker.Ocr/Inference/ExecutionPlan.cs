@@ -197,8 +197,13 @@ internal sealed class ExecutionPlan
             {
                 int v = read[candidate];
                 int root = Find(v, out long at);
-                bool usedTwice = read.Count(x => x == v) > 1;
-                if (root != 0 && at == 0 && end[root] == i && !usedTwice && sizes[v] == sizes[output] && sizes[root] == sizes[output])
+                // No other input may lie in the candidate's memory, as the same value, a view of it or a value placed in
+                // it: the layer would read what it has already written over. Convolutions write over their residual, so
+                // a graph that also reads that memory as its other input must not get it.
+                bool shared = false;
+                for (int j = 0; j < read.Length; j++)
+                    if (j != candidate && Find(read[j], out _) == root) shared = true;
+                if (root != 0 && at == 0 && end[root] == i && !shared && sizes[v] == sizes[output] && sizes[root] == sizes[output])
                 {
                     Join(output, root, 0);
                     continue;
