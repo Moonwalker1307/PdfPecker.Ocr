@@ -140,16 +140,20 @@ static class Stages
     {
         var renderer = PdfRenderer.Open(pdf);
         using var context = new InferenceContext(threads);
-        var det = new TimedNetwork(new ModelNetwork(ModelStore.Detection, context));
-        var rec = new TimedNetwork(new ModelNetwork(ModelStore.Recognition, context));
+        // The page is gray, so the engine's detector runs on one plane (DetectionGray); the colour network is there for a
+        // colour page, and both are timed.
+        var det = new TimedNetwork(new ModelNetwork(ModelStore.DetectionGray, context));
+        var detColour = new TimedNetwork(new ModelNetwork(ModelStore.Detection, context));
+        var rec = new TimedNetwork(new ModelNetwork(ModelStore.RecognitionArgMax, context));
         var cls = new TimedNetwork(new ModelNetwork(ModelStore.Classifier, context));
         var options = new OcrOptions { MaxDegreeOfParallelism = threads };
-        var pipeline = new OcrPipeline(det, rec, cls, OcrEngine.Characters, OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(options));
+        var pipeline = new OcrPipeline(detColour, rec, cls, OcrEngine.Characters, OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(options), det, context);
         string[] names = ["render to pixels (PdfRenderer)", "detection", "  of which the network", "orientation (classifier network)", "recognition (crops, network, CTC)", "  of which the network", "layout (reading order, OcrPage)", "total"];
         var times = names.Select(n => (n, new List<double>())).ToList();
         for (int i = 0; i <= runs; i++)
         {
             det.Reset();
+            detColour.Reset();
             rec.Reset();
             cls.Reset();
             long t = Stopwatch.GetTimestamp();
@@ -165,7 +169,7 @@ static class Stages
             double layout = Lap(ref t);
             raster.Pixels.Dispose();
             if (i == 0) continue; // the first pass warms this context's plans and buffers
-            double[] values = [render, detection, det.Milliseconds, cls.Milliseconds, recognition - cls.Milliseconds, rec.Milliseconds, layout, render + detection + recognition + layout];
+            double[] values = [render, detection, det.Milliseconds + detColour.Milliseconds, cls.Milliseconds, recognition - cls.Milliseconds, rec.Milliseconds, layout, render + detection + recognition + layout];
             for (int k = 0; k < values.Length; k++) times[k].Item2.Add(values[k]);
         }
 

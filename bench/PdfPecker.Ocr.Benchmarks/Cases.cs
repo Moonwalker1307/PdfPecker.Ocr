@@ -66,11 +66,12 @@ static class Cases
         var context = new PdfPecker.Ocr.Inference.InferenceContext(threads);
         var pipeline = new PdfPecker.Ocr.Layout.OcrPipeline(
             new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.Detection, context),
-            new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.Recognition, context),
+            new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.RecognitionArgMax, context),
             new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.Classifier, context),
             PdfPecker.Ocr.Layout.OcrEngine.Characters,
             PdfPecker.Ocr.Layout.OcrEngine.DetectionOptions,
-            PdfPecker.Ocr.Layout.OcrEngine.RecognitionOptions(new OcrOptions()));
+            PdfPecker.Ocr.Layout.OcrEngine.RecognitionOptions(new OcrOptions()),
+            new PdfPecker.Ocr.Inference.ModelNetwork(PdfPecker.Ocr.Models.ModelStore.DetectionGray, context));
         var quads = pipeline.Detector.Detect(new PdfPecker.Ocr.Detection.PixelView(dp, dw, dh, 1));
         yield return new BenchCase($"detection (300 dpi page, {threads}t)", () => pipeline.Detector.Detect(new PdfPecker.Ocr.Detection.PixelView(dp, dw, dh, 1)), (long)dw * dh, MinRuns: 3);
         yield return new BenchCase($"orientation + recognition ({quads.Count} lines, {threads}t)", () => pipeline.Recognizer.Recognize(new PdfPecker.Ocr.Detection.PixelView(dp, dw, dh, 1), quads), (long)dw * dh, MinRuns: 3);

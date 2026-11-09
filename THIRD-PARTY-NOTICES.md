@@ -9,15 +9,15 @@ separately and carries its own notices; none of its code is copied into this pac
 
 ## PaddleOCR models, as packaged by RapidOCR 3.10.0 (Apache License 2.0)
 
-`src/PdfPecker.Ocr/Models/det.bin.br`, `rec.bin.br` and `cls.bin.br` are converted from these ONNX files in the
+`src/PdfPecker.Ocr/Models/det.bin.deflate`, `rec.bin.deflate` and `cls.bin.deflate` are converted from these ONNX files in the
 [rapidocr 3.10.0](https://pypi.org/project/rapidocr/3.10.0/) wheel (`rapidocr-3.10.0-py3-none-any.whl`, SHA-256
 `2fc34e26cd0f48514804a94f8832283039c7334076bff60768b1fed9ad068050`):
 
 | PdfPecker.Ocr file | File in the wheel | Upstream model | SHA-256 of the ONNX file |
 | --- | --- | --- | --- |
-| `det.bin.br` | `rapidocr/models/PP-OCRv6_det_small.onnx` | PP-OCRv6_small_det | `090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f` |
-| `rec.bin.br` | `rapidocr/models/PP-OCRv6_rec_small.onnx` | PP-OCRv6_small_rec | `6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884` |
-| `cls.bin.br` | `rapidocr/models/ch_ppocr_mobile_v2.0_cls_mobile.onnx` | ch_ppocr_mobile_v2.0_cls | `e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c` |
+| `det.bin.deflate` | `rapidocr/models/PP-OCRv6_det_small.onnx` | PP-OCRv6_small_det | `090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f` |
+| `rec.bin.deflate` | `rapidocr/models/PP-OCRv6_rec_small.onnx` | PP-OCRv6_small_rec | `6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884` |
+| `cls.bin.deflate` | `rapidocr/models/ch_ppocr_mobile_v2.0_cls_mobile.onnx` | ch_ppocr_mobile_v2.0_cls | `e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c` |
 
 The upstream model weights are copyright Baidu and/or the applicable PaddleOCR rights holders; the ONNX conversions
 were made by the RapidOCR Authors. Both are licensed under the Apache License, Version 2.0, reproduced below.

@@ -13,12 +13,26 @@ internal static class ModelStore
     private static readonly Lazy<OcrModel> s_detection = new(() => Load("det"));
     private static readonly Lazy<OcrModel> s_recognition = new(() => Load("rec"));
     private static readonly Lazy<OcrModel> s_classifier = new(() => Load("cls"));
+    private static readonly Lazy<OcrModel> s_recognitionArgMax = new(() => Recognition.WithArgMaxOutput());
+    private static readonly Lazy<OcrModel> s_detectionGray = new(() => Detection.WithGrayInput());
 
     /// <summary>The text detector: input [N, 3, H, W] with H and W multiples of 32, output the text probability [N, 1, H, W].</summary>
     public static OcrModel Detection => s_detection.Value;
 
+    /// <summary>
+    /// The text detector on a gray page: input [N, 1, H, W], the one plane that stands for the three equal colour planes
+    /// (see <see cref="OcrModel.WithGrayInput"/>), output as <see cref="Detection"/>'s, bit for bit. It shares its layers.
+    /// </summary>
+    public static OcrModel DetectionGray => s_detectionGray.Value;
+
     /// <summary>The line recogniser: input [N, 3, 48, W], output [N, W / 8, classes], a softmax over <see cref="Characters"/>.</summary>
     public static OcrModel Recognition => s_recognition.Value;
+
+    /// <summary>
+    /// The line recogniser with the output greedy decoding reads, [N, W / 8, 2]: the most probable class at each time
+    /// step and its probability (see <see cref="OcrModel.WithArgMaxOutput"/>). It shares the recogniser's layers.
+    /// </summary>
+    public static OcrModel RecognitionArgMax => s_recognitionArgMax.Value;
 
     /// <summary>The 0/180 degree line classifier: input [N, 3, 48, W] (rapidocr uses W = 192), output [N, 2] probabilities.</summary>
     public static OcrModel Classifier => s_classifier.Value;
@@ -32,12 +46,20 @@ internal static class ModelStore
     /// <summary>Loads a bundled model by its short name (det, rec or cls).</summary>
     internal static OcrModel Load(string name)
     {
-        string resource = "PdfPecker.Ocr.Models." + name + ".bin.br";
+        using var data = Inflate(name);
+        return OcrModel.Load(data.GetBuffer().AsSpan(0, (int)data.Length));
+    }
+
+    /// <summary>The model file of a bundled model, inflated; the model data is the stream's buffer up to its length.</summary>
+    internal static MemoryStream Inflate(string name)
+    {
+        string resource = "PdfPecker.Ocr.Models." + name + ".bin.deflate";
         using var stream = typeof(ModelStore).Assembly.GetManifestResourceStream(resource)
             ?? throw new InvalidOperationException($"The model resource {resource} is missing from the assembly.");
-        using var brotli = new BrotliStream(stream, CompressionMode.Decompress);
-        using var data = new MemoryStream(capacity: (int)Math.Min(stream.Length * 2, int.MaxValue));
-        brotli.CopyTo(data);
-        return OcrModel.Load(data.GetBuffer().AsSpan(0, (int)data.Length));
+        using var deflate = new DeflateStream(stream, CompressionMode.Decompress);
+        // The files inflate to less than twice their size, so the buffer is allocated once.
+        var data = new MemoryStream(capacity: (int)Math.Min(stream.Length * 2, int.MaxValue));
+        deflate.CopyTo(data);
+        return data;
     }
 }

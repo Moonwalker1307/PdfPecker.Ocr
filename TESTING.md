@@ -116,7 +116,11 @@ orientation, recognition and layout:
 
 ```
 dotnet run -c Release --project bench/PdfPecker.Ocr.Benchmarks -p:OcrInternals=true -- stages --threads 1 --runs 5
+dotnet run -c Release --project bench/PdfPecker.Ocr.Benchmarks -p:OcrInternals=true -- layers --threads 1 --top 20
 ```
+
+`layers` runs the networks on the inputs the engine gives them for that page, one step of the execution plan at a time, and
+lists the layers that take the most time with their share, so an optimisation starts where the time goes.
 
 To check a change of your own, run both versions in turns on one machine:
 

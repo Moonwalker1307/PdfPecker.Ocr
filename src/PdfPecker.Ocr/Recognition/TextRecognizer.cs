@@ -1,5 +1,6 @@
 using System.Buffers;
 using PdfPecker.Ocr.Detection;
+using PdfPecker.Ocr.Inference;
 
 namespace PdfPecker.Ocr.Recognition;
 
@@ -19,13 +20,19 @@ internal sealed class TextRecognizer
 
     private readonly INetwork _recognition;
     private readonly OrientationClassifier? _orientation;
+    private readonly CropBatch _batch;
 
-    public TextRecognizer(INetwork recognition, INetwork? orientation, CharacterSet characters, RecognitionOptions? options = null)
+    /// <summary>
+    /// A recogniser whose networks run in <paramref name="context"/>, if given, whose threads then also sample the
+    /// line crops.
+    /// </summary>
+    public TextRecognizer(INetwork recognition, INetwork? orientation, CharacterSet characters, RecognitionOptions? options = null, InferenceContext? context = null)
     {
         _recognition = recognition;
         Characters = characters;
         Options = options ?? new RecognitionOptions();
-        _orientation = orientation is null ? null : new OrientationClassifier(orientation, Options);
+        _orientation = orientation is null ? null : new OrientationClassifier(orientation, Options, context);
+        _batch = new CropBatch(context);
     }
 
     public CharacterSet Characters { get; }
@@ -109,13 +116,16 @@ internal sealed class TextRecognizer
         {
             Span<float> tensor = input.AsSpan(0, length);
             tensor.Clear();
+            _batch.Clear();
             for (int k = 0; k < n; k++)
             {
                 LineCrop crop = crops[members[k]];
                 double ratio = crop.AspectRatio;
                 resized[k] = Math.Clamp((int)Math.Ceiling(InputHeight * ratio), 1, width);
-                crop.Sample(page, tensor.Slice(k * 3 * plane), plane, width, resized[k], InputHeight, 0, crop.CropWidth);
+                _batch.Add(crop, resized[k], 0, crop.CropWidth);
             }
+
+            _batch.Sample(page, tensor, plane, width, InputHeight);
 
             ReadOnlySpan<float> output = _recognition.Run(tensor, [n, 3, InputHeight, width], out int[] shape);
             if (shape.Length != 3 || shape[0] != n || shape[1] <= 0 || (long)shape[0] * shape[1] * shape[2] > output.Length)

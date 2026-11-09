@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -37,6 +38,29 @@ internal abstract class ConvLayer : Layer
             throw new InvalidDataException("Bad convolution attributes.");
         if (Weight(node, model, 1).Data.Length != Cout) throw new InvalidDataException("Convolution bias does not match.");
         if (node.Inputs.Length != (HasResidual ? 2 : 1)) throw new InvalidDataException("Convolution has the wrong number of inputs.");
+    }
+
+    /// <summary>A copy of another convolution's attributes, for a variant of a loaded layer.</summary>
+    protected ConvLayer(ConvLayer source)
+        : base(source.Node)
+    {
+        Kh = source.Kh;
+        Kw = source.Kw;
+        Sh = source.Sh;
+        Sw = source.Sw;
+        Dh = source.Dh;
+        Dw = source.Dw;
+        Pt = source.Pt;
+        Pl = source.Pl;
+        Pb = source.Pb;
+        Pr = source.Pr;
+        Group = source.Group;
+        Activation = source.Activation;
+        HasResidual = source.HasResidual;
+        Alpha = source.Alpha;
+        Beta = source.Beta;
+        Cout = source.Cout;
+        CinPerGroup = source.CinPerGroup;
     }
 
     protected int Kh { get; }
@@ -92,6 +116,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     private readonly float[] _bias;
     private readonly bool _pointwise;
     private readonly int _k;
+    private readonly bool _broadcast;
 
     public GemmConvLayer(NodeDefinition node, ModelDefinition model, GemmKernel gemm)
         : base(node, model)
@@ -101,6 +126,37 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         _weights = gemm.PackA(Weight(node, model, 0).Data, Cout, _k);
         _bias = gemm.PadBias(Weight(node, model, 1).Data, Cout);
         _pointwise = Kh == 1 && Kw == 1 && Sh == 1 && Sw == 1 && Pt == 0 && Pl == 0 && Pb == 0 && Pr == 0;
+    }
+
+    private GemmConvLayer(GemmConvLayer source)
+        : base(source)
+    {
+        _gemm = source._gemm;
+        _k = source._k;
+        _weights = source._weights;
+        _bias = source._bias;
+        _pointwise = source._pointwise;
+        _broadcast = true;
+    }
+
+    /// <summary>True when <see cref="WithBroadcastInput"/> can make a variant of this layer.</summary>
+    public bool CanBroadcastInput => !_pointwise && !_broadcast && !HasResidual;
+
+    /// <summary>
+    /// The same convolution on a one-channel input that stands for its every input channel: a gray page's three equal
+    /// colour planes. Each tap reads the one plane where it would read its channel's, so the products and their order
+    /// are the same and so is every bit of the output, without the two copies of the plane. The weights are shared.
+    /// </summary>
+    public GemmConvLayer WithBroadcastInput() =>
+        CanBroadcastInput ? new GemmConvLayer(this) : throw new InvalidOperationException("This convolution cannot read a broadcast input.");
+
+    public override int[] OutputShape(int[][] inputs)
+    {
+        if (!_broadcast) return base.OutputShape(inputs);
+        var x = inputs[0];
+        RequireRank(x, 4, "Convolution");
+        if (x[1] != 1) throw Unsupported($"Convolution expects one channel, got {x[1]}.");
+        return base.OutputShape([[x[0], CinPerGroup, x[2], x[3]]]);
     }
 
     /// <summary>The columns of one tile: the packed tile stays around a quarter of a megabyte.</summary>
@@ -137,7 +193,7 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
         float* input = step.Input(0) + (long)n * x[1] * x[2] * x[3];
         float* packed = step.Context.Scratch(worker);
         if (layer._pointwise) gemm.PackBRows(input + n0, planeOut, layer._k, columns, packed);
-        else layer.PackPatches(input, x[1], x[2], x[3], ow, n0, columns, packed);
+        else layer.PackPatches(input, layer.CinPerGroup, x[2], x[3], ow, n0, columns, packed);
         float* output = step.Output;
         long baseOffset = (long)n * layer.Cout * planeOut + (long)m0 * planeOut + n0;
         var epilogue = new Epilogue(layer.Activation, layer.Alpha, layer.Beta, layer.HasResidual ? step.Input(1) + baseOffset : null);
@@ -148,80 +204,135 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
     /// <summary>
     /// Gathers the patches of output pixels [n0, n0 + columns) into NR-column panels: row (ci, ky, kx) of a panel holds
     /// the input value each output pixel's kernel tap reads, or zero in the padding. Panels are filled one after the
-    /// other, so the writes are sequential; within a panel, the pixels of one output row read one run of an input row
-    /// per tap, contiguous for stride 1 and every Sw-th value otherwise.
+    /// other. A panel's pixels split into runs that each lie in one output row (usually one run for the whole panel),
+    /// and each run fills its part of every row of the panel from one run of an input row per tap, contiguous for
+    /// stride 1 and every Sw-th value otherwise. Looping over the taps inside a run keeps the run's position in
+    /// registers: the bookkeeping per tap, not the copying, was most of the packing time.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void PackPatches(float* input, int channels, int h, int w, int ow, int n0, int columns, float* packed)
     {
         int nr = _gemm.NR;
         int k = _k;
-        // A panel's pixels split into at most nr runs that each lie in one output row.
-        int* runStart = stackalloc int[nr];
-        int* runLength = stackalloc int[nr];
-        int* runY = stackalloc int[nr];
-        int* runX = stackalloc int[nr];
+        int kh = Kh, kw = Kw, sw = Sw, dh = Dh, dw = Dw;
+        long planeSize = _broadcast ? 0 : (long)h * w;
         for (int j0 = 0; j0 < columns; j0 += nr)
         {
             int width = Math.Min(nr, columns - j0);
-            int runs = 0;
+            float* panel = packed + (long)j0 * k;
             for (int t = 0; t < width;)
             {
                 int n = n0 + j0 + t;
                 int oy = n / ow, ox = n - oy * ow;
                 int length = Math.Min(ow - ox, width - t);
-                runStart[runs] = t;
-                runLength[runs] = length;
-                runY[runs] = oy * Sh - Pt;
-                runX[runs] = ox * Sw - Pl;
-                runs++;
-                t += length;
-            }
-            float* dst = packed + (long)j0 * k;
-            for (int ci = 0; ci < channels; ci++)
-            {
-                float* plane = input + (long)ci * h * w;
-                for (int ky = 0; ky < Kh; ky++)
+                int y0 = oy * Sh - Pt, x0 = ox * sw - Pl;
+                float* dst = panel + t;
+                float* plane = input;
+                for (int ci = 0; ci < channels; ci++, plane += planeSize)
                 {
-                    for (int kx = 0; kx < Kw; kx++, dst += nr)
+                    for (int ky = 0, iy = y0; ky < kh; ky++, iy += dh)
                     {
-                        for (int r = 0; r < runs; r++)
+                        if ((uint)iy >= (uint)h)
                         {
-                            float* d = dst + runStart[r];
-                            int length = runLength[r];
-                            int iy = runY[r] + ky * Dh;
-                            if ((uint)iy >= (uint)h)
-                            {
-                                new Span<float>(d, length).Clear();
-                                continue;
-                            }
-                            float* row = plane + (long)iy * w;
-                            int ix = runX[r] + kx * Dw;
-                            if (Sw == 1 && ix >= 0 && ix + length <= w)
-                            {
-                                Unsafe.CopyBlockUnaligned(d, row + ix, (uint)(length * sizeof(float)));
-                            }
-                            else if (ix >= 0 && ix + (length - 1) * Sw < w)
-                            {
-                                if (Sw == 2)
-                                {
-                                    VectorMath.CopyEven(row + ix, d, length);
-                                }
-                                else
-                                {
-                                    float* s = row + ix;
-                                    for (int t = 0; t < length; t++, s += Sw) d[t] = *s;
-                                }
-                            }
-                            else
-                            {
-                                for (int t = 0; t < length; t++, ix += Sw) d[t] = (uint)ix < (uint)w ? row[ix] : 0f;
-                            }
+                            for (int kx = 0; kx < kw; kx++, dst += nr) new Span<float>(dst, length).Clear();
+                            continue;
                         }
-                        if (width < nr) new Span<float>(dst + width, nr - width).Clear();
+
+                        float* row = plane + (long)iy * w;
+                        for (int kx = 0, ix = x0; kx < kw; kx++, ix += dw, dst += nr) CopyTap(row, w, ix, sw, dst, length);
                     }
                 }
+
+                t += length;
             }
+
+            if (width < nr)
+            {
+                for (int r = 0; r < k; r++) new Span<float>(panel + (long)r * nr + width, nr - width).Clear();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes the values of one tap for a run of <paramref name="length"/> output pixels: row[ix], row[ix + sw], ...,
+    /// with zeros where the run reaches into the padding.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void CopyTap(float* row, int w, int ix, int sw, float* dst, int length)
+    {
+        if (sw == 1)
+        {
+            if (ix >= 0 && ix + length <= w)
+            {
+                CopyRun(row + ix, dst, length);
+                return;
+            }
+
+            // Zeros before the row's start and after its end, the row's values in between.
+            int lead = Math.Clamp(-ix, 0, length);
+            int end = Math.Clamp(w - ix, lead, length);
+            for (int t = 0; t < lead; t++) dst[t] = 0f;
+            if (end > lead) CopyRun(row + ix + lead, dst + lead, end - lead);
+            for (int t = end; t < length; t++) dst[t] = 0f;
+            return;
+        }
+
+        if (ix >= 0 && ix + (length - 1) * sw < w)
+        {
+            if (sw == 2)
+            {
+                VectorMath.CopyEven(row + ix, dst, length);
+            }
+            else
+            {
+                float* s = row + ix;
+                for (int t = 0; t < length; t++, s += sw) dst[t] = *s;
+            }
+
+            return;
+        }
+
+        for (int t = 0; t < length; t++, ix += sw) dst[t] = (uint)ix < (uint)w ? row[ix] : 0f;
+    }
+
+    /// <summary>
+    /// Copies a run of at most a panel's width. A whole panel row, the usual run, is two vectors of the widest size the
+    /// panel width allows; other runs take whole vectors, the last one overlapping the one before when the length is
+    /// not a multiple. Both take far fewer instructions than a call to the block copy at these lengths.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void CopyRun(float* src, float* dst, int length)
+    {
+        if (length == 32 && Vector512.IsHardwareAccelerated)
+        {
+            Vector512.Store(Vector512.Load(src), dst);
+            Vector512.Store(Vector512.Load(src + 16), dst + 16);
+        }
+        else if (length == 16 && Vector256.IsHardwareAccelerated)
+        {
+            Vector256.Store(Vector256.Load(src), dst);
+            Vector256.Store(Vector256.Load(src + 8), dst + 8);
+        }
+        else if (length == 8 && Vector128.IsHardwareAccelerated)
+        {
+            Vector128.Store(Vector128.Load(src), dst);
+            Vector128.Store(Vector128.Load(src + 4), dst + 4);
+        }
+        else if (Vector256.IsHardwareAccelerated && length >= 8)
+        {
+            int t = 0;
+            for (; t <= length - 8; t += 8) Vector256.Store(Vector256.Load(src + t), dst + t);
+            if (t < length) Vector256.Store(Vector256.Load(src + length - 8), dst + length - 8);
+        }
+        else if (Vector128.IsHardwareAccelerated && length >= 4)
+        {
+            int t = 0;
+            for (; t <= length - 4; t += 4) Vector128.Store(Vector128.Load(src + t), dst + t);
+            if (t < length) Vector128.Store(Vector128.Load(src + length - 4), dst + length - 4);
+        }
+        else
+        {
+            for (int t = 0; t < length; t++) dst[t] = src[t];
         }
     }
 }
@@ -234,6 +345,9 @@ internal sealed unsafe class GemmConvLayer : ConvLayer
 internal sealed unsafe class DepthwiseConvLayer : ConvLayer
 {
     private static readonly int Width = Vector<float>.Count;
+
+    // The slack after each padded row, enough for a 512-bit read that starts at the last pixel.
+    private const int Slack = 16;
     private readonly float[] _weights;
     private readonly float[] _bias;
 
@@ -253,13 +367,13 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
     }
 
     /// <summary>The length of one padded input row in scratch, including vector slack.</summary>
-    private int RowLength(int ow) => Sw == 1 ? ow + Kw - 1 + Width : 2 * (ow + (Kw + 1) / 2 + Width);
+    private int RowLength(int ow) => Sw == 1 ? ow + Kw - 1 + Slack : 2 * (ow + (Kw + 1) / 2 + Slack);
 
     public override long ScratchPerWorker(Step step, InferenceContext context)
     {
         int band = BandRows(step.OutputShape);
         int rows = (band - 1) * Sh + Kh;
-        return (long)rows * RowLength(step.OutputShape[3]) + Width;
+        return (long)rows * RowLength(step.OutputShape[3]) + Slack;
     }
 
     public override void Execute(Step step, InferenceContext context)
@@ -327,7 +441,7 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
         {
             float* outRow = output + (long)y * ow;
             float* rows = scratch + (long)(y * Sh - Pt - iyStart) * rowLength;
-            int ox = 0;
+            int ox = VectorMath.Wide ? ComputeWide(rows, rowLength, half, taps, _bias[c], outRow, ow) : 0;
             // Four vectors of pixels at a time: four independent sums hide the latency of the additions, and each tap is
             // broadcast once for all four. Every pixel still sums its taps in the same order as in the loop below.
             for (; ox + 4 * Width <= ow; ox += 4 * Width)
@@ -385,6 +499,57 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
             }
             if (HasResidual) VectorMath.AddInPlace(outRow, step.Input(1) + outOffset + (long)y * ow, ow);
         }
+    }
+
+    /// <summary>
+    /// The leading whole 512-bit vectors of one output row, for processors with AVX-512, where Vector&lt;T&gt; stays 256
+    /// bits wide; returns how many pixels it did. Each pixel sums its taps in the same order, with the same separate
+    /// products and sums, as the loops of <see cref="Compute"/>, and the wide activation matches the narrow one lane
+    /// for lane, so the results do not depend on which loop a pixel lands in.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private int ComputeWide(float* rows, int rowLength, int half, float* taps, float biasValue, float* outRow, int ow)
+    {
+        var bias = Vector512.Create(biasValue);
+        int ox = 0;
+        for (; ox + 64 <= ow; ox += 64)
+        {
+            Vector512<float> a0 = bias, a1 = bias, a2 = bias, a3 = bias;
+            for (int ky = 0; ky < Kh; ky++)
+            {
+                float* row = rows + (long)ky * rowLength;
+                float* tap = taps + ky * Kw;
+                for (int kx = 0; kx < Kw; kx++)
+                {
+                    float* src = Sw == 1 ? row + ox + kx : row + ((kx & 1) == 0 ? 0 : half) + ox + (kx >> 1);
+                    var t = Vector512.Create(tap[kx]);
+                    a0 += t * Vector512.Load(src);
+                    a1 += t * Vector512.Load(src + 16);
+                    a2 += t * Vector512.Load(src + 32);
+                    a3 += t * Vector512.Load(src + 48);
+                }
+            }
+            Vector512.Store(VectorMath.ActivateWide(a0, Activation, Alpha, Beta), outRow + ox);
+            Vector512.Store(VectorMath.ActivateWide(a1, Activation, Alpha, Beta), outRow + ox + 16);
+            Vector512.Store(VectorMath.ActivateWide(a2, Activation, Alpha, Beta), outRow + ox + 32);
+            Vector512.Store(VectorMath.ActivateWide(a3, Activation, Alpha, Beta), outRow + ox + 48);
+        }
+        for (; ox + 16 <= ow; ox += 16)
+        {
+            var acc = bias;
+            for (int ky = 0; ky < Kh; ky++)
+            {
+                float* row = rows + (long)ky * rowLength;
+                float* tap = taps + ky * Kw;
+                for (int kx = 0; kx < Kw; kx++)
+                {
+                    float* src = Sw == 1 ? row + ox + kx : row + ((kx & 1) == 0 ? 0 : half) + ox + (kx >> 1);
+                    acc += Vector512.Create(tap[kx]) * Vector512.Load(src);
+                }
+            }
+            Vector512.Store(VectorMath.ActivateWide(acc, Activation, Alpha, Beta), outRow + ox);
+        }
+        return ox;
     }
 }
 

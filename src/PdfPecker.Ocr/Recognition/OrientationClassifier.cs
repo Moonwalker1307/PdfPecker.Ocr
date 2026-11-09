@@ -1,5 +1,6 @@
 using System.Buffers;
 using PdfPecker.Ocr.Detection;
+using PdfPecker.Ocr.Inference;
 
 namespace PdfPecker.Ocr.Recognition;
 
@@ -28,11 +29,14 @@ internal sealed class OrientationClassifier
     public const int InputWidth = 192;
 
     private readonly INetwork _network;
+    private readonly CropBatch _batch;
 
-    public OrientationClassifier(INetwork network, RecognitionOptions options)
+    /// <summary>A classifier whose crops are sampled on the threads of <paramref name="context"/>, if given.</summary>
+    public OrientationClassifier(INetwork network, RecognitionOptions options, InferenceContext? context = null)
     {
         _network = network;
         Options = options;
+        _batch = new CropBatch(context);
     }
 
     public RecognitionOptions Options { get; }
@@ -87,6 +91,7 @@ internal sealed class OrientationClassifier
                 int n = Math.Min(batch, windows.Count - start);
                 Span<float> tensor = input.AsSpan(0, n * 3 * plane);
                 tensor.Clear();
+                _batch.Clear();
                 for (int k = 0; k < n; k++)
                 {
                     (int c, double x, double width) = windows[start + k];
@@ -95,8 +100,10 @@ internal sealed class OrientationClassifier
                     // rapidocr's resize_norm_img: height 48, width ceil(48 * ratio) up to 192, zero padding after.
                     double ratio = width / crop.CropHeight;
                     int resized = Math.Clamp((int)Math.Ceiling(InputHeight * ratio), 1, InputWidth);
-                    crop.Sample(page, tensor.Slice(k * 3 * plane), plane, InputWidth, resized, InputHeight, x, width);
+                    _batch.Add(crop, resized, x, width);
                 }
+
+                _batch.Sample(page, tensor, plane, InputWidth, InputHeight);
 
                 ReadOnlySpan<float> output = _network.Run(tensor, [n, 3, InputHeight, InputWidth], out int[] shape);
                 if (shape.Length != 2 || shape[0] != n || shape[1] < 2)

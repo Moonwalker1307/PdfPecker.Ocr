@@ -52,6 +52,9 @@ internal sealed unsafe class Step(Layer layer, int[][] inputShapes, int[] output
     /// <summary>The tile split of a matrix-product layer for this step's shapes, made on first use.</summary>
     public Layers.Tiling? Tiling { get; set; }
 
+    /// <summary>Whatever else a layer keeps for this step between runs, made on first use.</summary>
+    public object? State { get; set; }
+
     public float* Input(int index) => Frame.Resolve(InputLocations[index]);
 
     public float* Output => Frame.Resolve(OutputLocation);
@@ -142,6 +145,7 @@ internal sealed class ExecutionPlan
             }
             return v;
         }
+        // Both are roots: the lifetimes and member counts that placement reads are kept on roots only.
         void Join(int child, int root, long at)
         {
             parent[child] = root;
@@ -158,7 +162,8 @@ internal sealed class ExecutionPlan
             int output = i + 1;
             if (layer.IsView)
             {
-                Join(output, node.Inputs[0], 0);
+                int root = Find(node.Inputs[0], out long at);
+                Join(output, root, at);
                 continue;
             }
             int candidate = layer.InPlaceInput(steps[i].InputShapes, steps[i].OutputShape);
@@ -175,16 +180,25 @@ internal sealed class ExecutionPlan
             }
             if (layer is Layers.ConcatLayer concat && concat.CanAliasInputs(steps[i]))
             {
+                // An input is written straight into its slice when it fills its memory alone: it owns it, or the
+                // values sharing it (a layer that wrote over it in place, a view) have exactly its size. Two inputs
+                // with the same memory cannot both move.
+                var sources = new int[node.Inputs.Length];
+                for (int j = 0; j < sources.Length; j++)
+                {
+                    int v = node.Inputs[j];
+                    int root = Find(v, out long at);
+                    sources[j] = root != 0 && at == 0 && sizes[root] == sizes[v] && concat.Factor(j) == (1, 1) ? root : -1;
+                }
                 long sliceOffset = 0;
                 for (int j = 0; j < node.Inputs.Length; j++)
                 {
-                    int v = node.Inputs[j];
-                    if (concat.Factor(j) == (1, 1) && v != 0 && parent[v] == v && members[v] == 1
-                        && node.Inputs.Count(x => x == v) == 1)
-                    {
-                        Join(v, output, sliceOffset);
-                    }
-                    sliceOffset += sizes[v];
+                    int root = sources[j];
+                    if (root > 0 && Array.IndexOf(sources, root) == j && Array.LastIndexOf(sources, root) == j)
+                        Join(root, output, sliceOffset);
+                    // An upsampled input's slice is larger than the input by its factors.
+                    var (fh, fw) = concat.Factor(j);
+                    sliceOffset += sizes[node.Inputs[j]] * fh * fw;
                 }
             }
         }

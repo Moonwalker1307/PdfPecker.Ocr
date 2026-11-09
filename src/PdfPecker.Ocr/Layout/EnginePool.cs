@@ -15,6 +15,7 @@ internal sealed class EngineWorker : IDisposable
 {
     private readonly InferenceContext _context;
     private readonly ModelNetwork _detection;
+    private readonly ModelNetwork _detectionGray;
     private readonly ModelNetwork _recognition;
     private readonly ModelNetwork _orientation;
     private OcrPipeline? _pipeline;
@@ -26,7 +27,8 @@ internal sealed class EngineWorker : IDisposable
         try
         {
             _detection = new ModelNetwork(ModelStore.Detection, _context);
-            _recognition = new ModelNetwork(ModelStore.Recognition, _context);
+            _detectionGray = new ModelNetwork(ModelStore.DetectionGray, _context);
+            _recognition = new ModelNetwork(ModelStore.RecognitionArgMax, _context);
             _orientation = new ModelNetwork(ModelStore.Classifier, _context);
         }
         catch
@@ -53,7 +55,7 @@ internal sealed class EngineWorker : IDisposable
     {
         if (_pipeline is null || _pipeline.Recognizer.Options != options)
         {
-            _pipeline = new OcrPipeline(_detection, _recognition, _orientation, OcrEngine.Characters, OcrEngine.DetectionOptions, options);
+            _pipeline = new OcrPipeline(_detection, _recognition, _orientation, OcrEngine.Characters, OcrEngine.DetectionOptions, options, _detectionGray, _context);
         }
 
         _context.CancellationToken = cancellationToken;

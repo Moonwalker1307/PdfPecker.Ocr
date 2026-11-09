@@ -61,7 +61,7 @@ public sealed class KernelTests
         get
         {
             var data = new TheoryData<string, string>();
-            string[] cases = ["pointwise", "pointwise-stride2", "stem3x3s2", "3x3", "3x3-dilated", "2x2-same", "1x7", "3x3-stride2x1", "5x5-asymmetric", "large-k"];
+            string[] cases = ["pointwise", "pointwise-stride2", "stem3x3s2", "3x3", "3x3-dilated", "2x2-same", "1x7", "3x3-stride2x1", "5x5-asymmetric", "3x3-stride2-wide", "large-k"];
             foreach (var kernel in GemmKernel.Supported)
                 foreach (string c in cases) data.Add(kernel.Name, c);
             return data;
@@ -84,6 +84,8 @@ public sealed class KernelTests
             "1x7" => (4, 6, 5, 40, 1, 7, 1, 1, 1, 1, 0, 3, 0, 3),
             "3x3-stride2x1" => (7, 5, 12, 21, 3, 3, 2, 1, 1, 1, 1, 1, 1, 1),
             "5x5-asymmetric" => (3, 4, 13, 11, 5, 5, 1, 2, 1, 1, 2, 1, 3, 0),
+            // Output rows of 38 pixels: whole panels of every kernel read with stride 2, and runs split across rows.
+            "3x3-stride2-wide" => (5, 13, 9, 75, 3, 3, 2, 2, 1, 1, 1, 1, 1, 1),
             _ => (96, 40, 7, 30, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1),
         };
         var x = RandomTensor(cin * 7 + h, 2, cin, h, w);
@@ -99,7 +101,7 @@ public sealed class KernelTests
 
     public static TheoryData<string> DepthwiseCases => new()
     {
-        "3x3", "3x3-stride2", "3x3-stride2x1", "5x5", "7x7", "1x7", "7x1-stride2", "3x3-asymmetric", "5x5-stride2-odd", "wide",
+        "3x3", "3x3-stride2", "3x3-stride2x1", "5x5", "7x7", "1x7", "7x1-stride2", "3x3-asymmetric", "5x5-stride2-odd", "wide", "wide-stride2",
     };
 
     [Theory]
@@ -117,6 +119,7 @@ public sealed class KernelTests
             "7x1-stride2" => (3, 21, 6, 7, 1, 2, 2, 3, 0, 3, 0),
             "3x3-asymmetric" => (4, 8, 9, 3, 3, 2, 2, 0, 0, 1, 1),
             "5x5-stride2-odd" => (3, 13, 15, 5, 5, 2, 2, 2, 2, 2, 2),
+            "wide-stride2" => (3, 7, 163, 5, 5, 2, 2, 2, 2, 2, 2),
             _ => (2, 5, 133, 3, 3, 1, 1, 1, 1, 1, 1),
         };
         var x = RandomTensor(c * 11 + w, 2, c, h, w);
@@ -230,6 +233,9 @@ public sealed class KernelTests
     [InlineData(false, 3, 3, 2, 2, 1, 1, 1, 1, false)]
     [InlineData(false, 3, 3, 2, 2, 1, 1, 1, 1, true)]
     [InlineData(false, 3, 2, 3, 2, 1, 0, 2, 1, true)]
+    [InlineData(false, 3, 2, 3, 2, 0, 0, 0, 0, false)]
+    [InlineData(true, 3, 3, 1, 1, 0, 0, 0, 0, false)]
+    [InlineData(false, 2, 3, 1, 2, 0, 0, 0, 0, false)]
     public void PoolingMatchesNaive(bool max, int kh, int kw, int sh, int sw, int pt, int pl, int pb, int pr, bool countIncludePad)
     {
         foreach (var (h, w) in new[] { (9, 13), (16, 40), (2, 3) })
@@ -261,15 +267,17 @@ public sealed class KernelTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void SqueezeExciteMatchesNaive(bool addInput)
+    [InlineData(false, 16, 4)]
+    [InlineData(true, 16, 4)]
+    [InlineData(false, 21, 5)]
+    [InlineData(true, 37, 10)]
+    public void SqueezeExciteMatchesNaive(bool addInput, int channels, int hidden)
     {
-        var x = RandomTensor(9, 2, 16, 9, 11);
-        var w1 = Weight([4, 16], 1);
-        var b1 = Weight([4], 2);
-        var w2 = Weight([16, 4], 3);
-        var b2 = Weight([16], 4);
+        var x = RandomTensor(9, 2, channels, 9, 11);
+        var w1 = Weight([hidden, channels], 1);
+        var b1 = Weight([hidden], 2);
+        var w2 = Weight([channels, hidden], 3);
+        var b2 = Weight([channels], 4);
         var graph = new GraphBuilder(4);
         graph.Add(OpKind.SqueezeExcite, [0], [(int)ActivationKind.Relu, (int)ActivationKind.HardSigmoid, addInput ? 1 : 0], [0, 0, 0.2f, 0.5f], w1, b1, w2, b2);
         var expected = TestModels.SqueezeExcite(x, w1.Data, b1.Data, w2.Data, b2.Data, ActivationKind.Relu, ActivationKind.HardSigmoid, 0.2f, 0.5f, addInput);
@@ -317,6 +325,52 @@ public sealed class KernelTests
         }
     }
 
+    [Fact]
+    public void AttentionIsThePlainLoopsBitForBit()
+    {
+        // The vectorised layer computes each score and output as the plain loops do, sum by sum in the same order, so
+        // the recogniser's results stay those of the scalar code it replaced.
+        foreach (var (n, t, c, heads) in new[] { (1, 1, 8, 1), (2, 40, 120, 8), (3, 7, 24, 3), (1, 33, 45, 3), (2, 200, 120, 8) })
+        {
+            var x = Tensor.FromBuffer(Random(n * t * 3 * c, t + c, 3f), n, t, 3 * c);
+            float scale = 1 / MathF.Sqrt(c / heads);
+            var graph = new GraphBuilder(3);
+            graph.Add(OpKind.Attention, [0], [heads], [scale]);
+            var result = graph.Run(x).Span;
+            int d = c / heads;
+            var expected = new float[n * t * c];
+            var scores = new float[t];
+            var q = new float[d];
+            var qkv = x.Span;
+            for (int b = 0; b < n; b++)
+            {
+                for (int h = 0; h < heads; h++)
+                {
+                    for (int t1 = 0; t1 < t; t1++)
+                    {
+                        for (int i = 0; i < d; i++) q[i] = qkv[(b * t + t1) * 3 * c + h * d + i] * scale;
+                        for (int t2 = 0; t2 < t; t2++)
+                        {
+                            float acc = 0f;
+                            for (int i = 0; i < d; i++) acc += q[i] * qkv[(b * t + t2) * 3 * c + c + h * d + i];
+                            scores[t2] = acc;
+                        }
+
+                        VectorMath.Softmax(scores);
+                        for (int i = 0; i < d; i++)
+                        {
+                            float acc = 0f;
+                            for (int t2 = 0; t2 < t; t2++) acc += scores[t2] * qkv[(b * t + t2) * 3 * c + 2 * c + h * d + i];
+                            expected[(b * t + t1) * c + h * d + i] = acc;
+                        }
+                    }
+                }
+            }
+
+            Assert.True(expected.AsSpan().SequenceEqual(result), $"attention {n}x{t}x{c}/{heads}");
+        }
+    }
+
     [Theory]
     [MemberData(nameof(Kernels))]
     public void ConcatOfConvolutionsWithUpsampling(string kernel)
@@ -358,6 +412,52 @@ public sealed class KernelTests
                 for (int xx = 0; xx < 12; xx++)
                     addExpected[(p * 8 + y) * 12 + xx] = x.Span[(p * 8 + y) * 12 + xx] + smallExpected[(p * 4 + y / 2) * 6 + xx / 2];
         AssertClose(addExpected, added.Span, Tolerance, "upsampled add");
+    }
+
+    [Fact]
+    public void StemPoolWritesOverItsInputInsideAConcatenation()
+    {
+        // The detector's stem: a 2x2, stride 1 maximum with bottom and right padding writes over the convolution it
+        // reads, and that memory and a second branch become slices of the concatenation without copies. An upsampled
+        // input before them checks that the slices after it start where its enlarged slice ends.
+        var x = RandomTensor(31, 1, 3, 10, 36);
+        var wa = Weight([4, 3, 1, 1], 1);
+        var ba = Weight([4], 2);
+        var wb = Weight([2, 4, 1, 1], 3);
+        var bb = Weight([2], 4);
+        var wc = Weight([4, 2, 1, 1], 5);
+        var bc = Weight([4], 6);
+        var ws = Weight([3, 3, 3, 3], 7);
+        var bs = Weight([3], 8);
+        var wf = Weight([5, 11, 1, 1], 9);
+        var bf = Weight([5], 10);
+        var graph = new GraphBuilder(4);
+        int a = graph.Add(OpKind.Conv, [0], ConvInts(1, 1), [0, 0], wa, ba);
+        int b = graph.Add(OpKind.Conv, [a], ConvInts(1, 1), [0, 0], wb, bb);
+        int c = graph.Add(OpKind.Conv, [b], ConvInts(1, 1), [0, 0], wc, bc);
+        int d = graph.Add(OpKind.MaxPool, [a], [2, 2, 1, 1, 0, 0, 1, 1, 0]);
+        int small = graph.Add(OpKind.Conv, [0], ConvInts(3, 3, 2, 2, pt: 1, pl: 1, pb: 1, pr: 1), [0, 0], ws, bs);
+        int concat = graph.Add(OpKind.Concat, [small, d, c], [1, 2, 2, 1, 1, 1, 1]);
+        graph.Add(OpKind.Conv, [concat], ConvInts(1, 1), [0, 0], wf, bf);
+
+        static Tensor ToTensor(double[] values, params int[] shape) => Tensor.FromBuffer(values.Select(v => (float)v).ToArray(), shape);
+        var ea = ToTensor(Conv(x, wa.Data, ba.Data, 4, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, ActivationKind.None, 0, 0, out _), 1, 4, 10, 36);
+        var eb = ToTensor(Conv(ea, wb.Data, bb.Data, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, ActivationKind.None, 0, 0, out _), 1, 2, 10, 36);
+        var ec = Conv(eb, wc.Data, bc.Data, 4, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, ActivationKind.None, 0, 0, out _);
+        var ed = Pool(ea, true, 2, 2, 1, 1, 0, 0, 1, 1, false);
+        var es = Conv(x, ws.Data, bs.Data, 3, 3, 3, 2, 2, 1, 1, 1, 1, 1, 1, 1, ActivationKind.None, 0, 0, out _);
+        var joined = new double[11 * 360];
+        for (int ch = 0; ch < 11; ch++)
+            for (int y = 0; y < 10; y++)
+                for (int xx = 0; xx < 36; xx++)
+                    joined[(ch * 10 + y) * 36 + xx] = ch < 3 ? es[(ch * 5 + y / 2) * 18 + xx / 2]
+                        : ch < 7 ? ed[((ch - 3) * 10 + y) * 36 + xx]
+                        : ec[((ch - 7) * 10 + y) * 36 + xx];
+        var expected = Conv(ToTensor(joined, 1, 11, 10, 36), wf.Data, bf.Data, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, ActivationKind.None, 0, 0, out _);
+
+        var one = graph.Run(x, degree: 1);
+        AssertClose(expected, one.Span, Tolerance, "stem");
+        Assert.True(one.Span.SequenceEqual(graph.Run(x, degree: 3).Span), "threads");
     }
 
     [Fact]

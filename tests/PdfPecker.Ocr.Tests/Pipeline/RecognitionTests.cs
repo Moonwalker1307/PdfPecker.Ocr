@@ -59,6 +59,38 @@ public sealed class RecognitionTests(ITestOutputHelper output)
         }
     }
 
+    [Theory]
+    [InlineData("invoice")]
+    [InlineData("table")]
+    public void BestClassOutputDecodesTheSame(string name)
+    {
+        // The engine's recogniser returns the best class and its probability per time step instead of every class.
+        using PipelineFixture fx = PipelineFixture.Load(name);
+        foreach (RecordedLine line in RecordedLine.Read(fx))
+        {
+            float[] p = line.Probabilities(Characters.Count);
+            var best = new float[line.Steps * 2];
+            for (int t = 0; t < line.Steps; t++)
+            {
+                (int index, float value) = CtcDecoder.ArgMax(p.AsSpan(t * Characters.Count, Characters.Count));
+                best[2 * t] = index;
+                best[(2 * t) + 1] = value;
+            }
+
+            DecodedLine all = CtcDecoder.Decode(p, line.Steps, Characters.Count, Characters);
+            DecodedLine fromBest = CtcDecoder.Decode(best, line.Steps, 2, Characters);
+            Assert.Equal(all.Text, fromBest.Text);
+            Assert.Equal(all.Score, fromBest.Score);
+            Assert.Equal(all.Columns, fromBest.Columns);
+            Assert.Equal(all.Probabilities, fromBest.Probabilities);
+        }
+
+        int[] latin = Characters.Subset(CharacterSet.IsLatin);
+        Assert.Throws<InvalidOperationException>(() => CtcDecoder.Decode(new float[4], 2, 2, Characters, latin));
+        Assert.Throws<InvalidOperationException>(() => CtcDecoder.Decode([Characters.Count, 1f], 1, 2, Characters));
+        Assert.Throws<InvalidOperationException>(() => CtcDecoder.Decode([float.NaN, 1f], 1, 2, Characters));
+    }
+
     [Fact]
     public void SubsetKeepsOnlyAllowedClasses()
     {
@@ -115,6 +147,33 @@ public sealed class RecognitionTests(ITestOutputHelper output)
             Assert.Equal(line.CropWidth, crop.CropWidth);
             Assert.Equal(line.CropHeight, crop.CropHeight);
         }
+    }
+
+    [Theory]
+    [InlineData("rotated")]
+    [InlineData("table")]
+    public void CropBatchOnThreadsIsTheCropsOneByOne(string name)
+    {
+        // The engine samples a batch's crops on the inference threads; each must come out as it does on its own.
+        using PipelineFixture fx = PipelineFixture.Load(name);
+        List<float[]> boxes = fx.Boxes("det_sorted_boxes");
+        var page = new PixelView(fx.Image(), fx.Width, fx.Height, fx.Channels);
+        var crops = boxes.Select((b, i) => new LineCrop(QuadMath.FromArray(b), i) { Rotated180 = i % 3 == 1 }).ToList();
+        const int width = 400, plane = 48 * width;
+        var expected = new float[crops.Count * 3 * plane];
+        var actual = new float[crops.Count * 3 * plane];
+        using var context = new PdfPecker.Ocr.Inference.InferenceContext(4);
+        var batch = new CropBatch(context);
+        for (int k = 0; k < crops.Count; k++)
+        {
+            int resized = Math.Clamp((int)Math.Ceiling(48 * crops[k].AspectRatio), 1, width);
+            double window = Math.Min(crops[k].CropWidth, 4.0 * crops[k].CropHeight);
+            crops[k].Sample(page, expected.AsSpan(k * 3 * plane), plane, width, resized, 48, k % 2, window - (k % 2));
+            batch.Add(crops[k], resized, k % 2, window - (k % 2));
+        }
+
+        batch.Sample(page, actual, plane, width, 48);
+        Assert.Equal(expected, actual);
     }
 
     [Theory]

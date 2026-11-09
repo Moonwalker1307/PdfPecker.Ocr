@@ -282,8 +282,8 @@ internal sealed class ModelDefinition
     private static void WriteWeightData(FormatWriter w, WeightDefinition weight)
     {
         float[] data = weight.Data;
-        // Byte planes put the slowly varying sign and exponent bytes of all values next to each other, which Brotli
-        // compresses far better than interleaved values.
+        // Byte planes put the slowly varying sign and exponent bytes of all values next to each other, which Deflate
+        // compresses better than interleaved values.
         switch (weight.Storage)
         {
             case WeightStorage.Float32:

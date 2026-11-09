@@ -1,6 +1,6 @@
 # ModelBuilder
 
-Writes `src/PdfPecker.Ocr/Models/det.bin.br`, `rec.bin.br` and `cls.bin.br`, the neural network models PdfPecker.Ocr
+Writes `src/PdfPecker.Ocr/Models/det.bin.deflate`, `rec.bin.deflate` and `cls.bin.deflate`, the neural network models PdfPecker.Ocr
 embeds, from the ONNX files in the [rapidocr 3.10.0](https://pypi.org/project/rapidocr/3.10.0/) wheel on PyPI. The
 generated files are never edited by hand; change this tool and run it again.
 
@@ -10,9 +10,15 @@ dotnet run -c Release --project tools/ModelBuilder -- [--wheel path] [--out dir]
 
 Without `--wheel` the wheel is downloaded once from files.pythonhosted.org into `pdfpecker-ocr-modelbuilder` in the
 temporary directory. The wheel and the three ONNX files are checked against pinned SHA-256 hashes (in `Program.cs`), and
-the output is byte-identical on every run: the graph passes are deterministic, the writer has no timestamps, and Brotli
-(quality 11, window 24) is deterministic. A run takes about a minute, most of it Brotli. After writing each model the
-tool loads it with the runtime and runs it once, so a graph the runtime cannot execute fails here rather than in a test.
+the output is byte-identical on every run: the graph passes are deterministic, the writer has no timestamps, and
+Deflate (`CompressionLevel.SmallestSize`, zlib-ng in .NET 10) is deterministic for a given runtime; another .NET version
+may compress the same model bytes differently. A run takes about ten seconds. After writing each model the tool loads it
+with the runtime and runs it once, so a graph the runtime cannot execute fails here rather than in a test.
+
+The files are Deflate rather than Brotli (quality 11, window 24, which earlier versions used) because loading is mostly
+inflating: Brotli made the files 4% smaller (16.2 against 16.9 MB for the three) but inflates at about 90 MB/s against
+230 MB/s for Deflate on this format, whose mantissa bytes barely compress. The recogniser then loads in about 130 ms
+instead of 250 ms. The byte planes (below) leave little for a stronger codec to find.
 
 The models are Apache 2.0 (copyright Baidu and/or the PaddleOCR rights holders, converted by the RapidOCR Authors);
 `THIRD-PARTY-NOTICES.md` reproduces their notice, and each generated file carries a notice that it was changed.
@@ -59,15 +65,15 @@ probability map by up to 6.7e-3 and the recogniser's softmax by up to 9.8e-3 on 
 tensors to fp16 moves the detector's output by up to 9e-3. With fp24 the differences are 1.8e-4 and 2.4e-4.
 `--precision fp16` writes half precision anyway (the runtime reads all three), for size experiments.
 
-| Model | Values | float32 | fp24 file | Brotli |
+| Model | Values | float32 | fp24 file | Deflate |
 | --- | ---: | ---: | ---: | ---: |
-| det | 2,453,833 | 9.8 MB | 7,390,181 B | 4,940,206 B |
-| rec | 5,266,550 | 21.1 MB | 15,902,704 B | 11,748,712 B |
-| cls | 127,220 | 0.5 MB | 401,338 B | 321,152 B |
+| det | 2,453,833 | 9.8 MB | 7,390,181 B | 5,250,799 B |
+| rec | 5,266,550 | 21.1 MB | 15,902,704 B | 12,215,064 B |
+| cls | 127,220 | 0.5 MB | 401,338 B | 341,080 B |
 
 ## File format (version 1)
 
-The file is Brotli-compressed; inside, all integers are little-endian. `src/PdfPecker.Ocr/Models/ModelFormat.cs` is the
+The file is raw Deflate (RFC 1951); inside, all integers are little-endian. `src/PdfPecker.Ocr/Models/ModelFormat.cs` is the
 single definition of the layout and of the operator codes, used by this tool, the runtime and the tests.
 
 ```
@@ -82,7 +88,7 @@ weights      i32 count, then for each:
                i32 value count
                data in byte planes: for float32 four planes (bits 31-24 of every value, then 23-16, 15-8, 7-0), for
                fp24 the first three of those, for float16 two (high byte, low byte). Planes keep the sign and exponent
-               bytes together, which roughly doubles what Brotli saves.
+               bytes together, so Deflate saves a fifth (det) to nearly half (rec) more than on interleaved values.
 nodes        i32 count, then for each:
                u8 operator (OpKind)
                i32 count + i32 input values   value 0 is the model input; node i writes value i + 1

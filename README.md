@@ -153,6 +153,16 @@ the results per page group and the causes of each engine's errors are in `bench/
 corpus is rendered, not scanned, which flatters every engine. Cloud machines differ too much in processor to compare a
 run with this table; to compare two versions, run `bench/compare-versions.sh` on one machine.
 
+**Memory.** Reading an A4 page at 300 dpi takes about 220 to 240 MB beyond the .NET runtime's own: the models (30 MB,
+kept once loaded) and the detector's working memory (about 100 MB of native memory, released with the threads after 30
+seconds without a call). Recognising pixels allocates under 1 MB per page once warm, so the garbage collector's settings
+make no difference there. Rendering PDF pages does allocate: about 117 MB of short-lived pixel buffers per scanned A4
+page at 300 dpi, in PdfPecker's renderer. A process that reads PDFs all day keeps less memory resident with
+`System.GC.ConserveMemory` set to 5 (in `runtimeconfig.json`, or `DOTNET_GCConserveMemory=5`): on the benchmark machine,
+making a six-page scanned PDF searchable three times at four threads peaked at 698 MB instead of 1,086 MB with the
+default settings, in the same time. Server GC peaked at 848 MB and was about 10% slower there, so the workstation
+collector, the default for console apps, suits this work.
+
 ## Licence
 
 PdfPecker.Ocr's code is licensed under the [MIT license](LICENSE). The model weights embedded in the package are

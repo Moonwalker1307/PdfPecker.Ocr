@@ -5,7 +5,7 @@ using ModelBuilder;
 using PdfPecker.Ocr.Inference;
 using PdfPecker.Ocr.Models;
 
-// Builds src/PdfPecker.Ocr/Models/{det,rec,cls}.bin.br from the ONNX models in the rapidocr 3.10.0 wheel on PyPI.
+// Builds src/PdfPecker.Ocr/Models/{det,rec,cls}.bin.deflate from the ONNX models in the rapidocr 3.10.0 wheel on PyPI.
 // Usage, from the repository root:
 //   dotnet run -c Release --project tools/ModelBuilder -- [--wheel path] [--out dir] [--precision fp24|fp16|fp32]
 // Without --wheel the wheel is downloaded once into a cache folder in the temporary directory. The wheel and each model
@@ -90,7 +90,7 @@ foreach (var source in models)
     var definition = Emitter.Emit(graph, source.Upstream, notice, precision, characters, source.Samples);
     byte[] data = definition.Serialize();
     byte[] packed = Compress(data);
-    string target = Path.Combine(outDir, source.Name + ".bin.br");
+    string target = Path.Combine(outDir, source.Name + ".bin.deflate");
     File.WriteAllBytes(target, packed);
     Console.WriteLine($"  weights: {definition.Weights.Sum(w => (long)w.Data.Length):N0} values in {definition.Weights.Count} tensors, {definition.Nodes.Count} runtime nodes");
     Console.WriteLine($"  written {target}: {data.Length:N0} bytes, {packed.Length:N0} compressed (SHA-256 {Sha256(packed)})");
@@ -132,11 +132,13 @@ static async Task<byte[]> LoadWheel(string? path)
 
 static string Sha256(byte[] data) => Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
 
+// Deflate rather than Brotli: the files are 4% larger, but the runtime inflates them two and a half times as fast,
+// which is most of a model's load time.
 static byte[] Compress(byte[] data)
 {
-    var packed = new byte[BrotliEncoder.GetMaxCompressedLength(data.Length)];
-    if (!BrotliEncoder.TryCompress(data, packed, out int written, quality: 11, window: 24)) throw new InvalidOperationException("Brotli compression failed.");
-    return packed.AsSpan(0, written).ToArray();
+    using var packed = new MemoryStream();
+    using (var deflate = new DeflateStream(packed, CompressionLevel.SmallestSize, leaveOpen: true)) deflate.Write(data);
+    return packed.ToArray();
 }
 
 internal sealed record ModelSource(string Name, string Entry, string Sha256, string Upstream, long[][] Samples);

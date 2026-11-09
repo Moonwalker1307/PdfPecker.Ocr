@@ -42,11 +42,7 @@ public sealed class RuntimeTests
     {
         // Each kernel sums a value's products in the same order with fused multiply-adds, whatever its block size, so
         // the AVX-512, AVX2 and portable kernels agree to the bit where the processor runs them all.
-        using var stream = typeof(ModelStore).Assembly.GetManifestResourceStream($"PdfPecker.Ocr.Models.{name}.bin.br")!;
-        using var brotli = new System.IO.Compression.BrotliStream(stream, System.IO.Compression.CompressionMode.Decompress);
-        using var buffer = new MemoryStream();
-        brotli.CopyTo(buffer);
-        byte[] data = buffer.ToArray();
+        byte[] data = ModelStore.Inflate(name).ToArray();
         var input = ReferenceFixture.Load(fixture).Input();
         float[]? first = null;
         foreach (var kernel in GemmKernel.Supported)
@@ -56,6 +52,133 @@ public sealed class RuntimeTests
             if (first is null) first = result;
             else Assert.True(first.AsSpan().SequenceEqual(result), $"{kernel.Name} differs");
         }
+    }
+
+    [Theory]
+    [InlineData("rec_1x48x320")]
+    [InlineData("rec_2x48x160")]
+    public void ArgMaxOutputIsTheFullOutputsBestClass(string fixture)
+    {
+        // The engine's recogniser returns only the best class of each time step and its probability; they must be the
+        // bits a search of the full softmax finds, with every matrix kernel and degree of parallelism.
+        byte[] data = ModelStore.Inflate("rec").ToArray();
+        var input = ReferenceFixture.Load(fixture).Input();
+        foreach (var kernel in GemmKernel.Supported)
+        {
+            var full = OcrModel.Load(data, kernel);
+            var argMax = full.WithArgMaxOutput();
+            float[] probabilities;
+            int[] shape;
+            using (var context = new InferenceContext(2))
+            {
+                var result = full.Run(input, context);
+                probabilities = result.Span.ToArray();
+                shape = result.Shape;
+            }
+
+            int classes = shape[^1], rows = probabilities.Length / classes;
+            foreach (int degree in new[] { 1, 2, 4, 3 })
+            {
+                using var context = new InferenceContext(degree);
+                var best = argMax.Run(input, context);
+                Assert.Equal([.. shape[..^1], 2], best.Shape);
+                for (int row = 0; row < rows; row++)
+                {
+                    var (index, value) = PdfPecker.Ocr.Recognition.CtcDecoder.ArgMax(probabilities.AsSpan(row * classes, classes));
+                    Assert.Equal(index, (int)best.Span[2 * row]);
+                    Assert.Equal(BitConverter.SingleToInt32Bits(value), BitConverter.SingleToInt32Bits(best.Span[(2 * row) + 1]));
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void ArgMaxOutputOfASmallHead()
+    {
+        // Rows with a few close logits and classes that are not a multiple of any vector width or panel.
+        foreach (int classes in new[] { 1, 3, 17, 300, 1031 })
+        {
+            var graph = new GraphBuilder(3);
+            int l = graph.Add(OpKind.Linear, [0], [(int)ActivationKind.None, 0], [0, 0], Weight([24, classes], classes, 4f), Weight([classes], classes + 1));
+            graph.Add(OpKind.Softmax, [l], []);
+            var x = RandomTensor(classes, 2, 29, 24);
+            foreach (var kernel in GemmKernel.Supported)
+            {
+                var model = OcrModel.FromDefinition(graph.Model, kernel);
+                float[] probabilities;
+                using (var context = new InferenceContext(1)) probabilities = model.Run(x, context).Span.ToArray();
+                foreach (int degree in new[] { 1, 3 })
+                {
+                    using var context = new InferenceContext(degree);
+                    var best = model.WithArgMaxOutput().Run(x, context);
+                    Assert.Equal([2, 29, 2], best.Shape);
+                    for (int row = 0; row < 58; row++)
+                    {
+                        var (index, value) = PdfPecker.Ocr.Recognition.CtcDecoder.ArgMax(probabilities.AsSpan(row * classes, classes));
+                        Assert.Equal(index, (int)best.Span[2 * row]);
+                        Assert.Equal(value, best.Span[(2 * row) + 1]);
+                    }
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void ArgMaxOutputNeedsALinearSoftmaxHead()
+    {
+        var graph = new GraphBuilder(3);
+        int l = graph.Add(OpKind.Linear, [0], [(int)ActivationKind.Gelu, 0], [0, 0], Weight([8, 5], 1), Weight([5], 2));
+        graph.Add(OpKind.Softmax, [l], []);
+        Assert.Throws<InvalidOperationException>(() => OcrModel.FromDefinition(graph.Model).WithArgMaxOutput());
+        Assert.Throws<InvalidOperationException>(() => ModelStore.Detection.WithArgMaxOutput());
+    }
+
+    [Fact]
+    public void GrayInputIsTheRepeatedPlaneBitForBit()
+    {
+        // A gray page's detector input is one plane read as all three channels; the output must be the bits of the
+        // full model on the plane written three times, with every matrix kernel and degree of parallelism.
+        byte[] data = ModelStore.Inflate("det").ToArray();
+        var fixture = ReferenceFixture.Load("det_96x128").Input();
+        int plane = 96 * 128;
+        var gray = fixture.Span[..plane].ToArray();
+        var repeated = new float[3 * plane];
+        for (int c = 0; c < 3; c++) gray.CopyTo(repeated, c * plane);
+        foreach (var kernel in GemmKernel.Supported)
+        {
+            var full = OcrModel.Load(data, kernel);
+            var grayModel = full.WithGrayInput();
+            Assert.Equal([-1, 1, -1, -1], grayModel.InputShape);
+            float[] expected;
+            using (var context = new InferenceContext(2))
+                expected = full.Run(repeated, [1, 3, 96, 128], context, out _).ToArray();
+            foreach (int degree in new[] { 1, 3 })
+            {
+                using var context = new InferenceContext(degree);
+                var result = grayModel.Run(gray, [1, 1, 96, 128], context, out int[] shape);
+                Assert.Equal([1, 1, 96, 128], shape);
+                Assert.True(expected.AsSpan().SequenceEqual(result), $"{kernel.Name} with {degree} threads");
+            }
+        }
+    }
+
+    [Fact]
+    public void GrayInputNeedsAFirstConvolutionThatAloneReadsTheInput()
+    {
+        var plain = new GraphBuilder(4);
+        plain.Model.InputShape = [-1, 3, -1, -1];
+        plain.Add(OpKind.Conv, [0], ConvInts(3, 3, pt: 1, pl: 1, pb: 1, pr: 1), [0, 0], Weight([4, 3, 3, 3], 1), Weight([4], 2));
+        Assert.Equal([-1, 1, -1, -1], OcrModel.FromDefinition(plain.Model).WithGrayInput().InputShape);
+        var graph = new GraphBuilder(4);
+        graph.Model.InputShape = [-1, 3, -1, -1];
+        int a = graph.Add(OpKind.Conv, [0], ConvInts(3, 3, pt: 1, pl: 1, pb: 1, pr: 1), [0, 0], Weight([3, 3, 3, 3], 1), Weight([3], 2));
+        graph.Add(OpKind.Add, [a, 0], [1, 1]);
+        Assert.Throws<InvalidOperationException>(() => OcrModel.FromDefinition(graph.Model).WithGrayInput());
+        var pointwise = new GraphBuilder(4);
+        pointwise.Model.InputShape = [-1, 3, -1, -1];
+        pointwise.Add(OpKind.Conv, [0], ConvInts(1, 1), [0, 0], Weight([4, 3, 1, 1], 1), Weight([4], 2));
+        Assert.Throws<InvalidOperationException>(() => OcrModel.FromDefinition(pointwise.Model).WithGrayInput());
+        Assert.Throws<InvalidOperationException>(() => ModelStore.DetectionGray.WithGrayInput());
     }
 
     [Fact]

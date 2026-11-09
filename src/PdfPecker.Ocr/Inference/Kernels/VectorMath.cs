@@ -154,18 +154,93 @@ internal static unsafe partial class VectorMath
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void Softmax(float* row, int length)
     {
-        float max = Max(row, length);
-        // The exponentials are stored first, 512 bits at a time where AVX-512 is used, and then summed in Vector<T>
-        // lanes and tail order, so the sum does not depend on the vector width.
-        int i = Wide ? ExpShiftedWide(row, length, max) : 0;
-        var vmax = new Vector<float>(max);
-        for (; i <= length - Width; i += Width) Store(Exp(Load(row + i) - vmax), row + i);
-        for (; i < length; i++) row[i] = Exp(new Vector<float>(row[i] - max))[0];
-        var acc = Vector<float>.Zero;
-        for (i = 0; i <= length - Width; i += Width) acc += Load(row + i);
-        float sum = Vector.Sum(acc);
-        for (; i < length; i++) sum += row[i];
+        float sum = ExpShiftedSum(row, length, Max(row, length), out _);
         Scale(row, length, 1f / sum);
+    }
+
+    /// <summary>Softmax of one row in place, for callers that hold the row in a span.</summary>
+    public static void Softmax(Span<float> row)
+    {
+        fixed (float* p = row) Softmax(p, row.Length);
+    }
+
+    /// <summary>
+    /// The largest probability of a softmax over one row and the first index that has it, exactly as if the row had
+    /// gone through <see cref="Softmax(float*, int)"/> and then a search for the first largest value: the same exponentials, the same
+    /// sum and the same products. The row is overwritten with the exponentials, and the probabilities are never stored.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public static int SoftmaxArgMax(float* row, int length, out float probability)
+    {
+        float scale = 1f / ExpShiftedSum(row, length, Max(row, length), out float largest);
+
+        // Rounding a product to nearest never puts a smaller factor above a larger one, so the largest probability is
+        // the largest exponential times the scale. Two exponentials can still round to the same probability, so the
+        // index is the first one whose own product equals it.
+        probability = largest * scale;
+        int i = 0;
+        var target = new Vector<float>(probability);
+        var factor = new Vector<float>(scale);
+        for (; i <= length - Width; i += Width)
+        {
+            if (Vector.EqualsAny(Load(row + i) * factor, target)) break;
+        }
+
+        for (; i < length; i++)
+        {
+            if (row[i] * scale == probability) return i;
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Replaces a row with exp(x - max) and returns the sum of the exponentials and the largest of them. The sum is
+    /// taken in Vector&lt;T&gt; lanes in the order of the row and then over the tail, whether the exponentials come 512
+    /// bits at a time (where AVX-512 is used) or not, so it does not depend on the vector width.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static float ExpShiftedSum(float* row, int length, float max, out float largest)
+    {
+        var acc = Vector<float>.Zero;
+        var top = Vector<float>.Zero;
+        int i = 0;
+        if (Wide)
+        {
+            var wmax = Vector512.Create(max);
+            for (; i <= length - 16; i += 16)
+            {
+                Vector512.Store(ExpWide(Vector512.Load(row + i) - wmax), row + i);
+                for (int j = 0; j < 16; j += Width)
+                {
+                    var e = Load(row + i + j);
+                    acc += e;
+                    top = Vector.Max(top, e);
+                }
+            }
+        }
+
+        var vmax = new Vector<float>(max);
+        for (; i <= length - Width; i += Width)
+        {
+            var e = Exp(Load(row + i) - vmax);
+            Store(e, row + i);
+            acc += e;
+            top = Vector.Max(top, e);
+        }
+
+        float sum = Vector.Sum(acc);
+        largest = 0;
+        for (int j = 0; j < Width; j++) largest = Math.Max(largest, top[j]);
+        for (; i < length; i++)
+        {
+            float e = Exp(new Vector<float>(row[i] - max))[0];
+            row[i] = e;
+            sum += e;
+            largest = Math.Max(largest, e);
+        }
+
+        return sum;
     }
 
     /// <summary>Multiplies length values in place by a factor.</summary>
@@ -238,21 +313,48 @@ internal static unsafe partial class VectorMath
     }
 
     /// <summary>dst[i] = src[2 i] for i in [0, count); reads nothing past src[2 count - 2].</summary>
+    /// <remarks>
+    /// A vector block of n outputs reads 2 n values, the last of them odd and one past the block's last even one, so
+    /// the blocks stop before the end and the last n outputs come from the 2 n values that end at src[2 count - 2]:
+    /// that block starts one value early, so its odd values are the even ones of the row.
+    /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void CopyEven(float* src, float* dst, int count)
     {
         int i = 0;
-        if (Avx2.IsSupported)
+        if (Avx512F.IsSupported && count > 16)
         {
-            for (; i + 8 <= count; i += 8, src += 16)
+            var even = Vector512.Create(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30);
+            for (; i + 16 < count; i += 16)
+            {
+                float* s = src + (2 * i);
+                Avx512F.Store(dst + i, Avx512F.PermuteVar16x32x2(Avx512F.LoadVector512(s), even, Avx512F.LoadVector512(s + 16)));
+            }
+
+            float* last = src + (2 * (count - 16)) - 1;
+            var odd = Vector512.Create(1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31);
+            Avx512F.Store(dst + count - 16, Avx512F.PermuteVar16x32x2(Avx512F.LoadVector512(last), odd, Avx512F.LoadVector512(last + 16)));
+            return;
+        }
+
+        if (Avx2.IsSupported && count > 8)
+        {
+            for (; i + 8 < count; i += 8)
             {
                 // Shuffle picks elements 0 and 2 of each half-lane pair, giving (s0 s2 s8 s10 | s4 s6 s12 s14); the
                 // permute puts the 64-bit pairs in order.
-                var even = Avx.Shuffle(Avx.LoadVector256(src), Avx.LoadVector256(src + 8), 0b10_00_10_00);
+                float* s = src + (2 * i);
+                var even = Avx.Shuffle(Avx.LoadVector256(s), Avx.LoadVector256(s + 8), 0b10_00_10_00);
                 Avx.Store(dst + i, Avx2.Permute4x64(even.AsDouble(), 0b11_01_10_00).AsSingle());
             }
+
+            float* last = src + (2 * (count - 8)) - 1;
+            var odd = Avx.Shuffle(Avx.LoadVector256(last), Avx.LoadVector256(last + 8), 0b11_01_11_01);
+            Avx.Store(dst + count - 8, Avx2.Permute4x64(odd.AsDouble(), 0b11_01_10_00).AsSingle());
+            return;
         }
-        for (; i < count; i++, src += 2) dst[i] = *src;
+
+        for (; i < count; i++) dst[i] = src[2 * i];
     }
 
     /// <summary>dst[i] = a[i] * s.</summary>
