@@ -47,6 +47,9 @@ internal sealed class EngineWorker : IDisposable
     /// <summary>The bytes the context's activation arena holds, for memory measurements.</summary>
     public long ArenaBytes => _context.ArenaBytes;
 
+    /// <summary>Frees the activation arena, most of an idle worker's memory; the next page allocates it again.</summary>
+    public void ReleaseArena() => _context.ReleaseArena();
+
     /// <summary>
     /// Reads a page. The pipeline is kept between calls and rebuilt only when the recognition settings change, which
     /// keeps the detector's and recogniser's buffers for the next page.
@@ -84,15 +87,26 @@ internal sealed class EngineWorker : IDisposable
 /// without taking turns), and a worker that has been idle for <see cref="IdleTimeout"/> is disposed, so an application
 /// that reads a document now and then does not keep the buffers of its largest page for ever.
 /// </summary>
+/// <remarks>
+/// A worker that has been idle for the much shorter <see cref="ArenaTimeout"/> frees its activation arena first, which
+/// is most of what it holds (77 MB after a 300 dpi A4 page). Pages of one document, and calls that follow each other,
+/// come back long before that and keep it. A page after a pause pays for faulting the arena's fresh pages in again,
+/// about 3% of its time (90 ms at one thread, 20 ms at four), but not for threads or plans, which stay until the worker
+/// itself expires.
+/// </remarks>
 internal static class EnginePool
 {
     private static readonly object s_lock = new();
     private static readonly List<EngineWorker> s_idle = [];
     private static Timer? s_timer;
     private static bool s_timerArmed;
+    private static long s_timerDue;
 
     /// <summary>How long an idle worker is kept. Tests shorten it.</summary>
     internal static TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>How long an idle worker keeps its activation arena. Tests shorten it.</summary>
+    internal static TimeSpan ArenaTimeout { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>The most idle workers kept.</summary>
     internal static int MaxIdle => Math.Max(2, Environment.ProcessorCount);
@@ -142,9 +156,11 @@ internal static class EnginePool
                 s_idle.RemoveAt(0);
             }
 
-            if (!s_timerArmed)
+            // The timer may be armed for a later expiry of an older worker whose arena has already gone.
+            TimeSpan due = ArenaTimeout < IdleTimeout ? ArenaTimeout : IdleTimeout;
+            if (!s_timerArmed || s_timerDue > worker.ReturnedAt + (long)due.TotalMilliseconds)
             {
-                Arm(IdleTimeout);
+                Arm(due);
             }
         }
 
@@ -172,7 +188,10 @@ internal static class EnginePool
         }
     }
 
-    /// <summary>Disposes the workers that have been idle for the timeout, and waits for the next one to expire.</summary>
+    /// <summary>
+    /// Disposes the workers that have been idle for the timeout, frees the arenas of those idle for the arena timeout,
+    /// and waits for the next of either to expire.
+    /// </summary>
     private static void Trim()
     {
         var expired = new List<EngineWorker>();
@@ -181,18 +200,26 @@ internal static class EnginePool
             s_timerArmed = false;
             long now = Environment.TickCount64;
             long timeout = (long)IdleTimeout.TotalMilliseconds;
+            long arenaTimeout = (long)ArenaTimeout.TotalMilliseconds;
             long next = long.MaxValue;
             for (int i = s_idle.Count - 1; i >= 0; i--)
             {
-                long idle = now - s_idle[i].ReturnedAt;
+                EngineWorker worker = s_idle[i];
+                long idle = now - worker.ReturnedAt;
                 if (idle >= timeout)
                 {
-                    expired.Add(s_idle[i]);
+                    expired.Add(worker);
                     s_idle.RemoveAt(i);
+                    continue;
                 }
-                else
+
+                next = Math.Min(next, timeout - idle);
+                if (worker.ArenaBytes > 0)
                 {
-                    next = Math.Min(next, timeout - idle);
+                    // Under the lock, since a worker in the list may be rented as soon as the lock is let go. Freeing
+                    // the arena hands its pages back to the system without touching them, which is quick.
+                    if (idle >= arenaTimeout) worker.ReleaseArena();
+                    else next = Math.Min(next, arenaTimeout - idle);
                 }
             }
 
@@ -221,5 +248,6 @@ internal static class EnginePool
 
         s_timer.Change(due, Timeout.InfiniteTimeSpan);
         s_timerArmed = true;
+        s_timerDue = Environment.TickCount64 + (long)due.TotalMilliseconds;
     }
 }

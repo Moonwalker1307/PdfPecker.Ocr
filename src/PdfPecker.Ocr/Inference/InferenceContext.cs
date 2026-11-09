@@ -58,6 +58,12 @@ internal sealed unsafe class InferenceContext : IDisposable
 
     ~InferenceContext() => FreeNative();
 
+    /// <summary>
+    /// Frees the activation arena, for a context that may sit idle for a while; the next run allocates it again. The
+    /// plans, the threads and the smaller buffers stay, so that run costs only the page faults of the new arena.
+    /// </summary>
+    internal void ReleaseArena() => FreeNative();
+
     private void FreeNative() => Free(ref _arena, ref _arenaFloats);
 
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
