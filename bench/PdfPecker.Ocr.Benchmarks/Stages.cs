@@ -147,7 +147,7 @@ static class Stages
         var rec = new TimedNetwork(new ModelNetwork(ModelStore.RecognitionArgMax, context));
         var cls = new TimedNetwork(new ModelNetwork(ModelStore.Classifier, context));
         var options = new OcrOptions { MaxDegreeOfParallelism = threads };
-        var pipeline = new OcrPipeline(detColour, rec, cls, OcrEngine.Characters, OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(options), det);
+        var pipeline = new OcrPipeline(detColour, rec, cls, OcrEngine.Characters, OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(options), det, context);
         string[] names = ["render to pixels (PdfRenderer)", "detection", "  of which the network", "orientation (classifier network)", "recognition (crops, network, CTC)", "  of which the network", "layout (reading order, OcrPage)", "total"];
         var times = names.Select(n => (n, new List<double>())).ToList();
         for (int i = 0; i <= runs; i++)

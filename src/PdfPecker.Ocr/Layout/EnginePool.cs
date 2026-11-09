@@ -55,7 +55,7 @@ internal sealed class EngineWorker : IDisposable
     {
         if (_pipeline is null || _pipeline.Recognizer.Options != options)
         {
-            _pipeline = new OcrPipeline(_detection, _recognition, _orientation, OcrEngine.Characters, OcrEngine.DetectionOptions, options, _detectionGray);
+            _pipeline = new OcrPipeline(_detection, _recognition, _orientation, OcrEngine.Characters, OcrEngine.DetectionOptions, options, _detectionGray, _context);
         }
 
         _context.CancellationToken = cancellationToken;

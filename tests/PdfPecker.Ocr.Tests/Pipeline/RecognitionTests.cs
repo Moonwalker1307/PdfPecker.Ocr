@@ -150,6 +150,33 @@ public sealed class RecognitionTests(ITestOutputHelper output)
     }
 
     [Theory]
+    [InlineData("rotated")]
+    [InlineData("table")]
+    public void CropBatchOnThreadsIsTheCropsOneByOne(string name)
+    {
+        // The engine samples a batch's crops on the inference threads; each must come out as it does on its own.
+        using PipelineFixture fx = PipelineFixture.Load(name);
+        List<float[]> boxes = fx.Boxes("det_sorted_boxes");
+        var page = new PixelView(fx.Image(), fx.Width, fx.Height, fx.Channels);
+        var crops = boxes.Select((b, i) => new LineCrop(QuadMath.FromArray(b), i) { Rotated180 = i % 3 == 1 }).ToList();
+        const int width = 400, plane = 48 * width;
+        var expected = new float[crops.Count * 3 * plane];
+        var actual = new float[crops.Count * 3 * plane];
+        using var context = new PdfPecker.Ocr.Inference.InferenceContext(4);
+        var batch = new CropBatch(context);
+        for (int k = 0; k < crops.Count; k++)
+        {
+            int resized = Math.Clamp((int)Math.Ceiling(48 * crops[k].AspectRatio), 1, width);
+            double window = Math.Min(crops[k].CropWidth, 4.0 * crops[k].CropHeight);
+            crops[k].Sample(page, expected.AsSpan(k * 3 * plane), plane, width, resized, 48, k % 2, window - (k % 2));
+            batch.Add(crops[k], resized, k % 2, window - (k % 2));
+        }
+
+        batch.Sample(page, actual, plane, width, 48);
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
     [MemberData(nameof(CropCases))]
     public void CropPixelsAreCloseToRapidocrs(string name)
     {

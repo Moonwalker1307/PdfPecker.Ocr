@@ -34,7 +34,7 @@ static unsafe class LayerProfile
         var detColour = new Recording(new ModelNetwork(ModelStore.Detection, context));
         var rec = new Recording(new ModelNetwork(ModelStore.RecognitionArgMax, context));
         var cls = new Recording(new ModelNetwork(ModelStore.Classifier, context));
-        var pipeline = new OcrPipeline(detColour, rec, cls, OcrEngine.Characters, OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(new OcrOptions()), det);
+        var pipeline = new OcrPipeline(detColour, rec, cls, OcrEngine.Characters, OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(new OcrOptions()), det, context);
         pipeline.Run(view, 300);
 
         var inv = CultureInfo.InvariantCulture;
