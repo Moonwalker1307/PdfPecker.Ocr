@@ -247,9 +247,10 @@ public sealed class RuntimeTests
     [Fact]
     public void OutputsWrittenOverTheirInputsKeepTheirBits()
     {
-        // A convolution's output may take the memory of a residual that dies with it. A one-input concatenation copies
-        // the model's input into the arena, where its memory can be taken; the same layers reading the model's input,
-        // whose memory is never written, must give the same bits.
+        // A convolution's output may take the memory of a residual that dies with it, and a depthwise convolution whose
+        // tiles take whole planes the memory of its input. A one-input concatenation copies the model's input into the
+        // arena, where its memory can be taken; the same layers reading the model's input, whose memory is never
+        // written, must give the same bits.
         var x = RandomTensor(21, 2, 64, 23, 37);
         var residualOver = new GraphBuilder(4);
         int copy = residualOver.Add(OpKind.Concat, [0], [1, 1, 1]);
@@ -259,7 +260,13 @@ public sealed class RuntimeTests
         a = residualApart.Add(OpKind.Conv, [0], ConvInts(1, 1, act: ActivationKind.HardSwish), [1 / 6f, 0.5f], Weight([96, 64, 1, 1], 1), Weight([96], 2));
         residualApart.Add(OpKind.Conv, [a, 0], ConvInts(1, 1, residual: true), [0, 0], Weight([64, 96, 1, 1], 3), Weight([64], 4));
 
-        foreach (var (over, apart) in new[] { (residualOver, residualApart) })
+        var depthwiseOver = new GraphBuilder(4);
+        copy = depthwiseOver.Add(OpKind.Concat, [0], [1, 1, 1]);
+        depthwiseOver.Add(OpKind.Conv, [copy], ConvInts(5, 5, pt: 2, pl: 2, pb: 2, pr: 2, group: 64, act: ActivationKind.Relu), [0, 0], Weight([64, 1, 5, 5], 5), Weight([64], 6));
+        var depthwiseApart = new GraphBuilder(4);
+        depthwiseApart.Add(OpKind.Conv, [0], ConvInts(5, 5, pt: 2, pl: 2, pb: 2, pr: 2, group: 64, act: ActivationKind.Relu), [0, 0], Weight([64, 1, 5, 5], 5), Weight([64], 6));
+
+        foreach (var (over, apart) in new[] { (residualOver, residualApart), (depthwiseOver, depthwiseApart) })
         {
             foreach (var kernel in GemmKernel.Supported)
             {

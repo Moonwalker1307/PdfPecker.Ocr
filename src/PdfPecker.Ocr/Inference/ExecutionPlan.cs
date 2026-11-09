@@ -98,6 +98,14 @@ internal sealed class ExecutionPlan
 
     public long ScratchPerWorker { get; private set; }
 
+    /// <summary>A block of the arena over a span of steps: floats [Offset, Offset + Size) from step Start to End.</summary>
+    private readonly record struct Rect(long Offset, long Size, int Start, int End)
+    {
+        public bool Overlaps(Rect other) => Start <= other.End && other.Start <= End;
+    }
+
+    private static long Round(long floats) => (floats + Alignment - 1) / Alignment * Alignment;
+
     public static ExecutionPlan Create(OcrModel model, int[] inputShape, InferenceContext context)
     {
         var layers = model.Layers;
@@ -216,30 +224,52 @@ internal sealed class ExecutionPlan
         var scratch = new long[layers.Count];
         for (int i = 0; i < layers.Count; i++) scratch[i] = layers[i].SharedScratch(steps[i]);
 
-        // Greedy placement of the remaining groups and the scratch blocks, largest first. An item is a value's group
-        // (Key >= 0, its root) or step ~Key's scratch.
+        // Greedy placement of the remaining groups and the scratch blocks, largest first, each at the lowest offset where
+        // it overlaps nothing alive at the same time. A group is placed as its members: each value in it occupies its own
+        // part of the group's memory only while that value is alive, so a concatenation whose last input is written
+        // straight into its slice does not hold the rest of its output from that moment on, and another value may still
+        // use that memory. A member reserves its size rounded up to whole vectors. An item is a value's group (Key >= 0,
+        // its root) or step ~Key's scratch.
+        var parts = new List<Rect>[valueCount];
+        for (int v = 1; v < valueCount; v++)
+        {
+            int root = Find(v, out long at);
+            if (root == 0 || root == outputRoot) continue;
+            (parts[root] ??= []).Add(new Rect(at, Round(sizes[v]), v - 1, lastUse[v]));
+        }
         var items = Enumerable.Range(1, valueCount - 1).Where(v => parent[v] == v && v != outputRoot)
-            .Select(v => (Key: v, Size: sizes[v], Start: start[v], End: end[v]))
-            .Concat(Enumerable.Range(0, layers.Count).Where(i => scratch[i] > 0).Select(i => (Key: ~i, Size: scratch[i], Start: i, End: i)))
+            .Select(v => (Key: v, Size: sizes[v], Start: start[v]))
+            .Concat(Enumerable.Range(0, layers.Count).Where(i => scratch[i] > 0).Select(i => (Key: ~i, Size: scratch[i], Start: i)))
             .OrderByDescending(x => x.Size).ThenBy(x => x.Start).ThenBy(x => x.Key < 0).ThenBy(x => x.Key < 0 ? ~x.Key : x.Key).ToList();
-        var placed = new List<(long Offset, long Size, int Start, int End)>();
+        var placed = new List<Rect>();
+        var forbidden = new List<(long Low, long High)>();
         var rootOffset = new long[valueCount];
         var scratchOffset = new long[layers.Count];
         long arena = 0;
         foreach (var item in items)
         {
-            long size = (item.Size + Alignment - 1) / Alignment * Alignment;
-            var conflicts = placed.Where(p => p.Start <= item.End && item.Start <= p.End).OrderBy(p => p.Offset).ToList();
+            List<Rect> rects = item.Key >= 0 ? parts[item.Key] : [new Rect(0, Round(item.Size), ~item.Key, ~item.Key)];
+            // A member m meets a placed block p when the group starts strictly between p.Offset - m.Offset - m.Size and
+            // p.Offset + p.Size - m.Offset; the lowest aligned start outside every such interval is found in one pass
+            // over them in order of their lower ends, since the start only moves up.
+            forbidden.Clear();
+            foreach (var p in placed)
+                foreach (var m in rects)
+                    if (m.Overlaps(p)) forbidden.Add((p.Offset - m.Offset - m.Size, p.Offset + p.Size - m.Offset));
+            forbidden.Sort();
             long at = 0;
-            foreach (var p in conflicts)
+            foreach (var (low, high) in forbidden)
             {
-                if (at + size <= p.Offset) break;
-                at = Math.Max(at, p.Offset + p.Size);
+                if (low >= at) break;
+                if (at < high) at = Round(high);
             }
-            placed.Add((at, size, item.Start, item.End));
+            foreach (var m in rects)
+            {
+                placed.Add(m with { Offset = at + m.Offset });
+                arena = Math.Max(arena, at + m.Offset + m.Size);
+            }
             if (item.Key >= 0) rootOffset[item.Key] = at;
             else scratchOffset[~item.Key] = at;
-            arena = Math.Max(arena, at + size);
         }
 
         Location LocationOf(int v)
