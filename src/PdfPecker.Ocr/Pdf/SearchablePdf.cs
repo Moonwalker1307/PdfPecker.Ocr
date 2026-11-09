@@ -21,6 +21,14 @@ internal static class SearchablePdf
         options ??= new OcrOptions();
         options.Validate();
         var source = PdfPageSource.Open(pdf, options, cancellationToken);
+        if (source.Pages.Any(i => !source.HasText(i)))
+        {
+            // PdfStamper refuses a signed PDF only when it stamps, after every page has been rendered and read. A stamp
+            // of no pages finds that out first, by the stamper's own rule, for the cost of one rewrite of the file.
+            PdfStamper.Stamp(pdf, SearchableLayer.Write([new LayerPage(null, 1, 1)], cancellationToken),
+                new PdfStampOptions { Password = options.Password, Pages = _ => false }, cancellationToken);
+        }
+
         var read = new Dictionary<int, OcrPage>();
         foreach (int index in source.Pages)
         {

@@ -160,6 +160,28 @@ public sealed class SearchableLayerTests
     }
 
     [Fact]
+    public void SignedPdfIsRefusedBeforeAnyPageIsRead()
+    {
+        using var key = System.Security.Cryptography.RSA.Create(2048);
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest("CN=Example Signer", key,
+            System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+
+        // A signed scan: stamping would break the signature, so it is refused before the pages are rendered and read.
+        var signedScan = PdfSigner.Sign(Scan(3), new PdfSignatureOptions(certificate));
+        var recognizer = new FakeRecognizer(TwoLines);
+        Assert.Throws<InvalidOperationException>(() => SearchablePdf.MakeSearchable(signedScan, Options(), recognizer, default));
+        Assert.Empty(recognizer.Calls);
+
+        // A signed PDF whose pages all have text needs nothing read, and comes back as a copy, as documented.
+        var text = new RawPdf.Page(Letter, Content: "BT /F1 12 Tf 72 700 Td (This page already has plenty of text.) Tj ET", Helvetica: true);
+        var signedText = PdfSigner.Sign(RawPdf.Build(text), new PdfSignatureOptions(certificate));
+        var none = new FakeRecognizer(TwoLines);
+        Assert.Equal(signedText, SearchablePdf.MakeSearchable(signedText, new OcrOptions { Dpi = 72 }, none, default));
+        Assert.Empty(none.Calls);
+    }
+
+    [Fact]
     public void PageSelectionAndPassword()
     {
         var html = string.Join("", Enumerable.Range(1, 4).Select(i => $"<div style='break-after:page;height:100px;background:#888'></div>"));
