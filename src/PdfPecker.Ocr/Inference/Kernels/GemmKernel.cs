@@ -98,26 +98,48 @@ internal sealed unsafe class GemmKernel
     }
 
     /// <summary>Packs columns [0, cols) of a k x ld row-major block (activations) into NR-column panels at dst.</summary>
+    /// <remarks>
+    /// Row by row rather than panel by panel: each source row is then read once from start to end, one stream the
+    /// hardware prefetcher follows, where a panel at a time read a short piece of all k rows, more streams than it
+    /// tracks, and waited for memory on most of them.
+    /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void PackBRows(float* src, nint ld, int k, int cols, float* dst)
     {
         int nr = NR;
-        for (int q = 0; q < cols; q += nr)
+        int whole = cols / nr * nr;
+        nint panel = (nint)nr * k;
+        for (int kk = 0; kk < k; kk++)
         {
-            int w = Math.Min(nr, cols - q);
-            float* d = dst + (nint)q * k;
-            float* s = src + q;
-            if (w == nr)
+            float* s = src + kk * ld;
+            float* d = dst + (nint)kk * nr;
+            int q = 0;
+            if (nr == 32 && Vector512.IsHardwareAccelerated)
             {
-                for (int kk = 0; kk < k; kk++, s += ld, d += nr) Unsafe.CopyBlockUnaligned(d, s, (uint)(nr * sizeof(float)));
+                for (; q < whole; q += 32, d += panel)
+                {
+                    Vector512.Store(Vector512.Load(s + q), d);
+                    Vector512.Store(Vector512.Load(s + q + 16), d + 16);
+                }
+            }
+            else if (nr == 16 && Vector256.IsHardwareAccelerated)
+            {
+                for (; q < whole; q += 16, d += panel)
+                {
+                    Vector256.Store(Vector256.Load(s + q), d);
+                    Vector256.Store(Vector256.Load(s + q + 8), d + 8);
+                }
             }
             else
             {
-                for (int kk = 0; kk < k; kk++, s += ld, d += nr)
-                {
-                    Unsafe.CopyBlockUnaligned(d, s, (uint)(w * sizeof(float)));
-                    new Span<float>(d + w, nr - w).Clear();
-                }
+                for (; q < whole; q += nr, d += panel) Unsafe.CopyBlockUnaligned(d, s + q, (uint)(nr * sizeof(float)));
+            }
+
+            if (q < cols)
+            {
+                int w = cols - q;
+                Unsafe.CopyBlockUnaligned(d, s + q, (uint)(w * sizeof(float)));
+                new Span<float>(d + w, nr - w).Clear();
             }
         }
     }
