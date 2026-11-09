@@ -17,6 +17,7 @@
   As in PdfPecker, only same-machine comparisons are meaningful, and the GC gen0 budget is fixed (`DOTNET_GCgen0size`) so that
   peak memory compares across machines.
 - `TesseractComparison` – accuracy, speed and memory against Tesseract and rapidocr on the synthetic corpus; see its README. On
-  2026-11-08 (shared 4-vCPU VM, 65 pages) PdfPecker.Ocr had the lowest error rates (CER 1.7% in reading order, 0.4% ignoring it,
-  against 10.4% and 3.3% for Tesseract with `tessdata_fast`) and took 2.35 s per page at one thread and 0.73 s at four, against
-  0.58 s and 0.57 s for Tesseract and 5.2 s and 1.9 s for rapidocr; a 300 dpi page peaked at 431 MB, against 67 MB for Tesseract.
+  2026-11-09 (4-vCPU VM, otherwise idle, 65 pages) PdfPecker.Ocr had the lowest error rates (CER 1.7% in reading order, 0.4%
+  ignoring it, against 10.4% and 3.3% for Tesseract 5.5.4 with `tessdata_fast`) and took 2.12 s per page at one thread and
+  0.58 s at four, against 0.61 s and 0.57 s for Tesseract and 5.2 s and 1.9 s for rapidocr (measured on 2026-11-08); a
+  300 dpi page peaked at 226 MB, against 67 MB for Tesseract.

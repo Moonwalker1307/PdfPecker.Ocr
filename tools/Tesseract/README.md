@@ -15,9 +15,12 @@ tools/Tesseract/build.sh --jobs 4   # or TESSERACT_BUILD_JOBS=4
 Needs `git`, `cmake`, `ninja`, a C and C++ compiler with OpenMP (`libgomp`), and `curl`. It builds on Linux (x64, arm64) and
 macOS; the comparison app is only run on Linux so far.
 
-> **Status:** built and run on 2026-11-08 on Linux x64 (the build takes about ten minutes on four cores), and used for the
-> comparison in `bench/TesseractComparison` (results in its README and in `bench/TesseractComparison/baseline/2026-11-08/`).
-> Earlier builds did not copy the `tesseract` program, which CMake links as `bin/tesseract`; the library was unaffected.
+> **Status:** Tesseract 5.5.4 with Leptonica 1.87.0 built on 2026-11-09 on Linux x64 (the build takes about ten minutes on
+> four cores), and used for the comparison in `bench/TesseractComparison` (results in its README and in
+> `bench/TesseractComparison/baseline/2026-11-09/`). Earlier builds did not copy the `tesseract` program, which CMake links
+> as `bin/tesseract`; the library was unaffected. A build into the work folder of an older version can copy the old
+> library to `out/<rid>/`, because that folder keeps `libtesseract.so.5.5.1` next to `libtesseract.so.5.5.4`; check
+> `TessVersion()` (the comparison's engine lines print it) or delete `out/work-<rid>` before building another version.
 
 ## What the script does
 
@@ -52,11 +55,11 @@ recognitions at once is `OMP_THREAD_LIMIT=1`.
 
 The library is built without `-march=native`: Tesseract picks its AVX2/FMA/SSE dot-product code at run time.
 
-What the threads bought in the comparison of 2026-11-08 (shared 4-vCPU VM, 65 pages): with `tessdata_fast`, 4 threads made the
-median page 2% faster (583 to 569 ms) for 2.7 times the CPU time; with `tessdata_best`, whose LSTM is larger, 44% faster
-(1351 to 755 ms) for 1.7 times the CPU time. While other processes were using the cores, 4-thread runs stalled for seconds to
-minutes per page (420 s once), because the OpenMP threads wait for each other after every step of a line; at 1 thread
-nothing of the kind happened.
+What the threads bought in the comparison of 2026-11-09 (4-vCPU VM, otherwise idle, 65 pages): with `tessdata_fast`, 4 threads
+made the median page 5% faster (605 to 572 ms) for 2.75 times the CPU time; with `tessdata_best`, whose LSTM is larger, 40%
+faster (1382 to 828 ms) for 1.76 times the CPU time. In the first comparison, on 2026-11-08, other processes were using the
+cores, and 4-thread runs stalled for seconds to minutes per page (420 s once), because the OpenMP threads wait for each other
+after every step of a line; at 1 thread nothing of the kind happened, and on the idle machine no 4-thread page stalled.
 
 ## Leptonica without image codecs
 

@@ -133,28 +133,29 @@ Arabic, Hebrew, Devanagari or Thai letters, so text in those scripts is not reco
 
 Measured with `bench/TesseractComparison` on its synthetic corpus of 65 pages (A4 invoices, letters, two-column
 articles, tables, small print, a monospaced log and identifiers in English, Danish, German and French, at 300 and
-150 dpi, 27 degraded variants, and Tesseract's two sample images), against Tesseract 5.5.1 called in the same process
-and RapidOCR running the same models on ONNX Runtime. The machine was a shared 4-vCPU cloud VM (Xeon at 2.1 GHz with
-AVX-512) on which other jobs were running, measured on 2026-11-08; times are the median over pages of each page's median
-after a warm-up, with no image decoding.
+150 dpi, 27 degraded variants, and Tesseract's two sample images), against Tesseract 5.5.4 called in the same process
+and RapidOCR running the same models on ONNX Runtime. The machine was a 4-vCPU cloud VM (Xeon at 2.1 GHz with AVX-512),
+otherwise idle, measured on 2026-11-09 (RapidOCR's rows on 2026-11-08, when other jobs were running); times are the
+median over pages of each page's median after a warm-up, with no image decoding.
 
-| | PdfPecker.Ocr | RapidOCR + ONNX Runtime | Tesseract 5.5.1, `tessdata_fast` | Tesseract 5.5.1, `tessdata_best` (English pages) |
+| | PdfPecker.Ocr | RapidOCR + ONNX Runtime | Tesseract 5.5.4, `tessdata_fast` | Tesseract 5.5.4, `tessdata_best` (English pages) |
 | --- | ---: | ---: | ---: | ---: |
 | Character error rate, in reading order | 1.7% | 23.3% | 10.4% | 15.2% |
 | Character error rate, ignoring reading order | 0.4% | 6.4% | 3.3% | 2.2% |
 | Word bag F1 | 0.996 | 0.960 | 0.971 | 0.973 |
-| Time per page, 1 thread | 2.35 s | 5.20 s | 0.58 s | 1.35 s |
-| Time per page, 4 threads | 0.73 s | 1.91 s | 0.57 s | 0.76 s |
-| CPU time per page | 2.4 s | 5.0 s | 0.6 s | 1.6 s |
-| Peak memory, one A4 page at 300 dpi in a fresh process | 431 MB | 548 MB | 67 MB | 80 MB |
+| Time per page, 1 thread | 2.12 s | 5.20 s | 0.61 s | 1.38 s |
+| Time per page, 4 threads | 0.58 s | 1.91 s | 0.57 s | 0.83 s |
+| CPU time per page | 2.2 s | 5.0 s | 0.6 s | 1.6 s |
+| Peak memory, one A4 page at 300 dpi in a fresh process | 226 MB | 548 MB | 67 MB | 80 MB |
 
-PdfPecker.Ocr reads the most text correctly, and it reads every page faster than ONNX Runtime does with the same models,
-but Tesseract needs about a quarter of its CPU time and a sixth of its memory. A page of long lines takes more time and
-memory (7.3 s and 906 MB at one thread for a monospaced log of 36 lines of up to 80 characters). Most of the reading order
-penalty of the other engines is their order of table columns (Tesseract) and of article columns (RapidOCR); the method,
-the results per page group and the causes of each engine's errors are in `bench/TesseractComparison/README.md`. The
-corpus is rendered, not scanned, which flatters every engine. Cloud machines differ too much in processor to compare a
-run with this table; to compare two versions, run `bench/compare-versions.sh` on one machine.
+PdfPecker.Ocr reads the most text correctly, it reads every page faster than ONNX Runtime does with the same models, and
+at four threads it is as fast as Tesseract with `tessdata_fast`, but Tesseract needs about a quarter of its CPU time and
+a third of its memory. A page of long lines takes more time but hardly more memory (6.4 s and 236 MB at one thread for a
+monospaced log of 36 lines of up to 80 characters). Most of the reading order penalty of the other engines is their
+order of table columns (Tesseract) and of article columns (RapidOCR); the method, the results per page group and the
+causes of each engine's errors are in `bench/TesseractComparison/README.md`. The corpus is rendered, not scanned, which
+flatters every engine. Cloud machines differ too much in processor to compare a run with this table; to compare two
+versions, run `bench/compare-versions.sh` on one machine.
 
 **Memory.** Reading an A4 page at 300 dpi takes about 220 to 240 MB beyond the .NET runtime's own: the models (30 MB,
 kept once loaded) and the detector's working memory (about 100 MB of native memory, released with the threads after 30
