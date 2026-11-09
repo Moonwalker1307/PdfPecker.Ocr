@@ -21,7 +21,7 @@ macOS; the comparison app is only run on Linux so far.
 
 ## What the script does
 
-1. Clones Leptonica `1.85.0` and Tesseract `5.5.1` with `git clone --depth 1 --branch <tag>`, then **checks the commit** each tag
+1. Clones Leptonica `1.87.0` and Tesseract `5.5.4` with `git clone --depth 1 --branch <tag>`, then **checks the commit** each tag
    resolves to against the pins at the top of the script and refuses to build on a mismatch.
 2. Builds Leptonica as a static, position independent library, Release `-O3`, **without any image codec** (no libpng, libjpeg,
    libtiff, zlib, giflib, webp or openjpeg): the comparison passes raw pixels to `TessBaseAPISetImage`, so Leptonica never reads
@@ -34,8 +34,8 @@ macOS; the comparison app is only run on Linux so far.
 
 | Pin | Value |
 | --- | --- |
-| Leptonica | tag `1.85.0`, commit `63aef18d98432b8582a1565e241f7bd2ee9cc8d9` |
-| Tesseract | tag `5.5.1`, commit `0995615022dc368f65c6b88f31784d8bc384f855` |
+| Leptonica | tag `1.87.0`, commit `13275a278eb55b5746e33f95fbf5a2c8f604b3ab` |
+| Tesseract | tag `5.5.4`, commit `7e548e6eff172f38f97664afe7f7ce40db36c8d6` |
 | tessdata_fast | commit `87416418657359cb625c412a48b6e1d6d41c29bd` |
 | tessdata_best | commit `e12c65a915945e4c28e237a9b52bc4a8f39a0cec` (`eng` only) |
 

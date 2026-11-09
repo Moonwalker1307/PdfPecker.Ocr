@@ -134,7 +134,7 @@ benchmark on demand on main and keeps the results.
 ## Tesseract comparison
 
 `bench/TesseractComparison` compares accuracy, speed and peak memory of PdfPecker.Ocr (built in from `src/PdfPecker.Ocr`)
-with Tesseract 5.5.1 and rapidocr on a synthetic corpus with known ground truth. `tools/Tesseract/build.sh` builds Tesseract and Leptonica from pinned git tags, and the comparison
+with Tesseract 5.5.4 and rapidocr on a synthetic corpus with known ground truth. `tools/Tesseract/build.sh` builds Tesseract and Leptonica from pinned git tags, and the comparison
 app, compiled with Native AOT, calls Tesseract through its C API in the same process, so neither side pays for starting
 a process. Tesseract is dev tooling only and never ships in the package. The README's figures come from this
 comparison; change them only from a measured run, and name the machine. The run behind the current figures is in `bench/TesseractComparison/baseline/2026-11-08/`.

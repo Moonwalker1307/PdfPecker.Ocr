@@ -23,10 +23,10 @@ here=$(cd "$(dirname "$0")" && pwd)
 
 # Pins. Tags move rarely, but a commit does not: the script checks the commit each tag resolves to (for an annotated
 # tag, the commit it points at, not the tag object).
-LEPTONICA_TAG=1.85.0
-LEPTONICA_COMMIT=63aef18d98432b8582a1565e241f7bd2ee9cc8d9
-TESSERACT_TAG=5.5.1
-TESSERACT_COMMIT=3b7c70e34dea179549ed3e995872e2e019eb8477
+LEPTONICA_TAG=1.87.0
+LEPTONICA_COMMIT=13275a278eb55b5746e33f95fbf5a2c8f604b3ab
+TESSERACT_TAG=5.5.4
+TESSERACT_COMMIT=7e548e6eff172f38f97664afe7f7ce40db36c8d6
 
 # tessdata_fast and tessdata_best commits, and the SHA-256 of every file taken from them.
 TESSDATA_FAST_COMMIT=87416418657359cb625c412a48b6e1d6d41c29bd
@@ -119,7 +119,7 @@ cmake --build "$work/tesseract" --parallel "$jobs"
 lib=$(find "$work/tesseract" -maxdepth 1 \( -name "libtesseract*.$ext" -o -name "libtesseract*.$ext.*" \) | head -n 1)
 [ -n "$lib" ] || { echo "libtesseract was not built" >&2; exit 1; }
 cp -L "$lib" "$out/$rid/libtesseract.$ext"
-# Tesseract 5.5.1's CMake build links the program as bin/tesseract; older layouts put it at the top of the build folder.
+# Tesseract 5.5's CMake build links the program as bin/tesseract; older layouts put it at the top of the build folder.
 for program in "$work/tesseract/bin/tesseract" "$work/tesseract/tesseract"; do
   if [ -f "$program" ]; then cp "$program" "$out/$rid/tesseract"; break; fi
 done

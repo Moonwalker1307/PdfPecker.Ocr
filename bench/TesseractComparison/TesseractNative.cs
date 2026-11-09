@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace TesseractComparison;
 
 /// <summary>
-/// Tesseract's C API (include/tesseract/capi.h of 5.5.1, whose declarations these follow), imported with source-generated
+/// Tesseract's C API (include/tesseract/capi.h of 5.5.4, whose declarations these follow), imported with source-generated
 /// LibraryImport so that the call sites need no runtime marshalling code and the app stays Native AOT compatible. BOOL in
 /// that header is a C int. The library is found through <see cref="SetLibraryPath"/>, because it is built by
 /// tools/Tesseract/build.sh and sits in no system folder.
