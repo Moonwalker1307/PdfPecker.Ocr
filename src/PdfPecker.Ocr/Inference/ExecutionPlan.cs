@@ -8,9 +8,6 @@ internal enum BufferKind : byte
 
     /// <summary>The caller's input tensor, which is never written.</summary>
     Input,
-
-    /// <summary>The context's output buffer for the model.</summary>
-    Output,
 }
 
 /// <summary>Where a value lives: a buffer and an offset in floats.</summary>
@@ -21,14 +18,8 @@ internal sealed unsafe class Frame
 {
     public float* Arena;
     public float* Input;
-    public float* Output;
 
-    public float* Resolve(Location location) => location.Buffer switch
-    {
-        BufferKind.Input => Input,
-        BufferKind.Output => Output,
-        _ => Arena,
-    } + location.Offset;
+    public float* Resolve(Location location) => (location.Buffer == BufferKind.Input ? Input : Arena) + location.Offset;
 }
 
 /// <summary>A layer in a plan: its shapes for this input size and where its values live.</summary>
@@ -71,7 +62,9 @@ internal sealed unsafe class Step(Layer layer, int[][] inputShapes, int[] output
 /// views share their input's memory, elementwise layers may write over an input that is not needed afterwards, and the
 /// inputs of a concatenation along a contiguous axis are written straight into their slice of its output. The rest are
 /// placed greedily, largest first, at the lowest offset no value alive at the same time occupies, and so is each step's
-/// shared scratch, which lives only while its step runs and so fits in memory that values of other steps use.
+/// shared scratch, which lives only while its step runs and so fits in memory that values of other steps use. The
+/// model's input and output are values like the others, so a caller can build the input in the arena and read the
+/// output there, and neither needs a buffer of its own.
 /// </summary>
 internal sealed class ExecutionPlan
 {
@@ -93,6 +86,9 @@ internal sealed class ExecutionPlan
     public int[] OutputShape => Steps[^1].OutputShape;
 
     public int OutputLength { get; private set; }
+
+    /// <summary>Where the output lies in the arena after a run, until the context runs a model again.</summary>
+    public long OutputOffset { get; private set; }
 
     public long ArenaFloats { get; private set; }
 
@@ -223,28 +219,29 @@ internal sealed class ExecutionPlan
             }
         }
 
-        int outputRoot = Find(outputValue, out _);
+        int outputRoot = Find(outputValue, out long outputAt);
         if (outputRoot == 0) throw new InvalidOperationException("A model whose output is its input is not supported.");
 
         // Each step's shared scratch is a block of the arena that lives for that step alone.
         var scratch = new long[layers.Count];
         for (int i = 0; i < layers.Count; i++) scratch[i] = layers[i].SharedScratch(steps[i]);
 
-        // Greedy placement of the input's group, the remaining groups and the scratch blocks, largest first, each at the lowest offset where
-        // it overlaps nothing alive at the same time. A group is placed as its members: each value in it occupies its own
-        // part of the group's memory only while that value is alive, so a concatenation whose last input is written
-        // straight into its slice does not hold the rest of its output from that moment on, and another value may still
-        // use that memory. A member reserves its size rounded up to whole vectors. An item is a value's group (Key >= 0,
-        // its root) or step ~Key's scratch. The input is alive from before the first step (-1), and the caller may have it
-        // elsewhere, in which case its block is simply not used; no layer writes over it in place.
+        // Greedy placement of the groups, the input's and the output's among them, and the scratch blocks, largest first,
+        // each at the lowest offset where it overlaps nothing alive at the same time. A group is placed as its members:
+        // each value in it occupies its own part of the group's memory only while that value is alive, so a
+        // concatenation whose last input is written straight into its slice does not hold the rest of its output from
+        // that moment on, and another value may still use that memory. A member reserves its size rounded up to whole
+        // vectors. An item is a value's group (Key >= 0, its root) or step ~Key's scratch. The input is alive from before
+        // the first step (-1), and the caller may have it elsewhere, in which case its block is simply not used; no layer
+        // writes over it in place. The output stays in the arena after the run, for the caller to read before the context
+        // runs a model again.
         var parts = new List<Rect>[valueCount];
         for (int v = 0; v < valueCount; v++)
         {
             int root = Find(v, out long at);
-            if (root == outputRoot) continue;
             (parts[root] ??= []).Add(new Rect(at, Round(sizes[v]), v - 1, lastUse[v]));
         }
-        var items = Enumerable.Range(0, valueCount).Where(v => parent[v] == v && v != outputRoot)
+        var items = Enumerable.Range(0, valueCount).Where(v => parent[v] == v)
             .Select(v => (Key: v, Size: sizes[v], Start: start[v]))
             .Concat(Enumerable.Range(0, layers.Count).Where(i => scratch[i] > 0).Select(i => (Key: ~i, Size: scratch[i], Start: i)))
             .OrderByDescending(x => x.Size).ThenBy(x => x.Start).ThenBy(x => x.Key < 0).ThenBy(x => x.Key < 0 ? ~x.Key : x.Key).ToList();
@@ -283,7 +280,6 @@ internal sealed class ExecutionPlan
         {
             int root = Find(v, out long at);
             if (root == 0) return new Location(BufferKind.Input, at);
-            if (root == outputRoot) return new Location(BufferKind.Output, at);
             return new Location(BufferKind.Arena, rootOffset[root] + at);
         }
 
@@ -291,7 +287,8 @@ internal sealed class ExecutionPlan
         {
             ArenaFloats = arena,
             InputOffset = rootOffset[0],
-            OutputLength = checked((int)sizes[outputRoot]),
+            OutputLength = checked((int)sizes[outputValue]),
+            OutputOffset = rootOffset[outputRoot] + outputAt,
         };
         long perWorker = 0;
         for (int i = 0; i < steps.Length; i++)

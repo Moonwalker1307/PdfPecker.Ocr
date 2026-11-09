@@ -84,12 +84,10 @@ static unsafe class LayerProfile
                 var plan = context.GetPlan(model, shape);
                 context.EnsureScratch(plan.ScratchPerWorker);
                 float* arena = context.Arena(plan.ArenaFloats);
-                float[] output = context.OutputBuffer(model, plan.OutputLength, out int offset);
-                fixed (float* x = input, y = output)
+                fixed (float* x = input)
                 {
                     plan.Frame.Arena = arena;
                     plan.Frame.Input = x;
-                    plan.Frame.Output = y + offset;
                     for (int i = 0; i < plan.Steps.Length; i++)
                     {
                         long s = Stopwatch.GetTimestamp();
