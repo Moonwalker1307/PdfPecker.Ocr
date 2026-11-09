@@ -27,7 +27,8 @@ public sealed class PipelineHostileInputTests
         var watch = Stopwatch.StartNew();
         List<DetectedQuad> boxes = processor.Process(map, W, H, 3000, 3000, new DetectionOptions());
         Assert.True(watch.Elapsed < Bound, $"{kind}: {watch.Elapsed}");
-        Assert.True(boxes.Count <= new DetectionOptions().MaxCandidates);
+        // One region of text size is looked at for every 256 pixels of the map, and at least MaxCandidates.
+        Assert.True(boxes.Count <= Math.Max(new DetectionOptions().MaxCandidates, W * H / 256));
         foreach (DetectedQuad box in boxes)
         {
             for (int i = 0; i < 4; i++)

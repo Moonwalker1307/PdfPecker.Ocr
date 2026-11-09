@@ -168,6 +168,62 @@ public sealed class DetectionTests
     }
 
     [Fact]
+    public void DenseMapsKeepTheirTopRows()
+    {
+        // 1,200 text-sized regions, more than rapidocr's 1,000 candidates: looked at from the bottom up and all counted,
+        // the top rows were lost. The budget grows with the map, so every region is found.
+        const int W = 1024, H = 512;
+        var map = new float[W * H];
+        for (int row = 0; row < 30; row++)
+        {
+            for (int col = 0; col < 40; col++)
+            {
+                Blob(map, W, 20 + (col * 24), 10 + (row * 16), 12, 6);
+            }
+        }
+
+        var processor = new DbPostProcessor();
+        List<DetectedQuad> boxes = processor.Process(map, W, H, W, H, new DetectionOptions());
+        Assert.Equal(1200, boxes.Count);
+        Assert.False(processor.LastCandidatesCapped);
+        Assert.InRange(boxes.Min(b => b.Quad.P0.Y), 0, 10);
+    }
+
+    [Fact]
+    public void SpecksDoNotUseUpTheCandidates()
+    {
+        // A noisy scan: 16,384 isolated specks below a row of 40 text regions. Specks are no longer counted against the
+        // candidates, so the text is found.
+        const int W = 1024, H = 512;
+        var map = new float[W * H];
+        for (int col = 0; col < 40; col++)
+        {
+            Blob(map, W, 20 + (col * 24), 10, 12, 6);
+        }
+
+        for (int y = 256; y < H; y += 4)
+        {
+            for (int x = 0; x < W; x += 4)
+            {
+                map[(y * W) + x] = 1;
+            }
+        }
+
+        var processor = new DbPostProcessor();
+        List<DetectedQuad> boxes = processor.Process(map, W, H, W, H, new DetectionOptions());
+        Assert.Equal(40, boxes.Count);
+        Assert.True(processor.LastRegionCount > 16_000);
+    }
+
+    private static void Blob(float[] map, int width, int x0, int y0, int w, int h)
+    {
+        for (int y = y0; y < y0 + h; y++)
+        {
+            map.AsSpan((y * width) + x0, w).Fill(1);
+        }
+    }
+
+    [Fact]
     public void WideStripsArePaddedAsRapidocrDoes()
     {
         // rapidocr: h = 40 <= 30 is false, but 1000 / 40 > 8, so the padded height is max(125, 30) * 2 = 250.

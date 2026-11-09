@@ -57,7 +57,10 @@ internal sealed record DetectionOptions
     /// <summary>Boxes whose mean probability is below this are dropped (rapidocr's <c>box_thresh</c>).</summary>
     public float BoxThreshold { get; init; } = 0.5f;
 
-    /// <summary>At most this many connected regions are looked at (rapidocr's <c>max_candidates</c>).</summary>
+    /// <summary>
+    /// The fewest connected regions of text size that are looked at (rapidocr's <c>max_candidates</c>, which counts
+    /// every region); a larger map looks at one for every 256 of its pixels. Specks smaller than 3 pixels do not count.
+    /// </summary>
     public int MaxCandidates { get; init; } = 1000;
 
     /// <summary>How far a shrunk text kernel is grown back, relative to its area over its perimeter.</summary>

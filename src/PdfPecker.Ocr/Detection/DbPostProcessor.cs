@@ -13,8 +13,15 @@ namespace PdfPecker.Ocr.Detection;
 /// rapidocr finds regions with OpenCV's <c>findContours</c>. Only the convex hull of a contour matters for the
 /// rectangle, and that is the hull of the region's pixels, so this works on runs of pixels: one pass over the map
 /// finds the runs of each row and joins them with 8-connectivity in a union-find, and each region's hull is built
-/// from the two ends of its runs on each row. Regions are visited in the order OpenCV returns their contours (reverse
-/// raster order of their first pixel), which matters only when there are more than <c>MaxCandidates</c> of them.
+/// from the two ends of its runs on each row. The boxes are listed in the order OpenCV returns their contours (reverse
+/// raster order of their first pixel), which decides ties in the final sort.
+/// </para>
+/// <para>
+/// rapidocr looks at the first <c>max_candidates</c> contours whatever their size, from the bottom of the page up, so a
+/// dense page lost the lines at its top and the specks of a noisy scan used up the budget. Here only regions of at
+/// least <c>MinSize</c> pixels each way count, the budget grows with the map (one region per 256 of its pixels, and at
+/// least <see cref="DetectionOptions.MaxCandidates"/>), and regions are looked at from the top, so a page that still
+/// has more loses its bottom.
 /// </para>
 /// <para>
 /// <c>RETR_LIST</c> also returns the inner contours of holes in a region, whose rectangles lie inside the region's own
@@ -45,6 +52,9 @@ internal sealed class DbPostProcessor
     /// <summary>The number of connected regions found in the last map, for tests and diagnostics.</summary>
     public int LastRegionCount { get; private set; }
 
+    /// <summary>Whether the last map had more regions of text size than were looked at, for tests and diagnostics.</summary>
+    public bool LastCandidatesCapped { get; private set; }
+
     /// <summary>
     /// Finds the text boxes in a <paramref name="width"/> x <paramref name="height"/> probability map, scaled to a
     /// destination of <paramref name="destWidth"/> x <paramref name="destHeight"/> pixels, in rapidocr's output order
@@ -64,16 +74,28 @@ internal sealed class DbPostProcessor
         var boxes = new List<DetectedQuad>();
         Span<PointD> corners = stackalloc PointD[4];
         Span<PointD> box = stackalloc PointD[4];
-        int candidates = Math.Min(regions, options.MaxCandidates);
-        for (int c = 0; c < candidates; c++)
+        int cap = (int)Math.Max(options.MaxCandidates, Math.Min(int.MaxValue, (long)width * height / 256));
+        int counted = 0;
+        LastCandidatesCapped = false;
+        for (int region = 0; region < regions; region++)
         {
-            if ((c & 63) == 0)
+            if ((region & 63) == 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
             }
 
-            // OpenCV lists contours in reverse raster order of their first pixel.
-            int region = regions - 1 - c;
+            // Specks cost a few points of hull each and are dropped below; only regions that could be text count.
+            if (!IsSpeck(region))
+            {
+                if (counted == cap)
+                {
+                    LastCandidatesCapped = true;
+                    break;
+                }
+
+                counted++;
+            }
+
             ReadOnlySpan<PointD> hull = RegionHull(region);
             float side = Geometry.MinAreaRect(hull, corners);
             if (side < MinSize)
@@ -108,6 +130,8 @@ internal sealed class DbPostProcessor
             }
         }
 
+        // OpenCV lists contours in reverse raster order of their first pixel; the sort below keeps that order for ties.
+        boxes.Reverse();
         SortLikeRapidocr(boxes);
         return boxes;
     }
@@ -465,6 +489,31 @@ internal sealed class DbPostProcessor
         {
             parent[ra] = rb;
         }
+    }
+
+    /// <summary>Whether a region is less than <see cref="MinSize"/> pixels wide or high, judged by its runs.</summary>
+    private bool IsSpeck(int region)
+    {
+        int start = _componentStart[region], end = _componentStart[region + 1];
+        // The runs are in raster order, so the first and last give the rows.
+        if (_runY[_componentRuns[end - 1]] - _runY[_componentRuns[start]] + 1 < MinSize)
+        {
+            return true;
+        }
+
+        int x0 = int.MaxValue, x1 = int.MinValue;
+        for (int i = start; i < end; i++)
+        {
+            int run = _componentRuns[i];
+            x0 = Math.Min(x0, _runX0[run]);
+            x1 = Math.Max(x1, _runX1[run]);
+            if (x1 - x0 + 1 >= MinSize)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>The convex hull of a region: only the ends of its runs on each row can be hull vertices.</summary>
