@@ -264,6 +264,10 @@ public sealed class RuntimeTests
             input.CopyTo(buffer);
             var result = model.Run(buffer, shape, context, out _);
             Assert.True(expected.AsSpan().SequenceEqual(result), $"{name} with {degree} threads");
+
+            // The tensor path copies the output out of the arena into a buffer of the context's.
+            var tensor = model.Run(new Tensor(input, shape), context);
+            Assert.True(expected.AsSpan().SequenceEqual(tensor.Span), $"{name} tensor with {degree} threads");
         }
     }
 

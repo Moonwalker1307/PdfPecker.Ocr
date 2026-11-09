@@ -5,9 +5,10 @@ namespace PdfPecker.Ocr.Inference;
 
 /// <summary>
 /// The working memory and the threads of one inference worker. A context runs one model at a time: it owns the
-/// activation arena (which also holds each step's shared scratch), per-worker scratch buffers, the execution plans, the output buffers and, for a degree of
-/// parallelism above one, that many threads less one (the caller's thread is the first worker), and reuses them across
-/// runs, so a steady stream of runs of similar sizes allocates nothing. It is not thread-safe; give each concurrent
+/// activation arena (which also holds each step's shared scratch and each run's input and output), per-worker scratch
+/// buffers, the execution plans and, for a degree of parallelism above one, that many threads less one (the caller's
+/// thread is the first worker), and reuses them across runs, so a steady stream of runs of similar sizes allocates
+/// nothing. It is not thread-safe; give each concurrent
 /// worker its own context, and dispose it to stop its threads. Models are shared.
 /// </summary>
 /// <remarks>
@@ -81,8 +82,8 @@ internal sealed unsafe class InferenceContext : IDisposable
     internal float* Arena(long floats) => Native(ref _arena, ref _arenaFloats, floats);
 
     /// <summary>
-    /// The output buffer of a model, owned by this context and overwritten by its next run of the model; offset is where
-    /// its 64-byte aligned part starts.
+    /// The buffer that <see cref="OcrModel.Run(Tensor, InferenceContext)"/> copies a model's output into, owned by this
+    /// context and overwritten by its next run of the model; offset is where its 64-byte aligned part starts.
     /// </summary>
     internal float[] OutputBuffer(OcrModel model, int floats, out int offset)
     {

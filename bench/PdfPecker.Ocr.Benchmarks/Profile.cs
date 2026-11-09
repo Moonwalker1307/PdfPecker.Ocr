@@ -87,14 +87,11 @@ static class Profile
             var plan = context.GetPlan(model, shape);
             context.EnsureScratch(plan.ScratchPerWorker);
             float* arena = context.Arena(plan.ArenaFloats);
-            float[] output = context.OutputBuffer(model, plan.OutputLength, out int offset);
             fixed (float* inputPointer = input)
-            fixed (float* outputPointer = output)
             {
                 var frame = plan.Frame;
                 frame.Arena = arena;
                 frame.Input = inputPointer;
-                frame.Output = outputPointer + offset;
                 for (int s = 0; s < plan.Steps.Length; s++)
                 {
                     var step = plan.Steps[s];
@@ -110,7 +107,7 @@ static class Profile
             }
             _ticks += Stopwatch.GetTimestamp() - start;
             outputShape = (int[])plan.OutputShape.Clone();
-            return output.AsSpan(offset, plan.OutputLength);
+            return new ReadOnlySpan<float>(arena + plan.OutputOffset, plan.OutputLength);
         }
 
         /// <summary>

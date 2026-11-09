@@ -7,7 +7,8 @@ namespace PdfPecker.Ocr;
 /// </summary>
 /// <remarks>
 /// An instance is used by one thread at a time. The returned span stays valid until the next call on the same
-/// instance, which lets an adapter hand out its own pooled output buffer instead of copying it.
+/// instance or on another network of the same pipeline, which lets the networks of one worker hand out their shared
+/// working memory instead of copying the output; the pipeline is done with an output before it runs another network.
 /// </remarks>
 internal interface INetwork
 {
