@@ -162,6 +162,47 @@ internal sealed unsafe class PoolLayer : Layer
         }
     }
 
+    /// <summary>True for the stem's 2x2, stride 1 maximum padded on the bottom and right, whose output has its input's size.</summary>
+    internal bool IsStemMaximum => IsMax2x2Stride1 && _pb == 1 && _pr == 1;
+
+    /// <summary>
+    /// The stem's maximum (<see cref="IsStemMaximum"/>) on a block of output pixels, <paramref name="rows"/> rows of
+    /// <paramref name="width"/> from (<paramref name="oy0"/>, <paramref name="ox0"/>), for <paramref name="channels"/>
+    /// channels, as <see cref="GemmConvLayer.ComputeBlock"/> windows its input and output. Each value is the maximum of
+    /// the same values, taken in the same order, as in <see cref="MaxPool2x2Stride1"/>.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    internal static void MaxPool2x2Stride1Block(float* input, long inputPlane, long rowStride, int h, int w, int firstRow, int firstColumn,
+        int oy0, int ox0, int rows, int width, float* output, long outputPlane, int channels)
+    {
+        int vector = Vector<float>.Count;
+        for (int c = 0; c < channels; c++)
+        {
+            float* origin = input + c * inputPlane - (long)firstRow * rowStride - firstColumn;
+            for (int ly = 0; ly < rows; ly++)
+            {
+                int y = oy0 + ly;
+                float* r0 = origin + (long)y * rowStride;
+                float* r1 = y + 1 < h ? r0 + rowStride : r0;
+                float* dst = output + c * outputPlane + (long)ly * width - ox0;
+                int x = ox0, end = ox0 + width;
+                // As in MaxPool2x2Stride1, vectors cover the pixels whose right neighbour is inside the row.
+                for (; x + vector < w && x + vector <= end; x += vector)
+                {
+                    var a = Vector.Max(VectorMath.Load(r0 + x), VectorMath.Load(r1 + x));
+                    var b = Vector.Max(VectorMath.Load(r0 + x + 1), VectorMath.Load(r1 + x + 1));
+                    VectorMath.Store(Vector.Max(a, b), dst + x);
+                }
+                for (; x < end; x++)
+                {
+                    float m = Math.Max(r0[x], r1[x]);
+                    if (x + 1 < w) m = Math.Max(m, Math.Max(r0[x + 1], r1[x + 1]));
+                    dst[x] = m;
+                }
+            }
+        }
+    }
+
     /// <summary>Output columns [xStart, ow) of rows [yStart, yEnd), by the definition.</summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void Generic(float* input, int h, int w, float* output, int oh, int ow, int yStart, int xStart, int yEnd)
