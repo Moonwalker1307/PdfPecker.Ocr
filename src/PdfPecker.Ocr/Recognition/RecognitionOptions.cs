@@ -38,6 +38,27 @@ internal sealed record RecognitionOptions
     /// </summary>
     public int MaxInputWidth { get; init; } = 3200;
 
+    /// <summary>
+    /// Experimental, and it changes results: the narrowest batch input in pixels at the height of 48. rapidocr pads
+    /// every batch to at least 320, which on a page of short lines (table cells, numbers, labels) makes over a third
+    /// of the recogniser's input zeros; a smaller value pads less, but the network's attention then sees less padding,
+    /// so lines can read differently. 320 keeps rapidocr's batches.
+    /// </summary>
+    public int MinBatchWidth { get; init; } = 320;
+
+    /// <summary>
+    /// Experimental, and it changes results when set: a batch ends before a line whose input would be more than this
+    /// many times as wide as the first line's, so lines of very different lengths are not padded to the longest.
+    /// 0 keeps batches of <see cref="BatchSize"/> lines.
+    /// </summary>
+    public double MaxBatchSpread { get; init; }
+
+    /// <summary>
+    /// Experimental, and it changes results when set: lines whose input is at least this many pixels wide are read in
+    /// a batch of their own, without padding. 0 keeps them in batches.
+    /// </summary>
+    public int SoloLineWidth { get; init; }
+
     /// <summary>Lines whose confidence is below this are dropped (rapidocr's <c>text_score</c>).</summary>
     public float MinConfidence { get; init; } = 0.5f;
 

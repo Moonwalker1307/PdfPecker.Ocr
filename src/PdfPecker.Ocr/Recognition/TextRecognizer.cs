@@ -15,9 +15,6 @@ internal sealed class TextRecognizer
 {
     public const int InputHeight = 48;
 
-    // rapidocr's rec_img_shape is 3 x 48 x 320: no batch is narrower than 320 / 48.
-    private const double MinBatchRatio = 320.0 / 48.0;
-
     private readonly INetwork _recognition;
     private readonly OrientationClassifier? _orientation;
     private readonly CropBatch _batch;
@@ -80,11 +77,12 @@ internal sealed class TextRecognizer
         var decoded = new DecodedLine?[crops.Length];
         var results = new RecognizedLine?[crops.Length];
         int batch = Math.Max(1, Options.BatchSize);
-        for (int start = 0; start < order.Length; start += batch)
+        for (int start = 0; start < order.Length;)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            int n = Math.Min(batch, order.Length - start);
+            int n = BatchLength(crops, order, start, batch);
             RecognizeBatch(page, crops, order.AsSpan(start, n), decoded, results);
+            start += n;
         }
 
         LastDecoded = decoded;
@@ -146,9 +144,36 @@ internal sealed class TextRecognizer
         }
     }
 
+    /// <summary>
+    /// The number of lines from <paramref name="start"/> of the sorted order that go in one batch: <paramref name="batch"/>
+    /// (rapidocr's batches), or fewer under the experimental <see cref="RecognitionOptions.MaxBatchSpread"/> and
+    /// <see cref="RecognitionOptions.SoloLineWidth"/>.
+    /// </summary>
+    private int BatchLength(LineCrop[] crops, int[] order, int start, int batch)
+    {
+        int n = Math.Min(batch, order.Length - start);
+        if (Options.MaxBatchSpread <= 0 && Options.SoloLineWidth <= 0) return n;
+        double first = PaddedWidth(crops[order[start]]);
+        if (Options.SoloLineWidth > 0 && InputHeight * crops[order[start]].AspectRatio >= Options.SoloLineWidth) return 1;
+        for (int k = 1; k < n; k++)
+        {
+            LineCrop crop = crops[order[start + k]];
+            if (Options.SoloLineWidth > 0 && InputHeight * crop.AspectRatio >= Options.SoloLineWidth) return k;
+            if (Options.MaxBatchSpread > 0 && PaddedWidth(crop) > Options.MaxBatchSpread * first) return k;
+        }
+
+        return n;
+    }
+
+    /// <summary>The width a line alone would be padded to: its own, or the narrowest batch.</summary>
+    private double PaddedWidth(LineCrop crop) => Math.Max(MinBatchWidth, InputHeight * crop.AspectRatio);
+
+    // rapidocr's rec_img_shape is 3 x 48 x 320: no batch is narrower than 320 / 48, unless the experiment says so.
+    private int MinBatchWidth => Math.Max(16, Options.MinBatchWidth);
+
     private void RecognizeBatch(PixelView page, LineCrop[] crops, ReadOnlySpan<int> members, DecodedLine?[] decoded, RecognizedLine?[] results)
     {
-        double maxRatio = MinBatchRatio;
+        double maxRatio = MinBatchWidth / (double)InputHeight;
         foreach (int i in members)
         {
             maxRatio = Math.Max(maxRatio, crops[i].AspectRatio);
