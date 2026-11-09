@@ -92,6 +92,26 @@ public sealed class RecognitionTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void ShortTallCropsStayUprightOnHorizontalPages()
+    {
+        static LineCrop Box(int x, int y, int w, int h, int index) => new(new Quad(new(x, y), new(x + w, y), new(x + w, y + h), new(x, y + h)), index);
+
+        // Lines 40 pixels high, a lone narrow character of 22 x 45 and a line of 40 x 300 running up the page.
+        var crops = new[] { Box(0, 0, 400, 40, 0), Box(0, 60, 300, 40, 1), Box(0, 120, 500, 40, 2), Box(0, 200, 22, 45, 3), Box(600, 0, 40, 300, 4) };
+        Assert.True(crops[3].Rotated90);
+        TextRecognizer.KeepShortTallCropsUpright(crops);
+        Assert.False(crops[3].Rotated90);
+        Assert.Equal(3, crops[3].Index);
+        Assert.True(crops[4].Rotated90);
+        Assert.All(crops.Take(3), c => Assert.False(c.Rotated90));
+
+        // A page turned sideways: its lines are tall, so even the short ones are turned.
+        var turned = new[] { Box(0, 0, 40, 400, 0), Box(60, 0, 40, 300, 1), Box(120, 0, 40, 70, 2), Box(200, 0, 300, 40, 3) };
+        TextRecognizer.KeepShortTallCropsUpright(turned);
+        Assert.All(turned.Take(3), c => Assert.True(c.Rotated90));
+    }
+
+    [Fact]
     public void SubsetKeepsOnlyAllowedClasses()
     {
         // The table's "39%" was turned upside down by rapidocr and read as "%6ε"; with Latin only, no ε.

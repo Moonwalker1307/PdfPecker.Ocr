@@ -57,6 +57,8 @@ internal sealed class TextRecognizer
             crops[i] = new LineCrop(quads[i].Quad, i);
         }
 
+        KeepShortTallCropsUpright(crops);
+
         if (Options.DetectRotation && _orientation is not null && crops.Length > 0)
         {
             _orientation.Apply(page, crops, cancellationToken);
@@ -96,6 +98,52 @@ internal sealed class TextRecognizer
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// How many times the median height of the horizontal lines a tall crop may be and still be read upright on a page
+    /// of horizontal text.
+    /// </summary>
+    private const double UprightHeightRatio = 2;
+
+    /// <summary>
+    /// A quad at least 1.5 times as tall as wide is read turned a quarter, as rapidocr does, which is right for a line on
+    /// a page turned sideways but not for a lone narrow character on an upright page: I, l or ! in a table cell was read
+    /// sideways, as the CJK character for one, or lost, and the orientation classifier only tells 0 from 180 degrees.
+    /// On a page whose text is mostly horizontal, a tall crop less than twice as high as the median horizontal line is
+    /// such a character, and is read upright; longer ones are text running up or down the page and are still turned.
+    /// </summary>
+    internal static void KeepShortTallCropsUpright(LineCrop[] crops)
+    {
+        double horizontal = 0, vertical = 0;
+        var heights = new List<int>();
+        foreach (LineCrop crop in crops)
+        {
+            if (crop.Rotated90)
+            {
+                vertical += crop.WarpHeight;
+            }
+            else
+            {
+                horizontal += crop.WarpWidth;
+                heights.Add(crop.WarpHeight);
+            }
+        }
+
+        if (vertical == 0 || horizontal <= vertical)
+        {
+            return;
+        }
+
+        heights.Sort();
+        double limit = UprightHeightRatio * heights[heights.Count / 2];
+        for (int i = 0; i < crops.Length; i++)
+        {
+            if (crops[i].Rotated90 && crops[i].WarpHeight < limit)
+            {
+                crops[i] = new LineCrop(crops[i].Quad, crops[i].Index, turnTall: false);
+            }
+        }
     }
 
     private void RecognizeBatch(PixelView page, LineCrop[] crops, ReadOnlySpan<int> members, DecodedLine?[] decoded, RecognizedLine?[] results)

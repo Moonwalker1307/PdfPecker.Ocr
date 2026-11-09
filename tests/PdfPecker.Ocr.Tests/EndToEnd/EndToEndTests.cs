@@ -70,6 +70,20 @@ public sealed class EndToEndTests
     }
 
     [Fact]
+    public void LoneNarrowCharactersAreReadUpright()
+    {
+        // A table cell holding only I is a box taller than wide, which used to be read turned a quarter: as the CJK
+        // character for one. On a page of horizontal text it is read upright.
+        const string Rows = "<tr><td>Bolts</td><td>I</td><td>7</td></tr><tr><td>Nuts</td><td>l</td><td>4</td></tr>"
+            + "<tr><td>Washers</td><td>!</td><td>1</td></tr><tr><td>Screws</td><td>1</td><td>I</td></tr>";
+        byte[] pdf = HtmlToPdf.Convert(TestPages.Document("A4", "td{font:14pt sans-serif;padding:4mm 8mm}", $"<table>{Rows}</table><p>Totals are given in pieces.</p>"));
+        OcrPage page = PdfOcr.Recognize(pdf, new OcrOptions { Dpi = 300, PageMode = OcrPageMode.Force }).Pages[0];
+        Assert.DoesNotContain(page.Lines, l => l.Text.Contains('\u4E00', StringComparison.Ordinal));
+        Assert.True(page.Lines.Any(l => l.Text == "I"), string.Join(" | ", page.Lines.Select(l => $"{l.Text} {l.Confidence:0.00} {l.Box.Width}x{l.Box.Height}")));
+        Assert.Contains(page.Lines, l => l.Text == "Washers");
+    }
+
+    [Fact]
     public void TwoColumnsReadColumnByColumn()
     {
         RenderedPage page = TestPages.Columns;

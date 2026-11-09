@@ -6,8 +6,9 @@ namespace PdfPecker.Ocr.Recognition;
 /// <summary>
 /// A detected quad seen as a horizontal strip of text, the way rapidocr's <c>get_rotate_crop_image</c> cuts it from
 /// the page: the quad is warped to a <see cref="CropWidth"/> x <see cref="CropHeight"/> rectangle, turned 90 degrees
-/// counter-clockwise when it is at least 1.5 times as tall as wide, and turned 180 degrees when the orientation
-/// classifier says the text is upside down.
+/// counter-clockwise when it is at least 1.5 times as tall as wide (unless the recogniser keeps it upright, see
+/// <see cref="TextRecognizer.KeepShortTallCropsUpright"/>), and turned 180 degrees when the orientation classifier
+/// says the text is upside down.
 /// </summary>
 /// <remarks>
 /// rapidocr warps every crop into an image of its own (bicubic) and then resizes it to the network's height of 48
@@ -20,7 +21,8 @@ internal sealed class LineCrop
     // The homography from the unit square to the quad: (u, v) -> ((a u + b v + c) / (g u + h v + 1), ...).
     private readonly double _a, _b, _c, _d, _e, _f, _g, _h;
 
-    public LineCrop(Quad quad, int index)
+    /// <summary>A crop of <paramref name="quad"/>; <paramref name="turnTall"/> false keeps a tall quad upright.</summary>
+    public LineCrop(Quad quad, int index, bool turnTall = true)
     {
         Quad = quad;
         Index = index;
@@ -30,7 +32,7 @@ internal sealed class LineCrop
         // one pixel so a degenerate quad still maps somewhere.
         WarpWidth = Math.Max(1, (int)Math.Max(Vector2.Distance(p0, p1), Vector2.Distance(p2, p3)));
         WarpHeight = Math.Max(1, (int)Math.Max(Vector2.Distance(p0, p3), Vector2.Distance(p1, p2)));
-        Rotated90 = WarpHeight * 1.0 / WarpWidth >= 1.5;
+        Rotated90 = turnTall && TallRatio >= 1.5;
 
         // Heckbert's square-to-quad mapping, in double precision.
         double sx = p0.X - p1.X + p2.X - p3.X, sy = p0.Y - p1.Y + p2.Y - p3.Y;
@@ -64,6 +66,9 @@ internal sealed class LineCrop
     public int WarpWidth { get; }
 
     public int WarpHeight { get; }
+
+    /// <summary>The warped rectangle's height over its width, from which a quad is turned.</summary>
+    public double TallRatio => WarpHeight * 1.0 / WarpWidth;
 
     /// <summary>Whether the strip is turned 90 degrees counter-clockwise, for a tall quad.</summary>
     public bool Rotated90 { get; }
