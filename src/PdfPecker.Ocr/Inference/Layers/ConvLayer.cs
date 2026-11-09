@@ -445,6 +445,10 @@ internal sealed unsafe class DepthwiseConvLayer : ConvLayer
     /// <summary>The length of one padded input row in scratch, including vector slack.</summary>
     private int RowLength(int ow) => Sw == 1 ? ow + Kw - 1 + Slack : 2 * (ow + (Kw + 1) / 2 + Slack);
 
+    // When each tile takes a whole plane, it copies all of the plane's input rows to its scratch before writing any output
+    // row, and reads no other plane, so the output may take the input's memory.
+    public override int InPlaceInput(int[][] inputs, int[] output) => BandRows(output) == output[2] ? 0 : -1;
+
     public override long ScratchPerWorker(Step step, InferenceContext context)
     {
         int band = BandRows(step.OutputShape);
