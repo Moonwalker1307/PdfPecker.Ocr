@@ -159,6 +159,11 @@ internal static class EnginePool
         {
             workers = [.. s_idle];
             s_idle.Clear();
+
+            // A pending expiry belongs to the workers just disposed. Disarming it lets the next return arm the timer
+            // with the current IdleTimeout, instead of waiting for an expiry set with an older one.
+            s_timer?.Change(Timeout.Infinite, Timeout.Infinite);
+            s_timerArmed = false;
         }
 
         foreach (EngineWorker worker in workers)

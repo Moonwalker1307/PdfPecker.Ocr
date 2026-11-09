@@ -23,6 +23,9 @@ public sealed class EnginePoolTests
     [Fact]
     public void IdleWorkersAreBoundedAndReleased()
     {
+        // As an earlier test or call leaves the pool: a return arms the timer with the default 30 seconds, and Clear
+        // must disarm it so that the returns below arm it with the short timeout.
+        EnginePool.Return(EnginePool.Rent(1));
         EnginePool.Clear();
         TimeSpan timeout = EnginePool.IdleTimeout;
         try
