@@ -163,7 +163,8 @@ internal sealed unsafe class LinearLayer : Layer
     public override void Execute(Step step, InferenceContext context)
     {
         int rows = Rows.Count(step.OutputShape);
-        _gemm.PackARows(step.Input(0), _k, rows, _k, context.SharedScratch);
+        var pack = step.State as RowPacking ?? (RowPacking)(step.State = new RowPacking(_gemm));
+        pack.Run(context, step.Input(0), _k, rows, _k, context.SharedScratch);
         step.Tiling ??= Tiling.For(1, _n, TileColumns(), rows, _gemm.MR);
         context.For(step.Tiling.Count, step, &Tile);
     }
@@ -179,6 +180,53 @@ internal sealed unsafe class LinearLayer : Layer
         var epilogue = new Epilogue(layer._activation, layer._alpha, layer._beta, layer._hasResidual ? step.Input(1) + offset : null);
         fixed (float* weights = layer._weights, bias = layer._bias)
             layer._gemm.Multiply(k, step.Context.SharedScratch + (long)m0 * k, rows, weights + (long)n0 * k, columns, step.Output + offset, n, null, bias + n0, epilogue);
+    }
+}
+
+/// <summary>
+/// Packs the rows of a matrix product's activations into the kernel's row panels on the context's threads, a few panels
+/// per item. The recogniser's linear layers packed up to 600 rows on one thread while the others waited, which was most
+/// of what kept them from scaling with threads. Each panel is packed alone, so the result does not depend on the split.
+/// </summary>
+internal sealed unsafe class RowPacking(GemmKernel gemm)
+{
+    private const int PanelsPerItem = 4;
+    private readonly GemmKernel _gemm = gemm;
+    private float* _source, _destination;
+    private nint _ld;
+    private int _rows, _k;
+
+    public void Run(InferenceContext context, float* source, nint ld, int rows, int k, float* destination)
+    {
+        int block = PanelsPerItem * _gemm.MR;
+        int items = (rows + block - 1) / block;
+        if (items <= 1 || context.MaxDegreeOfParallelism == 1)
+        {
+            _gemm.PackARows(source, ld, rows, k, destination);
+            return;
+        }
+
+        _source = source;
+        _ld = ld;
+        _rows = rows;
+        _k = k;
+        _destination = destination;
+        try
+        {
+            context.For(items, this, &Item);
+        }
+        finally
+        {
+            _source = _destination = null;
+        }
+    }
+
+    private static void Item(object state, int item, int worker)
+    {
+        var job = (RowPacking)state;
+        int block = PanelsPerItem * job._gemm.MR;
+        int first = item * block;
+        job._gemm.PackARows(job._source + (first * job._ld), job._ld, Math.Min(block, job._rows - first), job._k, job._destination + ((nint)first * job._k));
     }
 }
 
@@ -423,9 +471,8 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
     public override void Execute(Step step, InferenceContext context)
     {
         int rows = Rows.Count(step.OutputShape);
-        var gemm = _linear.Gemm;
-        gemm.PackARows(step.Input(0), _linear.InputFeatures, rows, _linear.InputFeatures, context.SharedScratch);
-        var chunk = step.State as Chunk ?? (Chunk)(step.State = new Chunk(step));
+        var chunk = step.State as Chunk ?? (Chunk)(step.State = new Chunk(step, _linear.Gemm));
+        chunk.Packing.Run(context, step.Input(0), _linear.InputFeatures, rows, _linear.InputFeatures, context.SharedScratch);
         chunk.Logits = context.SharedScratch + PackedSize(rows);
         for (int m0 = 0; m0 < rows; m0 += ChunkRows)
         {
@@ -466,9 +513,11 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
     }
 
     /// <summary>The rows of one chunk and where its logits go, handed to the tiles; kept with the step between runs.</summary>
-    private sealed class Chunk(Step step)
+    private sealed class Chunk(Step step, GemmKernel gemm)
     {
         public Step Step { get; } = step;
+
+        public RowPacking Packing { get; } = new(gemm);
 
         public float* Logits { get; set; }
 
