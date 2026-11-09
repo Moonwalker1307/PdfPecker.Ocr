@@ -15,9 +15,9 @@ tools/Tesseract/build.sh --jobs 4   # or TESSERACT_BUILD_JOBS=4
 Needs `git`, `cmake`, `ninja`, a C and C++ compiler with OpenMP (`libgomp`), and `curl`. It builds on Linux (x64, arm64) and
 macOS; the comparison app is only run on Linux so far.
 
-> **Status:** the script and the Tesseract adapter were written against the pinned versions' CMake options and `capi.h`
-> (the header was read at 5.5.1 and every imported signature checked), but they have **not been run yet**: the sandbox they were
-> written in did not allow building cloned code. The first run may need a CMake option adjusted; the model hashes are verified.
+> **Status:** built and run on 2026-11-08 on Linux x64 (the build takes about ten minutes on four cores), and used for the
+> comparison in `bench/TesseractComparison` (results in its README and in `bench/TesseractComparison/baseline/2026-11-08/`).
+> Earlier builds did not copy the `tesseract` program, which CMake links as `bin/tesseract`; the library was unaffected.
 
 ## What the script does
 
@@ -51,6 +51,20 @@ and thread count, which is also what makes each engine's peak memory its own. Te
 recognitions at once is `OMP_THREAD_LIMIT=1`.
 
 The library is built without `-march=native`: Tesseract picks its AVX2/FMA/SSE dot-product code at run time.
+
+What the threads bought in the comparison of 2026-11-08 (shared 4-vCPU VM, 65 pages): with `tessdata_fast`, 4 threads made the
+median page 2% faster (583 to 569 ms) for 2.7 times the CPU time; with `tessdata_best`, whose LSTM is larger, 44% faster
+(1351 to 755 ms) for 1.7 times the CPU time. While other processes were using the cores, 4-thread runs stalled for seconds to
+minutes per page (420 s once), because the OpenMP threads wait for each other after every step of a line; at 1 thread
+nothing of the kind happened.
+
+## Leptonica without image codecs
+
+Leptonica is built without libpng, which costs nothing when reading, since the app passes raw pixels. But Tesseract's LSTM
+recognizer stores each line image in an `ImageData` (`src/ccstruct/imagedata.cpp`, `SetPixInternal`), PNG-compressed when
+Leptonica can write PNG. Here Leptonica falls back to BMP and prints `Warning in changeFormatForMissingLib: png library
+missing; output bmp format` to stderr for each line. BMP is cheaper than PNG to write and read, so this build is, if anything,
+a little faster per line than a stock build with libpng.
 
 ## Verifying a build by hand
 

@@ -17,6 +17,9 @@ sealed class OcrResult
     /// </summary>
     public double? ExternalCpuMs { get; init; }
     public long? ExternalPeakKb { get; init; }
+
+    /// <summary>For engines in another process: that process's peak resident set over its whole life so far.</summary>
+    public long? ExternalProcessPeakKb { get; init; }
 }
 
 /// <summary>
@@ -44,6 +47,9 @@ interface IOcrEngineAdapter : IDisposable
 
     /// <summary>Called once before the timed runs of a page: an out-of-process engine resets its peak memory here.</summary>
     void BeginMeasurement() { }
+
+    /// <summary>For engines in another process: its resident set after loading the models, in kilobytes (0 when unknown).</summary>
+    long ExternalRssAfterLoadKb => 0;
 
     OcrResult Recognize(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format);
 }

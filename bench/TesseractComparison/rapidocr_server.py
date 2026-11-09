@@ -2,10 +2,10 @@
 PdfPecker.Ocr runs, so that the comparison has a reference for accuracy and time.
 
 It speaks a small binary protocol on stdin and stdout, one request at a time:
-  in:  "INIT <threads>\\n"                       -> out: "READY\\n"
+  in:  "INIT <threads>\\n"                       -> out: "READY <rss_kb>\\n" (resident set after loading the models)
   in:  "REQ <width> <height> <channels> <reset>\\n" + width*height*channels raw 8-bit pixels (RGB order for 3 channels)
        -> out: "L\\t<score>\\t<x0,y0,x1,y1,x2,y2,x3,y3>\\t<text>\\n" per line, "W\\t..." per word (same columns),
-               "T\\t<engine_ms>\\t<cpu_ms>\\t<peak_kb>\\n", "END\\n"
+               "T\\t<engine_ms>\\t<cpu_ms>\\t<peak_kb>\\t<process_peak_kb>\\n", "END\\n"
   in:  "QUIT\\n"
 Pixels are handed over as raw bytes so that no image decoding is timed; rapidocr itself resizes the page as its defaults do
 (longest side limited to 2000 pixels). With reset=1 the process's peak resident set is reset first (Linux), so peak_kb is
@@ -42,15 +42,19 @@ def reset_peak():
         return False
 
 
-def peak_kb():
+def status_kb(field):
     try:
         with open("/proc/self/status") as f:
             for line in f:
-                if line.startswith("VmHWM:"):
+                if line.startswith(field):
                     return int(line.split()[1])
     except OSError:
         pass
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+
+
+def peak_kb():
+    return status_kb("VmHWM:")
 
 
 def fmt_box(box):
@@ -62,6 +66,9 @@ def main():
 
     out = sys.stdout.buffer
     engine = None
+    # The peak counter is reset before measured requests, so the process's own peak is kept as the maximum of the readings
+    # taken before each reset and after each request.
+    process_peak = 0
     while True:
         line = read_line()
         if not line or line == "QUIT":
@@ -74,7 +81,9 @@ def main():
                 params["EngineConfig.onnxruntime.intra_op_num_threads"] = threads
                 params["EngineConfig.onnxruntime.inter_op_num_threads"] = 1
             engine = RapidOCR(params=params)
-            out.write(b"READY\n")
+            # A tiny page runs once so that ONNX Runtime has built its sessions before the resident set is read.
+            engine(np.full((64, 64, 3), 255, dtype=np.uint8))
+            out.write(f"READY {status_kb('VmRSS:')}\n".encode())
             out.flush()
         elif parts[0] == "REQ":
             w, h, c, reset = (int(v) for v in parts[1:5])
@@ -85,6 +94,7 @@ def main():
             else:
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             if reset:
+                process_peak = max(process_peak, peak_kb())
                 reset_peak()
             cpu0 = time.process_time()
             t0 = time.perf_counter()
@@ -92,6 +102,7 @@ def main():
             engine_ms = (time.perf_counter() - t0) * 1000
             cpu_ms = (time.process_time() - cpu0) * 1000
             peak = peak_kb()
+            process_peak = max(process_peak, peak)
             lines = []
             if result.txts is not None and result.boxes is not None:
                 for box, txt, score in zip(result.boxes, result.txts, result.scores):
@@ -105,7 +116,7 @@ def main():
                         lines.append(f"W\t{score:.4f}\t{fmt_box(box)}\t{txt}\n")
             for l in lines:
                 out.write(l.replace("\r", " ").encode("utf-8"))
-            out.write(f"T\t{engine_ms:.3f}\t{cpu_ms:.3f}\t{peak}\n".encode())
+            out.write(f"T\t{engine_ms:.3f}\t{cpu_ms:.3f}\t{peak}\t{process_peak}\n".encode())
             out.write(b"END\n")
             out.flush()
 

@@ -63,6 +63,15 @@ static class Report
         if (l.Count == 0) return double.NaN;
         return l.Count % 2 == 1 ? l[l.Count / 2] : (l[l.Count / 2 - 1] + l[l.Count / 2]) / 2;
     }
+    static double Percentile(IEnumerable<double> values, double p)
+    {
+        var l = values.Where(v => !double.IsNaN(v)).OrderBy(v => v).ToList();
+        if (l.Count == 0) return double.NaN;
+        // Linear interpolation between the closest ranks, as numpy's default does.
+        double rank = p * (l.Count - 1);
+        int lo = (int)Math.Floor(rank), hi = (int)Math.Ceiling(rank);
+        return l[lo] + (l[hi] - l[lo]) * (rank - lo);
+    }
     static double Mean(IEnumerable<double> values)
     {
         var l = values.Where(v => !double.IsNaN(v)).ToList();
@@ -72,6 +81,25 @@ static class Report
     // Micro averages weight every character (or word) alike, so long pages count more; macro averages weight every page alike.
     static double MicroCer(IReadOnlyCollection<ResultRow> rows) => rows.Count == 0 ? double.NaN : rows.Sum(r => r.Num("char_edits")) / Math.Max(1, rows.Sum(r => r.Num("ref_chars")));
     static double MicroWer(IReadOnlyCollection<ResultRow> rows) => rows.Count == 0 ? double.NaN : rows.Sum(r => r.Num("word_edits")) / Math.Max(1, rows.Sum(r => r.Num("ref_words")));
+    static double MicroSortedCer(IReadOnlyCollection<ResultRow> rows) => rows.Count == 0 ? double.NaN : rows.Sum(r => r.Num("sorted_char_edits")) / Math.Max(1, rows.Sum(r => r.Num("ref_chars")));
+
+    // The F1 of the word multisets over all pages of a group at once (matched words summed over pages), so long pages count
+    // more, as in the micro error rates.
+    static double MicroBagF1(IReadOnlyCollection<ResultRow> rows)
+    {
+        double matched = 0, refWords = 0, hypWords = 0;
+        foreach (var r in rows)
+        {
+            double rw = r.Num("ref_words"), hw = r.Num("hyp_words"), recall = r.Num("bag_recall");
+            if (double.IsNaN(recall)) continue;
+            matched += recall * rw;
+            refWords += rw;
+            hypWords += hw;
+        }
+        if (matched == 0) return 0;
+        double p = matched / hypWords, q = matched / refWords;
+        return 2 * p * q / (p + q);
+    }
 
     public static string Build(string dir, List<ResultRow> all, Dictionary<string, Dictionary<string, string>> meta, string title)
     {
@@ -84,13 +112,16 @@ static class Report
             sb.AppendLine($"- `{cfg}`: {m.GetValueOrDefault("description")}. Start-up {m.GetValueOrDefault("init_ms")} ms plus first model load {m.GetValueOrDefault("first_prepare_ms")} ms, {m.GetValueOrDefault("rss_after_load_mb")} MB resident after loading, {m.GetValueOrDefault("runs")} timed runs after {m.GetValueOrDefault("warmup")} warm-up per page.");
         sb.AppendLine();
         sb.AppendLine("## Summary").AppendLine();
-        sb.AppendLine("| Config | Pages | CER (all text) | CER (mean of pages) | WER (all text) | Word bag F1 | Box recall @IoU 0.5 | Time per page, median (ms) | Time per page, mean (ms) | CPU per page, mean (ms) | Peak RSS per page, median / max (MB) | Failed |");
-        sb.AppendLine("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+        sb.AppendLine("Accuracy: CER and WER over all text of the pages (micro), word bag F1 over all words (micro, order-free), and the CER of the sorted words (order-free). Time: the per-page medians of the timed runs, then their median, 90th percentile and mean over pages. CPU is all threads of the engine's process. Peak RSS per page is the resident peak while that page was read, models included; the process peak is the whole child's.").AppendLine();
+        sb.AppendLine("| Config | Pages | CER | CER (mean of pages) | WER | Word bag F1 | CER, order-free | Box recall @IoU 0.5 | Median ms/page | p90 ms/page | Mean ms/page | CPU ms/page, mean | Peak RSS per page, median / max (MB) | Process peak (MB) | Start-up + model load (ms) | Failed |");
+        sb.AppendLine("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
         foreach (var cfg in configs)
         {
             var rows = all.Where(r => r.Config == cfg).ToList();
             var ok = rows.Where(r => !r.Failed).ToList();
-            sb.AppendLine($"| {cfg} | {ok.Count} | {Pct(MicroCer(ok))} | {Pct(Mean(ok.Select(r => r.Num("cer"))))} | {Pct(MicroWer(ok))} | {Mean(ok.Select(r => r.Num("bag_f1"))).ToString("0.000", CultureInfo.InvariantCulture)} | {Pct(Mean(ok.Select(r => r.Num("box_recall_iou50"))))} | {Ms(Median(ok.Select(r => r.Num("wall_ms_median"))))} | {Ms(Mean(ok.Select(r => r.Num("wall_ms_median"))))} | {Ms(Mean(ok.Select(r => r.Num("cpu_ms_median"))))} | {Median(ok.Select(r => r.Num("peak_rss_mb"))).ToString("0", CultureInfo.InvariantCulture)} / {(ok.Count == 0 ? 0 : ok.Max(r => r.Num("peak_rss_mb"))).ToString("0", CultureInfo.InvariantCulture)} | {rows.Count - ok.Count} |");
+            var m = meta.GetValueOrDefault(cfg);
+            string startup = m is null ? "n/a" : (ParseOr0(m.GetValueOrDefault("init_ms")) + ParseOr0(m.GetValueOrDefault("first_prepare_ms"))).ToString("0", CultureInfo.InvariantCulture);
+            sb.AppendLine($"| {cfg} | {ok.Count} | {Pct(MicroCer(ok))} | {Pct(Mean(ok.Select(r => r.Num("cer"))))} | {Pct(MicroWer(ok))} | {MicroBagF1(ok).ToString("0.0000", CultureInfo.InvariantCulture)} | {Pct(MicroSortedCer(ok))} | {Pct(Mean(ok.Select(r => r.Num("box_recall_iou50"))))} | {Ms(Median(ok.Select(r => r.Num("wall_ms_median"))))} | {Ms(Percentile(ok.Select(r => r.Num("wall_ms_median")), 0.9))} | {Ms(Mean(ok.Select(r => r.Num("wall_ms_median"))))} | {Ms(Mean(ok.Select(r => r.Num("cpu_ms_median"))))} | {Median(ok.Select(r => r.Num("peak_rss_mb"))).ToString("0", CultureInfo.InvariantCulture)} / {(ok.Count == 0 ? 0 : ok.Max(r => r.Num("peak_rss_mb"))).ToString("0", CultureInfo.InvariantCulture)} | {m?.GetValueOrDefault("process_peak_mb") ?? "n/a"} | {startup} | {rows.Count - ok.Count} |");
         }
         sb.AppendLine();
         var managed = all.Where(r => !r.Failed && r.Num("alloc_mb") > 0).GroupBy(r => r.Config).ToList();
@@ -102,6 +133,12 @@ static class Report
         // Condition groups. Degraded pages are all 300 dpi; "clean 300" and "clean 150" are the undegraded renderings.
         var groups = new List<(string Name, Func<ResultRow, bool> Match)>
         {
+            ("all pages", r => true),
+            ("clean (undegraded corpus pages, both resolutions)", r => r["degradation"] == "none" && r["category"] != "tesseract-sample"),
+            ("degraded (all variants)", r => r["degradation"] != "none"),
+            ("degraded, without rot180", r => r["degradation"] != "none" && r["degradation"] != "rot180"),
+            ("skewed (1, 2 and 3 degrees)", r => r["degradation"].StartsWith("skew", StringComparison.Ordinal)),
+            ("rotated 180 degrees", r => r["rotation"] == "180"),
             ("clean, 300 dpi", r => r["degradation"] == "none" && r["dpi"] == "300"),
             ("clean, 150 dpi", r => r["degradation"] == "none" && r["dpi"] == "150"),
         };
@@ -121,11 +158,19 @@ static class Report
             string name = l;
             groups.Add(($"clean 300 dpi, language {name}", r => r["degradation"] == "none" && r["dpi"] == "300" && r["lang"] == name));
         }
+        foreach (var l in all.Select(r => r["lang"]).Distinct().OrderBy(l => l, StringComparer.Ordinal))
+        {
+            string name = l;
+            groups.Add(($"all pages, language {name}", r => r["lang"] == name));
+        }
 
         Table(sb, "Character error rate by condition", configs, groups, all, rows => Pct(MicroCer(rows)));
         Table(sb, "Word error rate by condition", configs, groups, all, rows => Pct(MicroWer(rows)));
-        Table(sb, "Word bag F1 by condition (ignores reading order)", configs, groups, all, rows => Mean(rows.Select(r => r.Num("bag_f1"))).ToString("0.000", CultureInfo.InvariantCulture));
+        Table(sb, "Word bag F1 by condition (ignores reading order)", configs, groups, all, rows => MicroBagF1(rows).ToString("0.0000", CultureInfo.InvariantCulture));
+        Table(sb, "Character error rate of the sorted words by condition (ignores reading order)", configs, groups, all, rows => Pct(MicroSortedCer(rows)));
         Table(sb, "Median time per page by condition (ms)", configs, groups, all, rows => Ms(Median(rows.Select(r => r.Num("wall_ms_median")))));
+        Table(sb, "90th percentile time per page by condition (ms)", configs, groups, all, rows => Ms(Percentile(rows.Select(r => r.Num("wall_ms_median")), 0.9)));
+        Table(sb, "Mean CPU time per page by condition (ms)", configs, groups, all, rows => Ms(Mean(rows.Select(r => r.Num("cpu_ms_median")))));
         Table(sb, "Peak resident memory by condition, median (MB)", configs, groups, all, rows => Median(rows.Select(r => r.Num("peak_rss_mb"))).ToString("0", CultureInfo.InvariantCulture));
 
         sb.AppendLine("## Per page").AppendLine();
@@ -154,6 +199,8 @@ static class Report
         }
         return sb.ToString();
     }
+
+    static double ParseOr0(string? s) => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
 
     static void Table(StringBuilder sb, string title, List<string> configs, List<(string Name, Func<ResultRow, bool> Match)> groups, List<ResultRow> all,
         Func<IReadOnlyCollection<ResultRow>, string> cell)

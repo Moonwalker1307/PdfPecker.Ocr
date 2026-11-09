@@ -120,6 +120,30 @@ static class Metrics
         return 2 * precision * recall / (precision + recall);
     }
 
+    /// <summary>The precision and recall of the word multisets behind <see cref="BagF1"/>.</summary>
+    public static (double Precision, double Recall) BagPrecisionRecall(string[] reference, string[] hypothesis)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var w in reference) counts[w] = counts.GetValueOrDefault(w) + 1;
+        int overlap = 0;
+        foreach (var w in hypothesis)
+            if (counts.TryGetValue(w, out int n) && n > 0) { counts[w] = n - 1; overlap++; }
+        return (hypothesis.Length == 0 ? (reference.Length == 0 ? 1 : 0) : (double)overlap / hypothesis.Length,
+            reference.Length == 0 ? 1 : (double)overlap / reference.Length);
+    }
+
+    /// <summary>
+    /// The words sorted ordinally and joined by spaces. The character distance between two such strings is a character error
+    /// count that ignores reading order entirely; a misread first letter can move a word in the sort and cost up to twice its
+    /// length, so it errs on the high side, but a column read in another order costs nothing.
+    /// </summary>
+    public static string SortedWords(string[] words)
+    {
+        var copy = (string[])words.Clone();
+        Array.Sort(copy, StringComparer.Ordinal);
+        return string.Join(' ', copy);
+    }
+
     public static double Iou(Box a, Box b)
     {
         double x0 = Math.Max(a.X, b.X), y0 = Math.Max(a.Y, b.Y);

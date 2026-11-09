@@ -32,7 +32,8 @@ sealed record CorpusPage(string Id, string ImagePath, int Width, int Height, int
         {
             var p = lines[i].Split('\t');
             if (p.Length < 13) continue;
-            if (only is not null && !only.Any(o => p[0].Contains(o, StringComparison.Ordinal))) continue;
+            // An entry that starts with "=" names one page exactly; any other entry selects the pages whose id contains it.
+            if (only is not null && !only.Any(o => o.StartsWith('=') ? p[0] == o[1..] : p[0].Contains(o, StringComparison.Ordinal))) continue;
             pages.Add(new CorpusPage(p[0], Path.Combine(dir, p[1]), I(p[2]), I(p[3]), I(p[4]), I(p[5]), p[6], p[7], p[9], I(p[10]),
                 Path.Combine(dir, p[11]), Path.Combine(dir, p[12])));
         }

@@ -119,7 +119,10 @@ cmake --build "$work/tesseract" --parallel "$jobs"
 lib=$(find "$work/tesseract" -maxdepth 1 \( -name "libtesseract*.$ext" -o -name "libtesseract*.$ext.*" \) | head -n 1)
 [ -n "$lib" ] || { echo "libtesseract was not built" >&2; exit 1; }
 cp -L "$lib" "$out/$rid/libtesseract.$ext"
-if [ -f "$work/tesseract/tesseract" ]; then cp "$work/tesseract/tesseract" "$out/$rid/tesseract"; fi
+# Tesseract 5.5.1's CMake build links the program as bin/tesseract; older layouts put it at the top of the build folder.
+for program in "$work/tesseract/bin/tesseract" "$work/tesseract/tesseract"; do
+  if [ -f "$program" ]; then cp "$program" "$out/$rid/tesseract"; break; fi
+done
 
 # Leptonica must be inside the library, not a separate dependency.
 if command -v ldd >/dev/null && ldd "$out/$rid/libtesseract.$ext" | grep -qi lept; then
