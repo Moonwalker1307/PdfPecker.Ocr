@@ -176,6 +176,8 @@ static unsafe class LayerProfile
             return inner.Run(input, shape, out outputShape);
         }
 
+        public Span<float> InputBuffer(ReadOnlySpan<int> shape) => inner.InputBuffer(shape);
+
         /// <summary>The step of layer i in the plan of the largest recorded input, for describing the layer.</summary>
         public Step LargestPlanStep(InferenceContext context, int i)
         {

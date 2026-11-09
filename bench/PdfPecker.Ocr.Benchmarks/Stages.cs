@@ -254,6 +254,8 @@ static class Stages
             _ticks += Stopwatch.GetTimestamp() - s;
             return output;
         }
+
+        public Span<float> InputBuffer(ReadOnlySpan<int> shape) => inner.InputBuffer(shape);
     }
 }
 #endif

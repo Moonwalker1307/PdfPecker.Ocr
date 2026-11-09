@@ -244,6 +244,29 @@ public sealed class RuntimeTests
         Assert.Same(model, model.WithFusedStem());
     }
 
+    [Theory]
+    [InlineData("det", 1, 3, 96, 160)]
+    [InlineData("rec", 3, 3, 48, 320)]
+    [InlineData("cls", 4, 3, 48, 192)]
+    public void InputsBuiltInTheArenaGiveTheSameBits(string name, int n, int c, int h, int w)
+    {
+        // The arena keeps a block for the model's input, which the pipeline builds its input in. No value or scratch may
+        // use that block before the input's last reader, and a run on it must give what a run on the caller's array does.
+        var model = name switch { "det" => ModelStore.Detection, "rec" => ModelStore.RecognitionArgMax, _ => ModelStore.Classifier };
+        int[] shape = [n, c, h, w];
+        var input = Random(Tensor.ElementCount(shape), 12);
+        foreach (int degree in new[] { 1, 3 })
+        {
+            using var context = new InferenceContext(degree);
+            float[] expected = model.Run(input, shape, context, out _).ToArray();
+            Span<float> buffer = model.InputBuffer(shape, context);
+            Assert.Equal(input.Length, buffer.Length);
+            input.CopyTo(buffer);
+            var result = model.Run(buffer, shape, context, out _);
+            Assert.True(expected.AsSpan().SequenceEqual(result), $"{name} with {degree} threads");
+        }
+    }
+
     [Fact]
     public void OutputsWrittenOverTheirInputsKeepTheirBits()
     {

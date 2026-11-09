@@ -1,4 +1,3 @@
-using System.Buffers;
 using PdfPecker.Ocr.Detection;
 using PdfPecker.Ocr.Inference;
 
@@ -157,56 +156,48 @@ internal sealed class TextRecognizer
         int width = Math.Min((int)(InputHeight * maxRatio), Math.Max(Options.MaxInputWidth, InputHeight));
         int n = members.Length;
         int plane = InputHeight * width;
-        int length = n * 3 * plane;
-        float[] input = ArrayPool<float>.Shared.Rent(length);
         Span<int> resized = n <= 64 ? stackalloc int[n] : new int[n];
-        try
+        ReadOnlySpan<int> inputShape = [n, 3, InputHeight, width];
+        Span<float> tensor = _recognition.InputBuffer(inputShape);
+        tensor.Clear();
+        _batch.Clear();
+        for (int k = 0; k < n; k++)
         {
-            Span<float> tensor = input.AsSpan(0, length);
-            tensor.Clear();
-            _batch.Clear();
-            for (int k = 0; k < n; k++)
-            {
-                LineCrop crop = crops[members[k]];
-                double ratio = crop.AspectRatio;
-                resized[k] = Math.Clamp((int)Math.Ceiling(InputHeight * ratio), 1, width);
-                _batch.Add(crop, resized[k], 0, crop.CropWidth);
-            }
-
-            _batch.Sample(page, tensor, plane, width, InputHeight);
-
-            ReadOnlySpan<float> output = _recognition.Run(tensor, [n, 3, InputHeight, width], out int[] shape);
-            if (shape.Length != 3 || shape[0] != n || shape[1] <= 0 || (long)shape[0] * shape[1] * shape[2] > output.Length)
-            {
-                throw new InvalidOperationException("The recognition network returned an unexpected shape.");
-            }
-
-            int steps = shape[1], classes = shape[2];
-            for (int k = 0; k < n; k++)
-            {
-                int index = members[k];
-                LineCrop crop = crops[index];
-                DecodedLine line = CtcDecoder.Decode(output.Slice(k * steps * classes, steps * classes), steps, classes, Characters, Options.CharacterSubset);
-                decoded[index] = line;
-                if (line.Score < Options.MinConfidence)
-                {
-                    continue;
-                }
-
-                (string text, List<RecognizedWord> words) = WordBuilder.Build(line, crop, Characters, width, resized[k], Options.WordGapSteps);
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    continue;
-                }
-
-                int h = crop.CropHeight, w = crop.CropWidth;
-                var quad = new Quad(crop.EdgeToPage(0, 0), crop.EdgeToPage(w, 0), crop.EdgeToPage(w, h), crop.EdgeToPage(0, h));
-                results[index] = new RecognizedLine(text.Trim(), line.Score, quad, words, index, crop.Rotated180);
-            }
+            LineCrop crop = crops[members[k]];
+            double ratio = crop.AspectRatio;
+            resized[k] = Math.Clamp((int)Math.Ceiling(InputHeight * ratio), 1, width);
+            _batch.Add(crop, resized[k], 0, crop.CropWidth);
         }
-        finally
+
+        _batch.Sample(page, tensor, plane, width, InputHeight);
+
+        ReadOnlySpan<float> output = _recognition.Run(tensor, inputShape, out int[] shape);
+        if (shape.Length != 3 || shape[0] != n || shape[1] <= 0 || (long)shape[0] * shape[1] * shape[2] > output.Length)
         {
-            ArrayPool<float>.Shared.Return(input);
+            throw new InvalidOperationException("The recognition network returned an unexpected shape.");
+        }
+
+        int steps = shape[1], classes = shape[2];
+        for (int k = 0; k < n; k++)
+        {
+            int index = members[k];
+            LineCrop crop = crops[index];
+            DecodedLine line = CtcDecoder.Decode(output.Slice(k * steps * classes, steps * classes), steps, classes, Characters, Options.CharacterSubset);
+            decoded[index] = line;
+            if (line.Score < Options.MinConfidence)
+            {
+                continue;
+            }
+
+            (string text, List<RecognizedWord> words) = WordBuilder.Build(line, crop, Characters, width, resized[k], Options.WordGapSteps);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            int h = crop.CropHeight, w = crop.CropWidth;
+            var quad = new Quad(crop.EdgeToPage(0, 0), crop.EdgeToPage(w, 0), crop.EdgeToPage(w, h), crop.EdgeToPage(0, h));
+            results[index] = new RecognizedLine(text.Trim(), line.Score, quad, words, index, crop.Rotated180);
         }
     }
 }

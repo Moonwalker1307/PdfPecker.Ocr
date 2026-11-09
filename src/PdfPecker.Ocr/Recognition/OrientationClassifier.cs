@@ -1,4 +1,3 @@
-using System.Buffers;
 using PdfPecker.Ocr.Detection;
 using PdfPecker.Ocr.Inference;
 
@@ -82,44 +81,37 @@ internal sealed class OrientationClassifier
         var sums = new double[crops.Count];
         int batch = Math.Max(1, Options.OrientationBatchSize);
         int plane = InputHeight * InputWidth;
-        float[] input = ArrayPool<float>.Shared.Rent(batch * 3 * plane);
-        try
+        for (int start = 0; start < windows.Count; start += batch)
         {
-            for (int start = 0; start < windows.Count; start += batch)
+            cancellationToken.ThrowIfCancellationRequested();
+            int n = Math.Min(batch, windows.Count - start);
+            ReadOnlySpan<int> inputShape = [n, 3, InputHeight, InputWidth];
+            Span<float> tensor = _network.InputBuffer(inputShape);
+            tensor.Clear();
+            _batch.Clear();
+            for (int k = 0; k < n; k++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                int n = Math.Min(batch, windows.Count - start);
-                Span<float> tensor = input.AsSpan(0, n * 3 * plane);
-                tensor.Clear();
-                _batch.Clear();
-                for (int k = 0; k < n; k++)
-                {
-                    (int c, double x, double width) = windows[start + k];
-                    LineCrop crop = crops[c];
+                (int c, double x, double width) = windows[start + k];
+                LineCrop crop = crops[c];
 
-                    // rapidocr's resize_norm_img: height 48, width ceil(48 * ratio) up to 192, zero padding after.
-                    double ratio = width / crop.CropHeight;
-                    int resized = Math.Clamp((int)Math.Ceiling(InputHeight * ratio), 1, InputWidth);
-                    _batch.Add(crop, resized, x, width);
-                }
-
-                _batch.Sample(page, tensor, plane, InputWidth, InputHeight);
-
-                ReadOnlySpan<float> output = _network.Run(tensor, [n, 3, InputHeight, InputWidth], out int[] shape);
-                if (shape.Length != 2 || shape[0] != n || shape[1] < 2)
-                {
-                    throw new InvalidOperationException("The orientation network returned an unexpected shape.");
-                }
-
-                for (int k = 0; k < n; k++)
-                {
-                    sums[windows[start + k].Crop] += output[(k * shape[1]) + 1];
-                }
+                // rapidocr's resize_norm_img: height 48, width ceil(48 * ratio) up to 192, zero padding after.
+                double ratio = width / crop.CropHeight;
+                int resized = Math.Clamp((int)Math.Ceiling(InputHeight * ratio), 1, InputWidth);
+                _batch.Add(crop, resized, x, width);
             }
-        }
-        finally
-        {
-            ArrayPool<float>.Shared.Return(input);
+
+            _batch.Sample(page, tensor, plane, InputWidth, InputHeight);
+
+            ReadOnlySpan<float> output = _network.Run(tensor, inputShape, out int[] shape);
+            if (shape.Length != 2 || shape[0] != n || shape[1] < 2)
+            {
+                throw new InvalidOperationException("The orientation network returned an unexpected shape.");
+            }
+
+            for (int k = 0; k < n; k++)
+            {
+                sums[windows[start + k].Crop] += output[(k * shape[1]) + 1];
+            }
         }
 
         var result = new float[crops.Count];

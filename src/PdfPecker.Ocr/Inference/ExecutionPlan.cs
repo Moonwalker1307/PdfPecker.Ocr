@@ -96,6 +96,12 @@ internal sealed class ExecutionPlan
 
     public long ArenaFloats { get; private set; }
 
+    /// <summary>
+    /// Where the input has a block of the arena to itself until its last reader (see <see cref="OcrModel.InputBuffer"/>),
+    /// so that a caller can build the input there instead of in a buffer of its own.
+    /// </summary>
+    public long InputOffset { get; private set; }
+
     public long ScratchPerWorker { get; private set; }
 
     /// <summary>A block of the arena over a span of steps: floats [Offset, Offset + Size) from step Start to End.</summary>
@@ -224,20 +230,21 @@ internal sealed class ExecutionPlan
         var scratch = new long[layers.Count];
         for (int i = 0; i < layers.Count; i++) scratch[i] = layers[i].SharedScratch(steps[i]);
 
-        // Greedy placement of the remaining groups and the scratch blocks, largest first, each at the lowest offset where
+        // Greedy placement of the input's group, the remaining groups and the scratch blocks, largest first, each at the lowest offset where
         // it overlaps nothing alive at the same time. A group is placed as its members: each value in it occupies its own
         // part of the group's memory only while that value is alive, so a concatenation whose last input is written
         // straight into its slice does not hold the rest of its output from that moment on, and another value may still
         // use that memory. A member reserves its size rounded up to whole vectors. An item is a value's group (Key >= 0,
-        // its root) or step ~Key's scratch.
+        // its root) or step ~Key's scratch. The input is alive from before the first step (-1), and the caller may have it
+        // elsewhere, in which case its block is simply not used; no layer writes over it in place.
         var parts = new List<Rect>[valueCount];
-        for (int v = 1; v < valueCount; v++)
+        for (int v = 0; v < valueCount; v++)
         {
             int root = Find(v, out long at);
-            if (root == 0 || root == outputRoot) continue;
+            if (root == outputRoot) continue;
             (parts[root] ??= []).Add(new Rect(at, Round(sizes[v]), v - 1, lastUse[v]));
         }
-        var items = Enumerable.Range(1, valueCount - 1).Where(v => parent[v] == v && v != outputRoot)
+        var items = Enumerable.Range(0, valueCount).Where(v => parent[v] == v && v != outputRoot)
             .Select(v => (Key: v, Size: sizes[v], Start: start[v]))
             .Concat(Enumerable.Range(0, layers.Count).Where(i => scratch[i] > 0).Select(i => (Key: ~i, Size: scratch[i], Start: i)))
             .OrderByDescending(x => x.Size).ThenBy(x => x.Start).ThenBy(x => x.Key < 0).ThenBy(x => x.Key < 0 ? ~x.Key : x.Key).ToList();
@@ -283,6 +290,7 @@ internal sealed class ExecutionPlan
         var plan = new ExecutionPlan((int[])inputShape.Clone(), steps, frame)
         {
             ArenaFloats = arena,
+            InputOffset = rootOffset[0],
             OutputLength = checked((int)sizes[outputRoot]),
         };
         long perWorker = 0;

@@ -75,6 +75,8 @@ static class Profile
 
         public bool Recording { get; set; }
 
+        public Span<float> InputBuffer(ReadOnlySpan<int> shape) => model.InputBuffer(shape, context);
+
         public ReadOnlySpan<float> Run(ReadOnlySpan<float> input, ReadOnlySpan<int> shape, out int[] outputShape)
         {
             if (!Recording) return model.Run(input, shape, context, out outputShape);
