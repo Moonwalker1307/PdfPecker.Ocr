@@ -324,6 +324,9 @@ internal static class Geometry
         return length == 0 ? 0 : Math.Abs(area) * 0.5 * ratio / length;
     }
 
+    // OffsetPolygonRound is a port of part of Clipper 6.4's ClipperOffset (Copyright (c) 2010-2017 Angus Johnson), used
+    // under the Boost Software License 1.0, whose full text is in THIRD-PARTY-NOTICES.md.
+
     /// <summary>
     /// Offsets a closed polygon outward by <paramref name="delta"/> with round joins, as Clipper 6.4's
     /// <c>ClipperOffset</c> does for pyclipper (Boost Software License; this is a port of the parts rapidocr uses):

@@ -205,7 +205,9 @@ behaviour of the OpenCV functions RapidOCR calls (`resize` with linear interpola
 `minAreaRect`, `boxPoints`, `fillPoly`; OpenCV is Copyright the OpenCV team and licensed under the Apache License,
 Version 2.0) and of the polygon offsetting in Clipper 6.4 (Copyright Angus Johnson, licensed under the Boost Software
 License 1.0) as wrapped by pyclipper. PdfPecker.Ocr's implementation is its own C# code, written with their code as
-the reference; each such file names its source.
+the reference; each such file names its source. The one exception is `OffsetPolygonRound` in
+`src/PdfPecker.Ocr/Detection/Geometry.cs`, which is a port of the parts of Clipper 6.4's `ClipperOffset` that pyclipper
+uses for a closed polygon with round joins, under the Boost Software License 1.0 below.
 
 The names Baidu, PaddlePaddle, PaddleOCR, RapidOCR and OpenCV are used only to describe where the models and
 algorithms come from. Their use here does not imply endorsement by, sponsorship from or affiliation with their owners.
