@@ -15,6 +15,7 @@ sealed class PdfPeckerOcrAdapter : IOcrEngineAdapter
 #endif
 
     int _threads = Environment.ProcessorCount;
+    int _dpi = 300;
 
     public string Name => "pdfpecker-ocr";
     public bool InProcess => true;
@@ -39,12 +40,14 @@ sealed class PdfPeckerOcrAdapter : IOcrEngineAdapter
 #endif
     }
 
-    public void Prepare(CorpusPage page) { }
+    // The page's resolution only goes into OcrPage.Dpi, unless an experiment that sizes detection by it is on
+    // (PDFPECKER_OCR_EXPERIMENT=det-dpi), so passing it changes nothing by default.
+    public void Prepare(CorpusPage page) => _dpi = page.Dpi > 0 ? page.Dpi : 300;
 
     public OcrResult Recognize(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format)
     {
 #if PDFPECKER_OCR
-        var options = new PdfPecker.Ocr.OcrOptions { MaxDegreeOfParallelism = _threads };
+        var options = new PdfPecker.Ocr.OcrOptions { MaxDegreeOfParallelism = _threads, Dpi = _dpi };
         var page = format == PixelFormat.Gray8
             ? PdfPecker.Ocr.ImageOcr.RecognizeGray(pixels, width, height, options)
             : PdfPecker.Ocr.ImageOcr.RecognizeRgba(PixelConversion.ToRgba(pixels, width, height, format), width, height, options);

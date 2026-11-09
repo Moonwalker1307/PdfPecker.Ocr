@@ -29,9 +29,16 @@ internal sealed class TextDetector
     public DetectionOptions Options { get; }
 
     /// <summary>Detects the text regions of <paramref name="image"/>, as quads in its pixel coordinates.</summary>
-    public List<DetectedQuad> Detect(PixelView image, CancellationToken cancellationToken = default)
+    public List<DetectedQuad> Detect(PixelView image, CancellationToken cancellationToken = default) => Detect(image, 0, cancellationToken);
+
+    /// <summary>
+    /// Detects the text regions of an image whose resolution is <paramref name="dpi"/> (0 when unknown), which only the
+    /// experiment <see cref="Inference.Experiments.DetectionReferenceDpi"/> reads.
+    /// </summary>
+    public List<DetectedQuad> Detect(PixelView image, float dpi, CancellationToken cancellationToken = default)
     {
-        DetectionInput.Layout layout = DetectionInput.Plan(image.Width, image.Height, Options);
+        DetectionOptions options = OptionsFor(dpi);
+        DetectionInput.Layout layout = DetectionInput.Plan(image.Width, image.Height, options);
         int dw = layout.InputWidth, dh = layout.InputHeight;
         bool gray = image.Channels == 1 && _grayNetwork is not null;
         int planes = gray ? 1 : 3;
@@ -48,13 +55,31 @@ internal sealed class TextDetector
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            List<DetectedQuad> boxes = _postProcessor.Process(map[..(dw * dh)], dw, dh, layout.PaddedWidth, layout.PaddedHeight, Options, cancellationToken);
+            List<DetectedQuad> boxes = _postProcessor.Process(map[..(dw * dh)], dw, dh, layout.PaddedWidth, layout.PaddedHeight, options, cancellationToken);
             return layout.PaddingTop == 0 ? boxes : RemovePadding(boxes, layout.PaddingTop, image.Width, image.Height);
         }
         finally
         {
             ArrayPool<float>.Shared.Return(input);
         }
+    }
+
+    /// <summary>
+    /// The settings for a page at <paramref name="dpi"/>: <see cref="Options"/>, or with the experiment on and a page
+    /// below its reference resolution, a longer side scaled by the page's resolution over the reference, so that text
+    /// has the size in the network's input it has on a page at the reference resolution.
+    /// </summary>
+    private DetectionOptions OptionsFor(float dpi) => ScaledForDpi(Options, dpi, Inference.Experiments.DetectionReferenceDpi);
+
+    /// <summary>
+    /// <paramref name="options"/> with the longer side scaled by <paramref name="dpi"/> over <paramref name="reference"/>
+    /// for a page below the reference resolution (at least 32 pixels), and unchanged otherwise or when either is 0.
+    /// </summary>
+    internal static DetectionOptions ScaledForDpi(DetectionOptions options, float dpi, float reference)
+    {
+        if (reference <= 0 || dpi <= 0 || dpi >= reference) return options;
+        int side = Math.Max(32, (int)Math.Round(options.MaxSideLength * dpi / reference));
+        return options with { MaxSideLength = side };
     }
 
     /// <summary>

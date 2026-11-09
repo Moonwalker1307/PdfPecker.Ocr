@@ -137,6 +137,21 @@ public sealed class DetectionTests
     }
 
     [Fact]
+    public void ResolutionExperimentScalesOnlyPagesBelowTheReference()
+    {
+        var options = new DetectionOptions();
+        Assert.Same(options, TextDetector.ScaledForDpi(options, 150, 0));
+        Assert.Same(options, TextDetector.ScaledForDpi(options, 300, 300));
+        Assert.Same(options, TextDetector.ScaledForDpi(options, 600, 300));
+        Assert.Equal(768, TextDetector.ScaledForDpi(options, 150, 300).MaxSideLength);
+        Assert.Equal(1024, TextDetector.ScaledForDpi(options, 150, 225).MaxSideLength);
+        // An A4 page at 150 dpi then detects at the scale an A4 page at 300 dpi does.
+        DetectionInput.Layout layout = DetectionInput.Plan(1240, 1754, TextDetector.ScaledForDpi(options, 150, 300));
+        Assert.Equal(768, layout.InputHeight);
+        Assert.Equal(544, layout.InputWidth);
+    }
+
+    [Fact]
     public void FitScalesSmallImagesUpButNotPastMaxSide()
     {
         // 900 x 260: rapidocr scales the short side to 736 (2560 wide); Fit stops at 1536 wide.

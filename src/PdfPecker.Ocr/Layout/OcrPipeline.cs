@@ -30,7 +30,7 @@ internal sealed class OcrPipeline
     /// <summary>Reads the text of a page image whose resolution is <paramref name="dpi"/>.</summary>
     public PageResult Run(PixelView page, float dpi, CancellationToken cancellationToken = default)
     {
-        List<DetectedQuad> quads = _detector.Detect(page, cancellationToken);
+        List<DetectedQuad> quads = _detector.Detect(page, dpi, cancellationToken);
         List<RecognizedLine> lines = _recognizer.Recognize(page, quads, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         return PageAssembler.Assemble(page.Width, page.Height, dpi, lines);
