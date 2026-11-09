@@ -27,6 +27,7 @@ internal sealed unsafe class InferenceContext : IDisposable
     private float[]?[] _scratch;
     private bool _disposed;
     private Layers.RunTiling? _runTiling;
+    private int[] _indices = [];
 
     /// <summary>Creates a context that uses at most the given number of threads for one run.</summary>
     public InferenceContext(int maxDegreeOfParallelism)
@@ -45,6 +46,16 @@ internal sealed unsafe class InferenceContext : IDisposable
     /// each such layer when it runs: layers run one at a time, so one serves them all and its arrays are reused.
     /// </summary>
     internal Layers.RunTiling RunTiling => _runTiling ??= new Layers.RunTiling();
+
+    /// <summary>
+    /// A list of at least <paramref name="count"/> indices for one step's use while it runs, such as the rows the
+    /// recogniser's head computes; reused by every step, and grown when needed.
+    /// </summary>
+    internal int[] Indices(int count)
+    {
+        if (_indices.Length < count) _indices = new int[Math.Max(count, _indices.Length * 2)];
+        return _indices;
+    }
 
     /// <summary>
     /// Whether runs find the columns of their values that are known to be equal and leave them out (see
@@ -87,7 +98,7 @@ internal sealed unsafe class InferenceContext : IDisposable
     internal ExecutionPlan GetPlan(OcrModel model, ReadOnlySpan<int> inputShape)
     {
         if (_plans.TryGetValue(model, out var plan) && plan.InputShape.AsSpan().SequenceEqual(inputShape)) return plan;
-        plan = ExecutionPlan.Create(model, inputShape.ToArray(), this);
+        plan = ExecutionPlan.Create(model, inputShape.ToArray(), this, plan?.Runs);
         _plans[model] = plan;
         return plan;
     }

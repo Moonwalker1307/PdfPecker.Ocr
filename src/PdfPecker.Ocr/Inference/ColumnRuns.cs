@@ -36,6 +36,8 @@ internal sealed class ColumnRuns
 
     public int Batch => Start.Length;
 
+    private Fill? _fill;
+
     /// <summary>Whether item n has a run of at least two columns, the only kind there is something to skip in.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool HasRun(int n) => Axis >= 0 && End[n] - Start[n] >= 2;
@@ -103,7 +105,9 @@ internal sealed class ColumnRuns
     public unsafe void FillLastAxis(float* data, int[] shape, InferenceContext context, int minimum = 1)
     {
         if (!Any(shape.Length - 1, minimum + 1)) return;
-        var fill = new Fill(this, data, shape, minimum);
+        // The fill's description is kept and set anew for each call, so a run allocates nothing for it.
+        var fill = _fill ??= new Fill(this);
+        fill.Set(data, shape, minimum);
         context.For(fill.Tiles, fill, &FillTile);
     }
 
@@ -121,11 +125,10 @@ internal sealed class ColumnRuns
     }
 
     /// <summary>One fill's tensor and tiles, handed to the threads.</summary>
-    private sealed unsafe class Fill
+    private sealed unsafe class Fill(ColumnRuns runs)
     {
-        public Fill(ColumnRuns runs, float* data, int[] shape, int minimum)
+        public void Set(float* data, int[] shape, int minimum)
         {
-            Runs = runs;
             Minimum = Math.Max(1, minimum);
             Data = data;
             Width = shape[^1];
@@ -134,24 +137,24 @@ internal sealed class ColumnRuns
             RowsPerItem = rows;
             RowsPerTile = Math.Max(1, (int)Math.Min(rows, 16384 / Math.Max(1, Width)));
             TilesPerItem = (int)((rows + RowsPerTile - 1) / RowsPerTile);
-            Tiles = TilesPerItem * runs.Batch;
+            Tiles = TilesPerItem * Runs.Batch;
         }
 
-        public ColumnRuns Runs { get; }
+        public ColumnRuns Runs { get; } = runs;
 
-        public int Minimum { get; }
+        public int Minimum { get; private set; }
 
-        public float* Data { get; }
+        public float* Data { get; private set; }
 
-        public int Width { get; }
+        public int Width { get; private set; }
 
-        public long RowsPerItem { get; }
+        public long RowsPerItem { get; private set; }
 
-        public int RowsPerTile { get; }
+        public int RowsPerTile { get; private set; }
 
-        public int TilesPerItem { get; }
+        public int TilesPerItem { get; private set; }
 
-        public int Tiles { get; }
+        public int Tiles { get; private set; }
     }
 
     /// <summary>

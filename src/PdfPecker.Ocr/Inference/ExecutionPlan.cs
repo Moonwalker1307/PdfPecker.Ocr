@@ -53,7 +53,7 @@ internal sealed unsafe class Step(Layer layer, int[][] inputShapes, int[] output
     public ColumnRuns[] InputRuns { get; set; } = [];
 
     /// <summary>Where the output holds equal columns in this run, set by the layer before the run.</summary>
-    public ColumnRuns OutputRuns { get; set; } = new(0);
+    public ColumnRuns OutputRuns { get; set; } = null!;
 
     public float* Input(int index) => Frame.Resolve(InputLocations[index]);
 
@@ -76,16 +76,18 @@ internal sealed class ExecutionPlan
 {
     private const int Alignment = 16;
 
-    private ExecutionPlan(int[] inputShape, Step[] steps, Frame frame, ColumnRuns inputRuns)
+    private ExecutionPlan(int[] inputShape, Step[] steps, Frame frame, ColumnRuns[] runs)
     {
         InputShape = inputShape;
         Steps = steps;
         Frame = frame;
-        InputRuns = inputRuns;
+        Runs = runs;
     }
 
-    /// <summary>Where the input holds equal columns in this run.</summary>
-    private ColumnRuns InputRuns { get; }
+    /// <summary>Where each value holds equal columns in this run, the input's first.</summary>
+    internal ColumnRuns[] Runs { get; }
+
+    private ColumnRuns InputRuns => Runs[0];
 
     public int[] InputShape { get; }
 
@@ -118,7 +120,12 @@ internal sealed class ExecutionPlan
 
     private static long Round(long floats) => (floats + Alignment - 1) / Alignment * Alignment;
 
-    public static ExecutionPlan Create(OcrModel model, int[] inputShape, InferenceContext context)
+    /// <summary>
+    /// Plans a model's run on inputs of one shape. <paramref name="reuse"/> may hand over the runs of the context's
+    /// previous plan for the model, which that plan no longer needs: the recogniser makes a plan for every batch shape,
+    /// and taking over the runs of values with the same batch saves allocating them each time.
+    /// </summary>
+    public static ExecutionPlan Create(OcrModel model, int[] inputShape, InferenceContext context, ColumnRuns[]? reuse = null)
     {
         var layers = model.Layers;
         var reads = model.Inputs;
@@ -298,8 +305,14 @@ internal sealed class ExecutionPlan
             return new Location(BufferKind.Arena, rootOffset[root] + at);
         }
 
-        var runs = shapes.Select(s => new ColumnRuns(s.Length > 0 ? s[0] : 1)).ToArray();
-        var plan = new ExecutionPlan((int[])inputShape.Clone(), steps, frame, runs[0])
+        var runs = new ColumnRuns[valueCount];
+        for (int v = 0; v < valueCount; v++)
+        {
+            int batch = shapes[v].Length > 0 ? shapes[v][0] : 1;
+            runs[v] = reuse != null && reuse.Length == valueCount && reuse[v].Batch == batch ? reuse[v] : new ColumnRuns(batch);
+        }
+
+        var plan = new ExecutionPlan((int[])inputShape.Clone(), steps, frame, runs)
         {
             ArenaFloats = arena,
             InputOffset = rootOffset[0],
@@ -313,7 +326,9 @@ internal sealed class ExecutionPlan
             step.InputLocations = reads[i].Select(LocationOf).ToArray();
             step.OutputLocation = LocationOf(i + 1);
             step.SharedLocation = new Location(BufferKind.Arena, scratchOffset[i]);
-            step.InputRuns = reads[i].Select(v => runs[v]).ToArray();
+            var inputRuns = new ColumnRuns[reads[i].Length];
+            for (int j = 0; j < inputRuns.Length; j++) inputRuns[j] = runs[reads[i][j]];
+            step.InputRuns = inputRuns;
             step.OutputRuns = runs[i + 1];
             perWorker = Math.Max(perWorker, layers[i].ScratchPerWorker(step, context));
         }

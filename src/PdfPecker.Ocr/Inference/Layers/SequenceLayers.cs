@@ -503,7 +503,7 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         {
             // Time steps in a run of equal ones (see ColumnRuns) are computed once, at the run's first step, and copied.
             int steps = step.OutputShape[1];
-            if (chunk.Rows.Length < rows) chunk.Rows = new int[rows];
+            chunk.Rows = context.Indices(rows);
             computed = 0;
             for (int n = 0; n < runs.Batch; n++)
             {
