@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -208,11 +209,17 @@ internal sealed unsafe class AttentionLayer : Layer
 
     private static readonly int Width = Vector<float>.Count;
 
+    // The lanes the head's loops take at a time: 512-bit vectors where the processor has AVX-512 (Vector<T> stays 256
+    // bits wide there), Vector<T> otherwise. Each lane is one score or one output value with its own sum, so the width
+    // does not change any result.
+    private static readonly bool Wide = VectorMath.Wide && Width == 8;
+    private static readonly int Lanes = Wide ? 16 : Width;
+
     /// <summary>The scratch of one head: q, k transposed, v with rows padded to whole vectors, and one row of scores.</summary>
     private static (int KeyStride, int ValueStride, long Floats) Layout(int t, int d)
     {
-        int keyStride = GemmKernel.RoundUp(t, Width);
-        int valueStride = GemmKernel.RoundUp(d, Width);
+        int keyStride = GemmKernel.RoundUp(t, Lanes);
+        int valueStride = GemmKernel.RoundUp(d, Lanes);
         return (keyStride, valueStride, d + ((long)d * keyStride) + ((long)t * valueStride) + keyStride);
     }
 
@@ -259,6 +266,12 @@ internal sealed unsafe class AttentionLayer : Layer
 
         for (int i = 0; i < d; i++) new Span<float>(keys + ((long)i * keyStride) + t, keyStride - t).Clear();
 
+        if (Wide)
+        {
+            HeadWide(qkv, output, q, keys, values, scores, t, c, d, h, keyStride, valueStride, layer._scale);
+            return;
+        }
+
         for (int t1 = 0; t1 < t; t1++)
         {
             float* qRow = qkv + ((long)t1 * 3 * c) + (h * d);
@@ -283,6 +296,44 @@ internal sealed unsafe class AttentionLayer : Layer
                 else
                 {
                     for (int j = 0; j < d - i; j++) outRow[i + j] = acc[j];
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The scores and outputs of <see cref="Head"/> on 512-bit vectors, the same products and sums in the same order
+    /// for each lane.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void HeadWide(float* qkv, float* output, float* q, float* keys, float* values, float* scores, int t, int c, int d, int h, int keyStride, int valueStride, float scale)
+    {
+        float* tail = stackalloc float[16];
+        for (int t1 = 0; t1 < t; t1++)
+        {
+            float* qRow = qkv + ((long)t1 * 3 * c) + (h * d);
+            for (int i = 0; i < d; i++) q[i] = qRow[i] * scale;
+            for (int t2 = 0; t2 < keyStride; t2 += 16)
+            {
+                var acc = Vector512<float>.Zero;
+                for (int i = 0; i < d; i++) acc += Vector512.Create(q[i]) * Vector512.Load(keys + ((long)i * keyStride) + t2);
+                Vector512.Store(acc, scores + t2);
+            }
+
+            VectorMath.Softmax(scores, t);
+            float* outRow = output + ((long)t1 * c) + (h * d);
+            for (int i = 0; i < d; i += 16)
+            {
+                var acc = Vector512<float>.Zero;
+                for (int t2 = 0; t2 < t; t2++) acc += Vector512.Create(scores[t2]) * Vector512.Load(values + ((long)t2 * valueStride) + i);
+                if (i + 16 <= d)
+                {
+                    Vector512.Store(acc, outRow + i);
+                }
+                else
+                {
+                    Vector512.Store(acc, tail);
+                    new Span<float>(tail, d - i).CopyTo(new Span<float>(outRow + i, d - i));
                 }
             }
         }
