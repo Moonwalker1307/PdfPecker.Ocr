@@ -83,9 +83,12 @@ PDFPECKER_OCR_UPDATE_GOLDEN=1 dotnet test -f net10.0 --filter "FullyQualifiedNam
 Never regenerate just to make a failing test pass. A refactor or a speed-up must leave every golden unchanged. The
 baselines were checked to be identical on .NET 8 and 10 and with the JIT's AVX-512, AVX2 and SSE paths. To take the AVX2
 path on a processor with AVX-512, set `DOTNET_EnableAVX512F=0` on .NET 8 and 9 and `DOTNET_EnableAVX512=0` on .NET 10,
-which ignores the older name (setting both covers every runtime); `DOTNET_EnableAVX2=0` turns off AVX2 and AVX-512 on
-all three, for the 128-bit paths. Check that a knob took effect, since a name the runtime does not know is ignored
-without a word: `Avx512F.IsSupported` and `Vector512.IsHardwareAccelerated` must both be false.
+which ignores the older name (setting both covers every runtime). For the 128-bit and portable paths, set
+`DOTNET_EnableAVX=0`, which turns off AVX, FMA, AVX2 and AVX-512 on all three. `DOTNET_EnableAVX2=0` is not enough on
+.NET 8 and 9: AVX and FMA stay on there, and the GEMM kernel, which needs only those two, keeps its 256-bit path
+(`GemmKernel.Best` is still `avx2`). Check that a knob took effect, since a name the runtime does not know is ignored
+without a word: for the AVX2 path `Avx512F.IsSupported` and `Vector512.IsHardwareAccelerated` must both be false, and
+for the 128-bit paths `Avx.IsSupported`, `Fma.IsSupported` and `Vector256.IsHardwareAccelerated` as well.
 
 ## Hostile input
 

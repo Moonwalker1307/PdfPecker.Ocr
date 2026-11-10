@@ -207,6 +207,7 @@ must be unchanged unless the output change is intended. If only one runtime is i
   that should include the arena is taken within those 2 seconds.
 - The JIT's switch for AVX-512 is `DOTNET_EnableAVX512F=0` on .NET 8 and 9 but `DOTNET_EnableAVX512=0` on .NET 10,
   which ignores the old name without a warning; a run meant to take the AVX2 path checks that
-  `Vector512.IsHardwareAccelerated` is false (`TESTING.md`).
+  `Vector512.IsHardwareAccelerated` is false (`TESTING.md`). The 128-bit paths need `DOTNET_EnableAVX=0` on every
+  runtime: `DOTNET_EnableAVX2=0` leaves AVX and FMA on under .NET 8 and 9, so the GEMM kernel keeps its AVX2 path.
 - Skipping runs of equal columns is a setting of `InferenceContext` (`SkipsEqualColumns`), not a static switch, so
   tests that compare the two paths run in parallel with the rest.
