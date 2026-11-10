@@ -105,8 +105,7 @@ jobs:
       - run: dotnet build -c Release -p:Version=${{ steps.version.outputs.version }}
       - run: dotnet test -c Release --no-build
 
-      # Package validation is off until the first release, because there is no published version to compare the API
-      # with; RELEASING.md turns it on with that release as the baseline.
+      # Package validation compares the public API with PackageValidationBaselineVersion, the last release.
       - run: dotnet pack src/PdfPecker.Ocr -c Release --no-build -p:Version=${{ steps.version.outputs.version }} -o artifacts
 
       # The package must name PdfPecker as its only dependency and carry the notices the Apache-2.0 model licence asks
