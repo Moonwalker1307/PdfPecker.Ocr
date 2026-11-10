@@ -9,20 +9,17 @@ namespace PdfPecker.Ocr.Input;
 internal readonly record struct DecodedImage(PagePixels Pixels, float Dpi);
 
 /// <summary>
-/// Decodes image files (PNG, JPEG, GIF, WebP, BMP and TIFF) to pixels with PdfPecker's public API alone: the images
-/// become pages of a PDF with <see cref="ImageToPdf"/>, and <see cref="PdfRenderer"/> draws each page back at one
-/// pixel per image pixel.
+/// Decodes image files (PNG, JPEG, GIF, WebP, BMP and TIFF) to pixels with PdfPecker's <see cref="ImageToPixels"/>,
+/// which gives the pixels <see cref="ImageToPdf"/> embeds and <see cref="PdfRenderer"/> draws at one pixel per image
+/// pixel, without making a PDF of them.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The pages are made at 96 dpi because there one image pixel is exactly one CSS pixel, so the page is exactly
-/// the image's size and the renderer copies each pixel unchanged (a test checks this). At other resolutions the page
-/// size goes through CSS pixels with three decimals and the image comes back shifted by a fraction of a pixel and
-/// resampled. The PDF is written without compression: it lives only until the pages are rendered.
-/// </para>
-/// <para>
-/// This is a roundabout way to decode an image; the cost (an HTML document holding the image as base64, a PDF, and a
-/// full render) is noted in the package's design notes as a reason for a public image decoder in PdfPecker.
+/// An image with more pixels than allowed still goes the long way: it becomes a page of a PDF with
+/// <see cref="ImageToPdf"/>, and the renderer draws it smaller, within the budget. The pages are made at 96 dpi because
+/// there one image pixel is exactly one CSS pixel, so the page is exactly the image's size. At other resolutions the
+/// page size goes through CSS pixels with three decimals and the image comes back shifted by a fraction of a pixel.
+/// The PDF is written without compression: it lives only until the page is rendered.
 /// </para>
 /// </remarks>
 internal static class ImageDecoder
@@ -40,8 +37,37 @@ internal static class ImageDecoder
         var info = ImageInfo.Read(image);
         if (info.Format == ImageFormat.Unknown)
             throw new InvalidDataException("The data is not a PNG, JPEG, GIF, WebP, BMP or TIFF image.");
-        var renderer = PdfRenderer.Open(ToNativePdf(new[] { image }, cancellationToken));
-        return Render(renderer, 0, info, fallbackDpi, maxPixels, cancellationToken);
+        return Decode(image, info, fallbackDpi, maxPixels, cancellationToken);
+    }
+
+    /// <summary>
+    /// Decodes an image of one page that <paramref name="info"/> describes (a page of a multi-page TIFF is first made a
+    /// file of its own with <see cref="ImageInfo.TiffFrame"/>). Its resolution is the one it records, else
+    /// <paramref name="fallbackDpi"/>, lowered in proportion when it has more than <paramref name="maxPixels"/> pixels
+    /// and is drawn smaller.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The data is not an image PdfPecker reads, or it is damaged.</exception>
+    public static DecodedImage Decode(byte[] image, ImageInfo info, float fallbackDpi, long maxPixels, CancellationToken cancellationToken)
+    {
+        long limit = Math.Min(maxPixels, ImageToPixelsOptions.MaxPixelLimit);
+        if ((long)info.Width * info.Height > limit)
+        {
+            var renderer = PdfRenderer.Open(ToNativePdf(new[] { image }, cancellationToken));
+            return Render(renderer, 0, info, fallbackDpi, maxPixels, cancellationToken);
+        }
+        float imageDpi = info.Dpi > 0 ? info.Dpi : fallbackDpi;
+        var options = new ImageToPixelsOptions { MaxPixels = limit };
+        var decoded = ImageToPixels.Convert(image, options, cancellationToken);
+        if (decoded.Format == ImagePixelFormat.Rgba)
+        {
+            // Transparent pixels are flattened onto white with the renderer's arithmetic, as a rendered page has them.
+            options.Format = ImagePixelFormat.Rgb;
+            decoded = ImageToPixels.Convert(image, options, cancellationToken);
+        }
+        var pixels = decoded.Format == ImagePixelFormat.Gray
+            ? PagePixels.FromGray(decoded.Pixels, decoded.Width, decoded.Height)
+            : PagePixels.FromRgbOrGray(decoded.Pixels, decoded.Width, decoded.Height);
+        return new DecodedImage(pixels, imageDpi);
     }
 
     /// <summary>A PDF with one page per image, each page exactly its image's size in pixels at <see cref="NativeDpi"/>.</summary>

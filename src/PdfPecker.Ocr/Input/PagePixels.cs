@@ -97,6 +97,18 @@ internal sealed class PagePixels : IDisposable
         return pixels;
     }
 
+    /// <summary>Copies RGB pixels, storing them as gray when every pixel has equal red, green and blue.</summary>
+    /// <exception cref="ArgumentException"><paramref name="rgb"/> is shorter than <paramref name="width"/> × <paramref name="height"/> × 3.</exception>
+    public static PagePixels FromRgbOrGray(ReadOnlySpan<byte> rgb, int width, int height)
+    {
+        CheckLength(rgb.Length, width, height, 3, nameof(rgb));
+        var src = rgb[..(width * height * 3)];
+        if (!PixelConvert.IsGrayRgb(src)) return FromRgb(src, width, height);
+        var pixels = Rent(width, height, PixelFormat.Gray8);
+        PixelConvert.RgbToGray(src, pixels.WritablePixels);
+        return pixels;
+    }
+
     /// <summary>Copies gray pixels.</summary>
     /// <exception cref="ArgumentException"><paramref name="gray"/> is shorter than <paramref name="width"/> × <paramref name="height"/>.</exception>
     public static PagePixels FromGray(ReadOnlySpan<byte> gray, int width, int height)

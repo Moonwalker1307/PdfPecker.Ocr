@@ -10,6 +10,6 @@
   <PropertyGroup>
     <Version>0.1.0-dev</Version>
     <!-- The PdfPecker release the package builds against and depends on at least. -->
-    <PdfPeckerVersion>1.23.0</PdfPeckerVersion>
+    <PdfPeckerVersion>1.24.0</PdfPeckerVersion>
   </PropertyGroup>
 </Project>

@@ -255,10 +255,12 @@ line 26.2,127.7 130.3x10.6 angle 0 | Due date: 13 November 2026
   word 71.9,127.7 10.7x10.6 | 13
   word 85.9,127.7 47.6x10.6 | November
   word 135.2,127.7 21.3x10.6 | 2026
-line 31.2,152.4 277.2x13.0 angle 0 | Description Unit price
+line 31.2,151.4 359.3x15.0 angle 0 | Description Qty Unit price Amount
   word 31.2,152.6 53.5x12.2 | Description
+  word 198.1,151.4 18.7x15.0 | Qty
   word 263.0,152.4 19.7x13.0 | Unit
   word 286.6,152.4 21.8x13.0 | price
+  word 353.0,152.5 37.4x11.0 | Amount
 line 31.3,171.6 358.9x12.7 angle 0 | Design workshop 2 1,450.00 2,900.00
   word 31.3,171.6 30.4x12.7 | Design
   word 65.0,171.6 40.9x12.7 | workshop
@@ -271,7 +273,8 @@ line 31.1,190.1 358.5x13.2 angle 0 | Printed brochures 500 1.20 600.00
   word 197.4,190.6 18.3x12.2 | 500
   word 289.2,190.1 20.4x13.2 | 1.20
   word 359.7,190.8 30.0x11.5 | 600.00
-line 206.4,209.8 184.0x12.7 angle 0 | 1 85.00 85.00
+line 31.1,209.3 359.3x14.2 angle 0 | Delivery 1 85.00 85.00
+  word 31.1,209.3 34.9x14.2 | Delivery
   word 206.4,210.5 9.8x12.0 | 1
   word 283.9,209.8 23.8x12.7 | 85.00
   word 364.5,210.0 25.9x12.5 | 85.00
@@ -293,9 +296,3 @@ line 26.5,286.8 230.5x10.6 angle 0 | Bank account 9710.05.12345, reference 2026-
   word 89.9,286.8 70.3x10.6 | 9710.05.12345,
   word 160.3,286.8 43.9x10.6 | reference
   word 206.0,286.8 51.0x10.6 | 2026-0731.
-line 353.0,152.5 37.6x11.7 angle 359 | Amount
-  word 353.0,152.5 37.6x11.7 | Amount
-line 31.1,209.3 35.1x14.8 angle 359 | Delivery
-  word 31.1,209.3 35.1x14.8 | Delivery
-line 198.0,151.4 19.2x15.7 angle 358 | Qty
-  word 198.0,151.4 19.2x15.7 | Qty
