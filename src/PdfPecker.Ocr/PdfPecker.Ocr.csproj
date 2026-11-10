@@ -23,9 +23,10 @@
     <PackageLicenseExpression>MIT AND Apache-2.0 AND BSL-1.0</PackageLicenseExpression>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <!-- Package validation stays off until 1.24.0 is on nuget.org: it compares the public API with a published
-         baseline, and there is none yet. The first PR after that release sets EnablePackageValidation to true and
-         PackageValidationBaselineVersion to 1.24.0 here, as RELEASING.md describes. -->
+    <!-- dotnet pack compares the public API with the last release and fails on a break; each release's follow-up PR
+         raises the baseline, as RELEASING.md describes. -->
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>1.24.0</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <!-- Reproducible paths in the PDBs of packages built by CI. -->
