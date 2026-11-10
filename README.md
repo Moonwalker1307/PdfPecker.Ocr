@@ -102,6 +102,21 @@ with buffers planned when the model loads, so a steady stream of pages allocates
 15 mantissa bits, which keeps the outputs within 1e-3 of ONNX Runtime's), generated from the published ONNX files by
 `tools/ModelBuilder`.
 
+### Other runtimes and GPUs
+
+The package itself runs only on the CPU. `OcrOptions.Accelerator` lets a separate package run some or all of the three
+networks somewhere else, such as on a GPU, while everything around them (decoding, layout, the text layer) stays the
+same. An `OcrAccelerator` creates an `IOcrNetwork` for each `OcrNetworkKind` it handles, a float tensor in and out that
+computes what the matching ONNX model computes, and returns null for the ones the built-in runtime should run, which
+also lets it fall back to the CPU when no device is there. Another runtime computes in its own order and precision, so
+its results can differ slightly from the built-in runtime's. Create one accelerator and reuse it: the networks it
+creates are kept with the pooled threads and buffers, per accelerator instance.
+
+```csharp
+var options = new OcrOptions { Accelerator = myAccelerator };
+OcrDocument document = PdfOcr.Recognize(File.ReadAllBytes("scanned.pdf"), options);
+```
+
 ## Languages
 
 The recognition model reads Latin script, including the accented letters of Western, Central and Northern European

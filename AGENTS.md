@@ -74,7 +74,9 @@ wins here.
 ## Repo map
 
 - `src/PdfPecker.Ocr/` – the package. The public API sits at the top level (`ImageOcr`, `PdfOcr`, `OcrOptions`,
-  `OcrPageMode`, `OcrDocument`, `OcrPage`, `OcrLine`, `OcrWord`, `OcrQuad`, `OcrPoint`, `OcrBox`, `OcrInfo`). Below it:
+  `OcrPageMode`, `OcrDocument`, `OcrPage`, `OcrLine`, `OcrWord`, `OcrQuad`, `OcrPoint`, `OcrBox`, `OcrInfo`, and the
+  accelerator seam `OcrAccelerator`, `IOcrNetwork` and `OcrNetworkKind`, through which a separate package such as
+  PdfPecker.Ocr.Gpu runs the networks elsewhere; the package itself never does). Below it:
   - `Inference/` – tensors, the graph executor and the kernels (GEMM, convolutions, depthwise convolutions,
     activations, normalisation, attention), with buffers planned when a model loads; `ModelNetwork` puts a model
     behind the pipeline's `INetwork` seam without copying its input or output.
