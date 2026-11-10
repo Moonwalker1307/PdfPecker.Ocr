@@ -709,21 +709,35 @@ public sealed class HostileInputTests
     {
         RenderedPage invoice = TestPages.Invoice;
         byte[] gray = invoice.Gray();
-        foreach (int delay in new[] { 50, 400, 900 })
+        var options = new OcrOptions { MaxDegreeOfParallelism = 2 };
+
+        // The delays are fractions of how long this machine takes for the page right now, so that they land early, in
+        // the middle and late in the work however fast the engine is or however busy the machine.
+        // The page is read twice and the second time taken, so the first can build the worker and its buffers.
+        long page = 0;
+        for (int i = 0; i < 2; i++)
         {
+            var warm = Stopwatch.StartNew();
+            Bounded(_ => ImageOcr.RecognizeGray(gray, invoice.Width, invoice.Height, options), Bound);
+            page = warm.ElapsedMilliseconds;
+        }
+
+        foreach (double share in new[] { 0.1, 0.5, 0.9 })
+        {
+            int delay = (int)(page * share);
             using var cts = new CancellationTokenSource();
             var watch = Stopwatch.StartNew();
             cts.CancelAfter(delay);
             try
             {
-                Bounded(_ => ImageOcr.RecognizeGray(gray, invoice.Width, invoice.Height, new OcrOptions { MaxDegreeOfParallelism = 2 }, cts.Token), Quick);
+                Bounded(_ => ImageOcr.RecognizeGray(gray, invoice.Width, invoice.Height, options, cts.Token), Quick);
             }
             catch (OperationCanceledException)
             {
                 // Cancelled as asked; how soon after the token fired is what matters.
             }
 
-            Assert.True(watch.ElapsedMilliseconds < delay + 3000, $"Cancelled after {delay} ms, stopped after {watch.ElapsedMilliseconds} ms.");
+            Assert.True(watch.ElapsedMilliseconds < delay + 3000, $"Cancelled after {delay} ms of a {page} ms page, stopped after {watch.ElapsedMilliseconds} ms.");
         }
 
         // The pool still works after cancelled runs.
@@ -733,11 +747,23 @@ public sealed class HostileInputTests
     [Fact]
     public void CancellationStopsMakeSearchable()
     {
-        byte[] pdf = TestPages.Invoice.ScannedPdf();
-        using var cts = new CancellationTokenSource(300);
-        var watch = Stopwatch.StartNew();
-        Assert.ThrowsAny<OperationCanceledException>(() => Bounded(_ => PdfOcr.MakeSearchable(pdf, null, cts.Token), Quick));
-        Assert.True(watch.ElapsedMilliseconds < 4000, watch.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture));
+        // Three scanned pages read by the real engine, with the token cancelled from inside the work as the second page
+        // reaches the engine, rather than after a fixed delay that a fast engine can beat or a busy machine overshoot.
+        // The engine must refuse that page, the third must be neither rendered nor read, and no PDF must come out.
+        RenderedPage invoice = TestPages.Invoice;
+        byte[] pdf = ImageToPdf.Convert([invoice.Png, invoice.Png, invoice.Png], null, new ImageToPdfOptions { FitPageToImage = true, Dpi = 300 });
+        using var cts = new CancellationTokenSource();
+        var recognizer = new CancellingRecognizer(cts, cancelOnPage: 1);
+        Assert.ThrowsAny<OperationCanceledException>(() => Bounded(_ => Ocr.Pdf.SearchablePdf.MakeSearchable(pdf, null, recognizer, cts.Token)));
+        long stopped = (long)Stopwatch.GetElapsedTime(recognizer.CancelledAt).TotalMilliseconds;
+        Assert.Equal([0, 1], recognizer.Pages);
+        Assert.NotEmpty(recognizer.FirstPage!.Lines);
+        Assert.True(recognizer.EngineRefused, "The engine read the page after the token was cancelled.");
+        Assert.True(stopped < 4000, stopped.ToString(CultureInfo.InvariantCulture));
+
+        // The public entry point hands its token to the same work, and the engine is in order afterwards.
+        Assert.ThrowsAny<OperationCanceledException>(() => PdfOcr.MakeSearchable(pdf, null, cts.Token));
+        Assert.Equal(TestPages.SmallText, ImageOcr.RecognizeRgba(TestPages.Small.Rgba, TestPages.Small.Width, TestPages.Small.Height).Text);
     }
 
     // ---- Helpers ----
@@ -802,6 +828,44 @@ public sealed class HostileInputTests
     }
 
     private static int IndexOf(byte[] data, ReadOnlySpan<byte> value) => data.AsSpan().IndexOf(value);
+
+    /// <summary>
+    /// The real engine behind the recognizer seam of the PDF code, which cancels a token when a given page reaches it
+    /// and then hands the page on to the engine, recording whether the engine refused it.
+    /// </summary>
+    private sealed class CancellingRecognizer(CancellationTokenSource cancel, int cancelOnPage) : Ocr.Input.IPageRecognizer
+    {
+        public List<int> Pages { get; } = [];
+
+        public OcrPage? FirstPage { get; private set; }
+
+        public bool EngineRefused { get; private set; }
+
+        /// <summary>When the token was cancelled, as a <see cref="Stopwatch"/> timestamp.</summary>
+        public long CancelledAt { get; private set; }
+
+        public OcrPage Recognize(Ocr.Input.PagePixels pixels, int pageIndex, float dpi, OcrOptions options, CancellationToken cancellationToken)
+        {
+            Pages.Add(pageIndex);
+            if (pageIndex == cancelOnPage)
+            {
+                CancelledAt = Stopwatch.GetTimestamp();
+                cancel.Cancel();
+            }
+
+            try
+            {
+                OcrPage page = Ocr.Input.PageRecognizer.Default.Recognize(pixels, pageIndex, dpi, options, cancellationToken);
+                FirstPage ??= page;
+                return page;
+            }
+            catch (OperationCanceledException)
+            {
+                EngineRefused = true;
+                throw;
+            }
+        }
+    }
 
     /// <summary>A stream of zeros, a little at a time, that cancels a token on its first read.</summary>
     private sealed class SlowStream(CancellationTokenSource cancel) : Stream

@@ -1,6 +1,7 @@
-using System.Diagnostics;
 using PdfPecker.Ocr.Detection;
+using PdfPecker.Ocr.Inference;
 using PdfPecker.Ocr.Layout;
+using PdfPecker.Ocr.Models;
 
 namespace PdfPecker.Ocr.Tests.EndToEnd;
 
@@ -278,20 +279,51 @@ public sealed class EndToEndTests
     [Fact]
     public void CancelledWhileReading()
     {
+        // The engine's networks in one context as an engine worker wires them, with the token cancelled from inside the
+        // work rather than after a fixed delay, which a fast engine can beat: just before the second batch of lines
+        // reaches the recognition network, when the page is detected, turned and partly read.
         RenderedPage page = TestPages.Invoice;
-        var options = new OcrOptions { MaxDegreeOfParallelism = 1 };
+        byte[] gray = page.Gray();
+        var options = new OcrOptions { MaxDegreeOfParallelism = 2 };
         using var cts = new CancellationTokenSource();
-        var watch = new Stopwatch();
-        cts.Token.Register(watch.Start);
-        cts.CancelAfter(150);
-        Assert.ThrowsAny<OperationCanceledException>(() => ImageOcr.RecognizeRgba(page.Rgba, page.Width, page.Height, options, cts.Token));
+        using var context = new InferenceContext(2) { CancellationToken = cts.Token };
+        var recognition = new CancellingNetwork(new ModelNetwork(ModelStore.RecognitionArgMax, context), cts, cancelOnCall: 2);
+        var pipeline = new OcrPipeline(
+            new ModelNetwork(ModelStore.Detection, context), recognition, new ModelNetwork(ModelStore.Classifier, context), OcrEngine.Characters,
+            OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(options), new ModelNetwork(ModelStore.DetectionGray, context), context);
+        Assert.ThrowsAny<OperationCanceledException>(() => pipeline.Run(new PixelView(gray, page.Width, page.Height, 1), 300, cts.Token));
 
-        // The token is checked between the operators of each network, so the call stops within one operator.
-        Assert.InRange(watch.ElapsedMilliseconds, 0, 3000);
+        // The network itself stopped: the token is checked between its operators, so the run ends within one operator.
+        Assert.Equal(2, recognition.Calls);
+        Assert.True(recognition.Refused, "The recognition network ran to its end after the token was cancelled.");
 
         // The engine is still in order afterwards.
         RenderedPage small = TestPages.Small;
         Assert.Equal(TestPages.SmallText, ImageOcr.RecognizeRgba(small.Rgba, small.Width, small.Height, options).Text);
+    }
+
+    /// <summary>A network that cancels a token as its given call starts, then runs the real network and records whether it refused.</summary>
+    private sealed class CancellingNetwork(INetwork inner, CancellationTokenSource cancel, int cancelOnCall) : INetwork
+    {
+        public int Calls { get; private set; }
+
+        public bool Refused { get; private set; }
+
+        public ReadOnlySpan<float> Run(ReadOnlySpan<float> input, ReadOnlySpan<int> shape, out int[] outputShape)
+        {
+            if (++Calls == cancelOnCall) cancel.Cancel();
+            try
+            {
+                return inner.Run(input, shape, out outputShape);
+            }
+            catch (OperationCanceledException)
+            {
+                Refused = true;
+                throw;
+            }
+        }
+
+        public Span<float> InputBuffer(ReadOnlySpan<int> shape) => inner.InputBuffer(shape);
     }
 
     [Fact]
