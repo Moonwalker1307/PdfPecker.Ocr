@@ -103,7 +103,7 @@ internal sealed class OrientationClassifier
             _batch.Sample(page, tensor, plane, InputWidth, InputHeight);
 
             ReadOnlySpan<float> output = _network.Run(tensor, inputShape, out int[] shape);
-            if (shape.Length != 2 || shape[0] != n || shape[1] < 2)
+            if (shape.Length != 2 || shape[0] != n || shape[1] < 2 || (long)n * shape[1] > output.Length)
             {
                 throw new InvalidOperationException("The orientation network returned an unexpected shape.");
             }

@@ -61,6 +61,15 @@ public sealed class OcrOptions
     /// </summary>
     public long MaxPixels { get; set; } = 100_000_000;
 
+    /// <summary>
+    /// Runs the neural networks somewhere other than the built-in CPU runtime, such as on a GPU through a separate
+    /// package; see <see cref="OcrAccelerator"/>. Another runtime computes in its own order and precision, so its text,
+    /// positions and confidences can differ slightly from the built-in runtime's, and the promise that results do not
+    /// depend on <see cref="MaxDegreeOfParallelism"/> holds only as far as the accelerator keeps it. Reuse one instance
+    /// across calls. Default: null, the built-in runtime.
+    /// </summary>
+    public OcrAccelerator? Accelerator { get; set; }
+
     /// <summary>Checks the settings, so a wrong value fails before any work starts.</summary>
     /// <exception cref="ArgumentOutOfRangeException">A setting is out of its range.</exception>
     internal void Validate()

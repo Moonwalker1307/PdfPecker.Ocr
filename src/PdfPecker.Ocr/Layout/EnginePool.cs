@@ -14,32 +14,65 @@ namespace PdfPecker.Ocr.Layout;
 internal sealed class EngineWorker : IDisposable
 {
     private readonly InferenceContext _context;
-    private readonly ModelNetwork _detection;
-    private readonly ModelNetwork _detectionGray;
-    private readonly ModelNetwork _recognition;
-    private readonly ModelNetwork _orientation;
+    private readonly INetwork _detection;
+    private readonly INetwork? _detectionGray;
+    private readonly INetwork _recognition;
+    private readonly INetwork _orientation;
+    private readonly List<AcceleratedNetwork> _accelerated = [];
     private OcrPipeline? _pipeline;
 
     public EngineWorker(int threads)
+        : this(threads, null)
+    {
+    }
+
+    /// <summary>
+    /// A worker whose networks come from <paramref name="accelerator"/> where it provides them and from the bundled
+    /// models otherwise. The context still lends its threads to the work between the networks.
+    /// </summary>
+    public EngineWorker(int threads, OcrAccelerator? accelerator)
     {
         Threads = threads;
+        Accelerator = accelerator;
         _context = new InferenceContext(threads);
         try
         {
-            _detection = new ModelNetwork(ModelStore.Detection, _context);
-            _detectionGray = new ModelNetwork(ModelStore.DetectionGray, _context);
-            _recognition = new ModelNetwork(ModelStore.RecognitionArgMax, _context);
-            _orientation = new ModelNetwork(ModelStore.Classifier, _context);
+            INetwork? detection = Accelerate(accelerator, OcrNetworkKind.Detection);
+            _detection = detection ?? new ModelNetwork(ModelStore.Detection, _context);
+
+            // The gray variant is the bundled detector's own trick; an accelerated detector reads the plane three times.
+            _detectionGray = detection is null ? new ModelNetwork(ModelStore.DetectionGray, _context) : null;
+            _recognition = (INetwork?)Accelerate(accelerator, OcrNetworkKind.Recognition) ?? new ModelNetwork(ModelStore.RecognitionArgMax, _context);
+            _orientation = (INetwork?)Accelerate(accelerator, OcrNetworkKind.Orientation) ?? new ModelNetwork(ModelStore.Classifier, _context);
         }
         catch
         {
-            _context.Dispose();
+            Dispose();
             throw;
         }
     }
 
     /// <summary>The context's degree of parallelism, which the pool matches workers by.</summary>
     public int Threads { get; }
+
+    /// <summary>The accelerator the networks come from, which the pool matches workers by; null for the bundled runtime.</summary>
+    public OcrAccelerator? Accelerator { get; }
+
+    /// <summary>The networks the accelerator provides, for tests.</summary>
+    internal int AcceleratedCount => _accelerated.Count;
+
+    private AcceleratedNetwork? Accelerate(OcrAccelerator? accelerator, OcrNetworkKind kind)
+    {
+        IOcrNetwork? network = accelerator?.CreateNetwork(kind);
+        if (network is null)
+        {
+            return null;
+        }
+
+        var accelerated = new AcceleratedNetwork(network);
+        _accelerated.Add(accelerated);
+        return accelerated;
+    }
 
     /// <summary>When the worker was last returned to the pool, in <see cref="Environment.TickCount64"/> milliseconds.</summary>
     public long ReturnedAt { get; set; }
@@ -80,6 +113,12 @@ internal sealed class EngineWorker : IDisposable
     {
         _pipeline = null;
         _context.Dispose();
+        foreach (AcceleratedNetwork network in _accelerated)
+        {
+            network.Dispose();
+        }
+
+        _accelerated.Clear();
     }
 }
 
@@ -127,13 +166,19 @@ internal static class EnginePool
     }
 
     /// <summary>A worker with exactly <paramref name="threads"/> threads: the one used most recently, or a new one.</summary>
-    public static EngineWorker Rent(int threads)
+    public static EngineWorker Rent(int threads) => Rent(threads, null);
+
+    /// <summary>
+    /// A worker with exactly <paramref name="threads"/> threads whose networks come from <paramref name="accelerator"/>
+    /// (the same instance; null for the bundled runtime): the one used most recently, or a new one.
+    /// </summary>
+    public static EngineWorker Rent(int threads, OcrAccelerator? accelerator)
     {
         lock (s_lock)
         {
             for (int i = s_idle.Count - 1; i >= 0; i--)
             {
-                if (s_idle[i].Threads == threads)
+                if (s_idle[i].Threads == threads && ReferenceEquals(s_idle[i].Accelerator, accelerator))
                 {
                     EngineWorker worker = s_idle[i];
                     s_idle.RemoveAt(i);
@@ -142,7 +187,7 @@ internal static class EnginePool
             }
         }
 
-        return new EngineWorker(threads);
+        return new EngineWorker(threads, accelerator);
     }
 
     /// <summary>Gives a worker back for the next call; the oldest idle worker is disposed when the pool is full.</summary>

@@ -73,7 +73,7 @@ internal sealed class OcrEngine : IPageRecognizer
         }
 
         var recognition = RecognitionOptions(options);
-        EngineWorker worker = EnginePool.Rent(threads);
+        EngineWorker worker = EnginePool.Rent(threads, options.Accelerator);
         PageResult result;
         try
         {
