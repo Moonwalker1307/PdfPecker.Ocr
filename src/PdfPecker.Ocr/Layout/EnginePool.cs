@@ -52,9 +52,10 @@ internal sealed class EngineWorker : IDisposable
 
     /// <summary>
     /// Reads a page. The pipeline is kept between calls and rebuilt only when the recognition settings change, which
-    /// keeps the detector's and recogniser's buffers for the next page.
+    /// keeps the detector's and recogniser's buffers for the next page. <paramref name="stepDone"/> is the context's
+    /// <see cref="InferenceContext.StepDone"/> for this page, for tests, and normally null.
     /// </summary>
-    public PageResult Run(PixelView page, float dpi, RecognitionOptions options, CancellationToken cancellationToken)
+    public PageResult Run(PixelView page, float dpi, RecognitionOptions options, Action<OcrModel, int>? stepDone, CancellationToken cancellationToken)
     {
         if (_pipeline is null || _pipeline.Recognizer.Options != options)
         {
@@ -62,6 +63,7 @@ internal sealed class EngineWorker : IDisposable
         }
 
         _context.CancellationToken = cancellationToken;
+        _context.StepDone = stepDone;
         try
         {
             return _pipeline.Run(page, dpi, cancellationToken);
@@ -69,6 +71,7 @@ internal sealed class EngineWorker : IDisposable
         finally
         {
             _context.CancellationToken = default;
+            _context.StepDone = null;
         }
     }
 

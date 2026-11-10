@@ -279,51 +279,39 @@ public sealed class EndToEndTests
     [Fact]
     public void CancelledWhileReading()
     {
-        // The engine's networks in one context as an engine worker wires them, with the token cancelled from inside the
-        // work rather than after a fixed delay, which a fast engine can beat: just before the second batch of lines
-        // reaches the recognition network, when the page is detected, turned and partly read.
+        // The engine with a pooled worker, its context and its token, cancelled from inside the work rather than after a
+        // fixed delay, which a fast engine can beat: at the fourth step of the recognition network's second batch of
+        // lines, when the page is detected, turned and partly read, and the network is half way through a run.
         RenderedPage page = TestPages.Invoice;
         byte[] gray = page.Gray();
         var options = new OcrOptions { MaxDegreeOfParallelism = 2 };
         using var cts = new CancellationTokenSource();
-        using var context = new InferenceContext(2) { CancellationToken = cts.Token };
-        var recognition = new CancellingNetwork(new ModelNetwork(ModelStore.RecognitionArgMax, context), cts, cancelOnCall: 2);
-        var pipeline = new OcrPipeline(
-            new ModelNetwork(ModelStore.Detection, context), recognition, new ModelNetwork(ModelStore.Classifier, context), OcrEngine.Characters,
-            OcrEngine.DetectionOptions, OcrEngine.RecognitionOptions(options), new ModelNetwork(ModelStore.DetectionGray, context), context);
-        Assert.ThrowsAny<OperationCanceledException>(() => pipeline.Run(new PixelView(gray, page.Width, page.Height, 1), 300, cts.Token));
+        int batches = 0;
+        int stepsAfter = 0;
+        void StepDone(OcrModel model, int step)
+        {
+            if (cts.IsCancellationRequested)
+            {
+                stepsAfter++;
+            }
+            else if (model == ModelStore.RecognitionArgMax)
+            {
+                if (step == 0) batches++;
+                if (batches == 2 && step == 3) cts.Cancel();
+            }
+        }
 
-        // The network itself stopped: the token is checked between its operators, so the run ends within one operator.
-        Assert.Equal(2, recognition.Calls);
-        Assert.True(recognition.Refused, "The recognition network ran to its end after the token was cancelled.");
+        Assert.ThrowsAny<OperationCanceledException>(
+            () => OcrEngine.Recognize(new PixelView(gray, page.Width, page.Height, 1), 0, 300, options, 2, StepDone, cts.Token));
+        Assert.True(cts.IsCancellationRequested, "The page did not reach a second batch of lines.");
+
+        // The network itself stopped: the worker hands the token to its context, which is checked between the
+        // operators of a run, so not one more operator ran.
+        Assert.True(stepsAfter == 0, $"{stepsAfter} more operators ran after the token was cancelled.");
 
         // The engine is still in order afterwards.
         RenderedPage small = TestPages.Small;
         Assert.Equal(TestPages.SmallText, ImageOcr.RecognizeRgba(small.Rgba, small.Width, small.Height, options).Text);
-    }
-
-    /// <summary>A network that cancels a token as its given call starts, then runs the real network and records whether it refused.</summary>
-    private sealed class CancellingNetwork(INetwork inner, CancellationTokenSource cancel, int cancelOnCall) : INetwork
-    {
-        public int Calls { get; private set; }
-
-        public bool Refused { get; private set; }
-
-        public ReadOnlySpan<float> Run(ReadOnlySpan<float> input, ReadOnlySpan<int> shape, out int[] outputShape)
-        {
-            if (++Calls == cancelOnCall) cancel.Cancel();
-            try
-            {
-                return inner.Run(input, shape, out outputShape);
-            }
-            catch (OperationCanceledException)
-            {
-                Refused = true;
-                throw;
-            }
-        }
-
-        public Span<float> InputBuffer(ReadOnlySpan<int> shape) => inner.InputBuffer(shape);
     }
 
     [Fact]

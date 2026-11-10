@@ -1,5 +1,6 @@
 using System.Text;
 using PdfPecker.Ocr.Detection;
+using PdfPecker.Ocr.Inference;
 using PdfPecker.Ocr.Input;
 using PdfPecker.Ocr.Models;
 using PdfPecker.Ocr.Recognition;
@@ -61,6 +62,13 @@ internal sealed class OcrEngine : IPageRecognizer
 
     /// <summary>Reads a page with an exact number of threads, which tests use to check that it does not change results.</summary>
     internal static OcrPage Recognize(PixelView page, int pageIndex, float dpi, OcrOptions options, int threads, CancellationToken cancellationToken)
+        => Recognize(page, pageIndex, dpi, options, threads, null, cancellationToken);
+
+    /// <summary>
+    /// Reads a page with an exact number of threads and a callback after each step of the worker's network runs (see
+    /// <see cref="InferenceContext.StepDone"/>), which tests use to cancel the token from inside the work.
+    /// </summary>
+    internal static OcrPage Recognize(PixelView page, int pageIndex, float dpi, OcrOptions options, int threads, Action<OcrModel, int>? stepDone, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (IsUniform(page))
@@ -76,7 +84,7 @@ internal sealed class OcrEngine : IPageRecognizer
         PageResult result;
         try
         {
-            result = worker.Run(page, dpi, recognition, cancellationToken);
+            result = worker.Run(page, dpi, recognition, stepDone, cancellationToken);
         }
         catch
         {

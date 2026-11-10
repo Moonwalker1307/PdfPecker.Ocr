@@ -200,10 +200,14 @@ internal sealed unsafe class OcrModel
     {
         var plan = Prepare(input, shape, context);
         var token = context.CancellationToken;
-        foreach (var step in plan.Steps)
+        var stepDone = context.StepDone;
+        var steps = plan.Steps;
+        for (int i = 0; i < steps.Length; i++)
         {
             token.ThrowIfCancellationRequested();
+            var step = steps[i];
             step.Layer.Execute(step, context);
+            stepDone?.Invoke(this, i);
         }
         output = plan.Frame.Arena + plan.OutputOffset;
         return plan;
