@@ -1,3 +1,5 @@
+![PdfPecker](https://raw.githubusercontent.com/Moonwalker1307/PdfPecker/main/assets/logo.png)
+
 # PdfPecker.Ocr
 
 Text recognition (OCR) for .NET with no native dependencies: reads printed text from images and scanned PDFs, and
