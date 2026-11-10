@@ -1,5 +1,4 @@
 using PdfPecker.Ocr.Detection;
-using PdfPecker.Ocr.Inference;
 using PdfPecker.Ocr.Layout;
 using PdfPecker.Ocr.Models;
 
@@ -279,35 +278,18 @@ public sealed class EndToEndTests
     [Fact]
     public void CancelledWhileReading()
     {
-        // The engine with a pooled worker, its context and its token, cancelled from inside the work rather than after a
-        // fixed delay, which a fast engine can beat: at the fourth step of the recognition network's second batch of
-        // lines, when the page is detected, turned and partly read, and the network is half way through a run.
+        // The public entry point with a pooled worker, its context and its token, cancelled from inside the work rather
+        // than after a fixed delay, which a fast engine can beat: at the fourth step of the recognition network's second
+        // batch of lines, when the page is detected, turned and partly read, and the network is half way through a run.
         RenderedPage page = TestPages.Invoice;
         byte[] gray = page.Gray();
         var options = new OcrOptions { MaxDegreeOfParallelism = 2 };
-        using var cts = new CancellationTokenSource();
-        int batches = 0;
-        int stepsAfter = 0;
-        void StepDone(OcrModel model, int step)
-        {
-            if (cts.IsCancellationRequested)
-            {
-                stepsAfter++;
-            }
-            else if (model == ModelStore.RecognitionArgMax)
-            {
-                if (step == 0) batches++;
-                if (batches == 2 && step == 3) cts.Cancel();
-            }
-        }
-
-        Assert.ThrowsAny<OperationCanceledException>(
-            () => OcrEngine.Recognize(new PixelView(gray, page.Width, page.Height, 1), 0, 300, options, 2, StepDone, cts.Token));
-        Assert.True(cts.IsCancellationRequested, "The page did not reach a second batch of lines.");
+        using var probe = new CancelProbe(s => s.Model == ModelStore.RecognitionArgMax && s.Run == 1 && s.Index == 3);
+        Assert.ThrowsAny<OperationCanceledException>(() => ImageOcr.RecognizeGray(gray, page.Width, page.Height, options, probe.Token));
 
         // The network itself stopped: the worker hands the token to its context, which is checked between the
         // operators of a run, so not one more operator ran.
-        Assert.True(stepsAfter == 0, $"{stepsAfter} more operators ran after the token was cancelled.");
+        probe.AssertStoppedAtOnce();
 
         // The engine is still in order afterwards.
         RenderedPage small = TestPages.Small;

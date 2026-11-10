@@ -198,9 +198,11 @@ internal sealed unsafe class OcrModel
     /// <summary>Runs every step of the plan for the input's shape; the output lands in the arena, where output points.</summary>
     private ExecutionPlan RunCore(float* input, ReadOnlySpan<int> shape, InferenceContext context, out float* output)
     {
+        var observer = context.Observer;
+        observer?.RunStarting?.Invoke(this);
         var plan = Prepare(input, shape, context);
         var token = context.CancellationToken;
-        var stepDone = context.StepDone;
+        var stepDone = observer?.StepDone;
         var steps = plan.Steps;
         for (int i = 0; i < steps.Length; i++)
         {

@@ -707,35 +707,29 @@ public sealed class HostileInputTests
     [Fact]
     public void CancellationStopsAPageQuickly()
     {
-        // Quickly means within one operator of a network, wherever in the page the token fires. The engine's pooled
-        // worker reports each operator it finishes: the page is read once to count them, and then cancelled early, in
-        // the middle and late in its work by that count, which lands at the same place however fast or busy the machine
-        // is. A delay could not: the page takes a second or two, so a bound of a few seconds after a delay held even
-        // when nothing was cancelled at all. Not one more operator may run after the token fired.
+        // Quickly means within one operator of a network, wherever in the page the token fires. The engine reports each
+        // operator it finishes to a probe on the calling flow: the page is read once to count them, and then cancelled
+        // early, in the middle and late in its work by that count, which lands at the same place however fast or busy
+        // the machine is. A delay could not: the page takes a second or two, so a bound of a few seconds after a delay
+        // held even when nothing was cancelled at all. Not one more operator may run after the token fired, and no run
+        // may start.
         RenderedPage invoice = TestPages.Invoice;
         byte[] gray = invoice.Gray();
         var options = new OcrOptions { MaxDegreeOfParallelism = 2 };
-        int total = 0;
-        OcrPage read = Bounded(_ => Ocr.Layout.OcrEngine.Recognize(
-            new Ocr.Detection.PixelView(gray, invoice.Width, invoice.Height, 1), 0, 300, options, 2, (_, _) => total++, default));
-        Assert.NotEmpty(read.Lines);
+        int total;
+        using (var count = new CancelProbe(_ => false))
+        {
+            OcrPage read = Bounded(_ => ImageOcr.RecognizeGray(gray, invoice.Width, invoice.Height, options, count.Token));
+            Assert.NotEmpty(read.Lines);
+            total = count.Steps;
+        }
 
         foreach (double share in new[] { 0.1, 0.5, 0.9 })
         {
             int cancelAt = (int)(total * share);
-            using var cts = new CancellationTokenSource();
-            int steps = 0;
-            int stepsAfter = 0;
-            void StepDone(Ocr.Inference.OcrModel model, int step)
-            {
-                if (cts.IsCancellationRequested) stepsAfter++;
-                else if (++steps == cancelAt) cts.Cancel();
-            }
-
-            Assert.ThrowsAny<OperationCanceledException>(() => Bounded(_ => Ocr.Layout.OcrEngine.Recognize(
-                new Ocr.Detection.PixelView(gray, invoice.Width, invoice.Height, 1), 0, 300, options, 2, StepDone, cts.Token), Quick));
-            Assert.True(cts.IsCancellationRequested, $"The page ended before operator {cancelAt} of {total}.");
-            Assert.True(stepsAfter == 0, $"Cancelled after operator {cancelAt} of {total}, and {stepsAfter} more ran.");
+            using var probe = new CancelProbe(s => s.Before == cancelAt);
+            Assert.ThrowsAny<OperationCanceledException>(() => Bounded(_ => ImageOcr.RecognizeGray(gray, invoice.Width, invoice.Height, options, probe.Token), Quick));
+            probe.AssertStoppedAtOnce();
         }
 
         // The pool still works after cancelled runs.

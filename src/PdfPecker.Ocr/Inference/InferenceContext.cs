@@ -68,10 +68,10 @@ internal sealed unsafe class InferenceContext : IDisposable
     public CancellationToken CancellationToken { get; set; }
 
     /// <summary>
-    /// Called after each step of a run with the model and the step's index, on the thread that runs the model, or null.
-    /// Tests use it to cancel from inside a run at a known step, which a delay cannot do on a machine of unknown speed.
+    /// The callbacks from inside this context's runs, or null. Tests use them to cancel from inside a run at a known
+    /// step, which a delay cannot do on a machine of unknown speed.
     /// </summary>
-    internal Action<OcrModel, int>? StepDone { get; set; }
+    internal RunObserver? Observer { get; set; }
 
     /// <summary>The size of the activation arena, in bytes, for memory measurements.</summary>
     public long ArenaBytes => _arenaFloats * sizeof(float);

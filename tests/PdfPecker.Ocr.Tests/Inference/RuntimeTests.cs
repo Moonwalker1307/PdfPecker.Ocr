@@ -483,10 +483,13 @@ public sealed class RuntimeTests
         using var cancel = new CancellationTokenSource();
         using var context = new InferenceContext(2) { CancellationToken = cancel.Token };
         int steps = 0;
-        context.StepDone = (_, step) =>
+        context.Observer = new RunObserver
         {
-            steps++;
-            if (step == 2) cancel.Cancel();
+            StepDone = (_, step) =>
+            {
+                steps++;
+                if (step == 2) cancel.Cancel();
+            },
         };
         Assert.Throws<OperationCanceledException>(() => ModelStore.Classifier.Run(new Tensor(1, 3, 48, 192), context));
         Assert.Equal(3, steps);
