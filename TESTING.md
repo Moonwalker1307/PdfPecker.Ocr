@@ -81,8 +81,11 @@ PDFPECKER_OCR_UPDATE_GOLDEN=1 dotnet test -f net10.0 --filter "FullyQualifiedNam
 ```
 
 Never regenerate just to make a failing test pass. A refactor or a speed-up must leave every golden unchanged. The
-baselines were checked to be identical on .NET 8 and 10 and with the JIT's AVX-512, AVX2 and SSE paths
-(`DOTNET_EnableAVX512F=0`, `DOTNET_EnableAVX2=0`).
+baselines were checked to be identical on .NET 8 and 10 and with the JIT's AVX-512, AVX2 and SSE paths. To take the AVX2
+path on a processor with AVX-512, set `DOTNET_EnableAVX512F=0` on .NET 8 and 9 and `DOTNET_EnableAVX512=0` on .NET 10,
+which ignores the older name (setting both covers every runtime); `DOTNET_EnableAVX2=0` turns off AVX2 and AVX-512 on
+all three, for the 128-bit paths. Check that a knob took effect, since a name the runtime does not know is ignored
+without a word: `Avx512F.IsSupported` and `Vector512.IsHardwareAccelerated` must both be false.
 
 ## Hostile input
 

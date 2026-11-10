@@ -205,5 +205,8 @@ must be unchanged unless the output change is intended. If only one runtime is i
   of that memory after an A4 page at 300 dpi, after 2 seconds without a call, and disposes the worker with its threads
   and plans after 30; tests and benchmarks that need a cold start call `EnginePool.Clear()`, and a memory measurement
   that should include the arena is taken within those 2 seconds.
+- The JIT's switch for AVX-512 is `DOTNET_EnableAVX512F=0` on .NET 8 and 9 but `DOTNET_EnableAVX512=0` on .NET 10,
+  which ignores the old name without a warning; a run meant to take the AVX2 path checks that
+  `Vector512.IsHardwareAccelerated` is false (`TESTING.md`).
 - Skipping runs of equal columns is a setting of `InferenceContext` (`SkipsEqualColumns`), not a static switch, so
   tests that compare the two paths run in parallel with the rest.
