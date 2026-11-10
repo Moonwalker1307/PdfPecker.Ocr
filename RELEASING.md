@@ -7,19 +7,19 @@ A release publishes one package, PdfPecker.Ocr, with its symbols package.
 
 ## Versions
 
-- PdfPecker.Ocr has its own version line, starting at 0.1.0; it does not follow PdfPecker's version numbers.
-- Semantic versioning. New features are minor versions, fixes are patches, and a breaking change to the public API
-  belongs only in a major version. No breaking changes are planned before 2.0. Releases before 1.0 keep that promise
-  too, once 0.1.0 is out, because callers build on them.
-- The package depends on PdfPecker at least at `PdfPeckerVersion` in `Directory.Build.props`, the release it is built
-  and tested against. NuGet treats that as a minimum, so callers may use any later PdfPecker, which keeps its public
-  API until 2.0. Raise `PdfPeckerVersion` only when the package needs something a newer PdfPecker release has, and only
-  once nuget.org serves that release; the release notes say when the minimum moved.
-- Local builds pack as `0.1.0-dev` (the `Version` in `Directory.Build.props`). CI builds of main and pull requests are
-  `<next patch>-preview.<run number>`, computed from the latest `v*` tag (`0.1.0-preview.<run number>` before the first
-  release), so they sort between two releases.
+- PdfPecker.Ocr has PdfPecker's version, as PdfPecker.Fonts does, starting at 1.24.0: each release follows a PdfPecker
+  release and carries its number, so callers can see which PdfPecker it belongs with. `nuget.yml` refuses a release
+  tag that is not `PdfPeckerVersion` in `Directory.Build.props`.
+- The package depends on PdfPecker at least at `PdfPeckerVersion`, the release it is built and tested against. NuGet
+  treats that as a minimum, so callers may use any later PdfPecker, which keeps its public API until 2.0. After each
+  PdfPecker release, a pull request raises `PdfPeckerVersion` once nuget.org serves that release. A fix that cannot
+  wait for the next PdfPecker release goes out with the next PdfPecker patch release, which can be made for it.
+- No breaking changes to the public API before 2.0, as in PdfPecker.
+- Local builds pack as `<PdfPeckerVersion>-dev` (the `Version` in `Directory.Build.props`). CI builds of main and pull
+  requests are `<next patch>-preview.<run number>`, computed from the latest `v*` tag (`<PdfPeckerVersion>-preview.<run
+  number>` before the first release), so they sort between two releases.
 - Package validation is off until the first release, because there is no published version to compare the API with.
-  After 0.1.0 it is on, and `dotnet pack` compares the public API with `PackageValidationBaselineVersion` and fails on
+  After 1.24.0 it is on, and `dotnet pack` compares the public API with `PackageValidationBaselineVersion` and fails on
   a break; a deliberate break, in a major version only, needs a `CompatibilitySuppressions.xml` entry.
 
 ## Before a release
@@ -48,6 +48,7 @@ Open one pull request that:
 - sets `EnablePackageValidation` to `true` and `PackageValidationBaselineVersion` to the new version in
   `src/PdfPecker.Ocr/PdfPecker.Ocr.csproj` (after the first release, both lines are added; afterwards only the
   baseline moves), and `Version` in `Directory.Build.props` to the next patch's `-dev` (CI warns while the baseline lags
-  behind the latest tag);
+  behind the latest tag); the pull request that raises `PdfPeckerVersion` for the next release sets `Version` to its
+  `-dev`;
 - updates the version placeholder in `.github/ISSUE_TEMPLATE/bug_report.yml`;
 - updates the README if it names the release, such as in the `bench/compare-versions.sh` example.

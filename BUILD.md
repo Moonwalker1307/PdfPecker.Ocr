@@ -33,7 +33,7 @@ dotnet run --project tools/ModelBuilder -c Release               # regenerates s
 - **Trimming and AOT analyzers.** `IsTrimmable` and `IsAotCompatible` are on, so reflection-based code shows up as a
   warning, and therefore an error.
 - **File-scoped namespaces** are required by `.editorconfig` (`csharp_style_namespace_declarations = file_scoped:warning`).
-- **Breaking API changes**, once 0.1.0 is released: `dotnet pack` then runs package validation against
+- **Breaking API changes**, once 1.24.0 is released: `dotnet pack` then runs package validation against
   `PackageValidationBaselineVersion`; see `RELEASING.md`.
 
 ## Target frameworks

@@ -73,17 +73,23 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "release" ]; then
             version="${TAG#v}"
             if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-              echo "::error::Release tag '$TAG' is not a version like v0.1.0 or 0.1.0-beta"
+              echo "::error::Release tag '$TAG' is not a version like v1.24.0 or 1.24.0-beta"
+              exit 1
+            fi
+            # The package carries the version of the PdfPecker release it is built against (RELEASING.md).
+            pdfpecker=$(sed -n 's:.*<PdfPeckerVersion>\(.*\)</PdfPeckerVersion>.*:\1:p' Directory.Build.props)
+            if [ "${version%%-*}" != "$pdfpecker" ]; then
+              echo "::error::Release tag '$TAG' does not match PdfPeckerVersion $pdfpecker in Directory.Build.props"
               exit 1
             fi
           else
             # Previews are pre-releases of the next patch after the latest release, so NuGet sorts them above it and
-            # below the next release: 0.1.1-preview.<run> after v0.1.0. Before the first release they lead up to 0.1.0.
+            # below the next release: 1.24.1-preview.<run> after v1.24.0. Before the first release they lead up to 1.24.0.
             latest=$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
             if [[ "${latest#v}" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
               next="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
             else
-              next="0.1.0"
+              next=$(sed -n 's:.*<PdfPeckerVersion>\(.*\)</PdfPeckerVersion>.*:\1:p' Directory.Build.props)
             fi
             version="$next-preview.$GITHUB_RUN_NUMBER"
             # Package validation compares the API with this baseline once it is turned on after the first release, so

@@ -12,7 +12,7 @@
   the share of their time steps that belongs to the lines rather than to padding.
 - `compare-versions.sh [git-ref] [rounds]` – the working tree against another version on this machine, in turns, each in a fresh
   process (the ref is built with this version's benchmark program, so only the library differs). Pass the feature switches both
-  versions understand in `OCR_BENCH_BUILD_ARGS`, for example `OCR_BENCH_BUILD_ARGS=-p:OcrInternals=true bench/compare-versions.sh v0.1.0`
+  versions understand in `OCR_BENCH_BUILD_ARGS`, for example `OCR_BENCH_BUILD_ARGS=-p:OcrInternals=true bench/compare-versions.sh v1.24.0`
   (the API cases are on by default; `-p:OcrApi=false` for a version from before the API).
   As in PdfPecker, only same-machine comparisons are meaningful, and the GC gen0 budget is fixed (`DOTNET_GCgen0size`) so that
   peak memory compares across machines.
