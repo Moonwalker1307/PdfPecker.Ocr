@@ -9,9 +9,6 @@ ONNX Runtime or Tesseract, or need a GPU or a network connection. Its only depen
 [PdfPecker](https://www.nuget.org/packages/PdfPecker) package, which it uses to decode images, render PDF pages and
 write the text layer.
 
-> PdfPecker.Ocr is being built towards its first release, 0.1.0. The API below is the one planned for that release;
-> until it is on nuget.org, the package and this page may change.
-
 ```csharp
 using PdfPecker.Ocr;
 
