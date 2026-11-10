@@ -118,26 +118,26 @@ trailer
 << /Size 15 /Root 1 0 R /Info 2 0 R >>
 extracted text
 page 1 425.3x198.5
-line 218.9,153.4 175.9x14.1 angle 180 | This page was scanned upside down.
-  word 374.8,153.4 20.0x14.1 | This
-  word 348.6,153.3 22.3x14.1 | page
-  word 327.3,153.2 17.4x14.1 | was
-  word 287.2,153.2 38.5x14.0 | scanned
-  word 252.1,153.1 31.2x14.0 | upside
-  word 218.9,153.0 29.5x13.9 | down.
-line 232.3,137.0 162.6x13.2 angle 180 | The reader turns it before reading.
-  word 379.0,137.0 15.9x13.2 | The
-  word 343.9,136.8 31.3x13.2 | reader
-  word 317.5,136.6 24.7x13.2 | turns
-  word 306.6,136.3 9.4x13.2 | it
-  word 275.9,136.2 29.1x13.2 | before
-  word 232.3,135.9 39.7x13.2 | reading.
-line 247.6,117.0 147.2x14.2 angle 180 | Page 7 of 12,f iled on 21 April.
-  word 373.2,117.6 21.7x14.2 | Page
-  word 363.8,117.5 5.2x14.2 | 7
-  word 349.7,117.4 9.9x14.2 | of
-  word 326.8,117.3 21.0x14.2 | 12,f
-  word 309.7,117.3 17.2x14.2 | iled
-  word 293.2,117.2 12.3x14.2 | on
-  word 279.1,117.1 9.9x14.2 | 21
-  word 247.6,117.0 27.3x14.2 | April.
+line 218.8,152.5 176.0x15.0 angle 180 | This page was scanned upside down.
+  word 374.7,153.3 20.0x14.2 | This
+  word 348.5,153.2 22.3x14.2 | page
+  word 327.2,153.1 17.5x14.2 | was
+  word 287.2,153.0 38.6x14.2 | scanned
+  word 252.1,152.9 31.3x14.1 | upside
+  word 218.8,152.8 29.5x14.1 | down.
+line 232.3,136.2 162.6x14.0 angle 180 | The reader turns it before reading.
+  word 378.9,136.9 16.0x13.3 | The
+  word 343.8,136.7 31.4x13.4 | reader
+  word 317.5,136.4 24.8x13.3 | turns
+  word 306.5,136.3 9.4x13.2 | it
+  word 275.8,136.1 29.2x13.3 | before
+  word 232.3,135.8 39.8x13.4 | reading.
+line 247.6,116.9 147.3x14.9 angle 180 | Page 7 of 12,f iled on 21 April.
+  word 373.1,117.5 21.8x14.3 | Page
+  word 363.7,117.4 5.3x14.2 | 7
+  word 349.6,117.4 10.0x14.2 | of
+  word 326.8,117.3 21.1x14.3 | 12,f
+  word 309.6,117.2 17.2x14.2 | iled
+  word 293.2,117.1 12.4x14.2 | on
+  word 279.0,117.0 10.0x14.2 | 21
+  word 247.6,116.9 27.4x14.3 | April.

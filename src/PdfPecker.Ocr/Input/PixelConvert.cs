@@ -31,6 +31,22 @@ internal static class PixelConvert
         return true;
     }
 
+    /// <summary>Whether every RGB pixel has equal red, green and blue.</summary>
+    public static bool IsGrayRgb(ReadOnlySpan<byte> rgb)
+    {
+        for (int i = 0; i + 3 <= rgb.Length; i += 3)
+            if (rgb[i] != rgb[i + 1] || rgb[i + 1] != rgb[i + 2]) return false;
+        return true;
+    }
+
+    /// <summary>Converts RGB whose channels are equal to gray, taking the red channel.</summary>
+    public static void RgbToGray(ReadOnlySpan<byte> rgb, Span<byte> gray)
+    {
+        int pixels = rgb.Length / 3;
+        if (gray.Length < pixels) throw new ArgumentException("The gray buffer is too short.", nameof(gray));
+        for (int p = 0; p < pixels; p++) gray[p] = rgb[p * 3];
+    }
+
     /// <summary>Converts RGBA to RGB; <paramref name="rgb"/> holds three quarters of <paramref name="rgba"/>'s length.</summary>
     public static void RgbaToRgb(ReadOnlySpan<byte> rgba, Span<byte> rgb)
     {
