@@ -49,7 +49,7 @@ wins here.
   (Apache-2.0) and the polygon offset is a port of Clipper 6.4 (BSL-1.0), both credited in the notices. Take nothing
   from code under any other licence, and nothing copyleft. Never put a licence that is not OSI- or FSF-approved in
   `PackageLicenseExpression`.
-- **No breaking API changes before 2.0** once 0.1.0 is released. `dotnet pack` checks the public API against the last
+- **No breaking API changes before 2.0** once 1.24.0 is released. `dotnet pack` checks the public API against the last
   release from then on (`RELEASING.md`); a change it rejects needs a new overload or type instead, not a suppression.
 - **Trimmable and AOT-compatible.** No reflection, `dynamic` or runtime code generation. CI publishes the sample with
   Native AOT and runs it.
