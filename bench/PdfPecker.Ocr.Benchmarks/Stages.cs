@@ -156,6 +156,12 @@ static class Stages
             detColour.Reset();
             rec.Reset();
             cls.Reset();
+            // Each pass starts from a collected heap. Otherwise whether a collection falls before the render depends on
+            // what ran earlier in the process: when none does, the render's large buffers (about 100 MB) land in memory
+            // not yet touched, and 25,000 page faults (some 30 ms) count as rendering. A change that only moved a few
+            // long-lived arrays out of the managed heap once turned the render's 45 ms into 75 ms that way, while a real
+            // call rendered as fast as before. The collection itself is not timed.
+            GC.Collect();
             long t = Stopwatch.GetTimestamp();
             var raster = PageRaster.Render(renderer, 0, 300, options.MaxPixels, default);
             double render = Lap(ref t);
@@ -254,6 +260,8 @@ static class Stages
             _ticks += Stopwatch.GetTimestamp() - s;
             return output;
         }
+
+        public Span<float> InputBuffer(ReadOnlySpan<int> shape) => inner.InputBuffer(shape);
     }
 }
 #endif

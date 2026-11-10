@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -40,6 +41,8 @@ internal sealed unsafe class LayerNormLayer : Layer
     }
 
     public override int InPlaceInput(int[][] inputs, int[] output) => 0;
+
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: true);
 
     public override void Execute(Step step, InferenceContext context)
     {
@@ -134,6 +137,8 @@ internal sealed unsafe class LinearLayer : Layer
         return output;
     }
 
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: true);
+
     /// <summary>True when the layer is a plain product plus bias, with no activation or residual.</summary>
     public bool IsPlain => _activation == ActivationKind.None && !_hasResidual;
 
@@ -162,7 +167,8 @@ internal sealed unsafe class LinearLayer : Layer
     public override void Execute(Step step, InferenceContext context)
     {
         int rows = Rows.Count(step.OutputShape);
-        _gemm.PackARows(step.Input(0), _k, rows, _k, context.SharedScratch);
+        var pack = step.State as RowPacking ?? (RowPacking)(step.State = new RowPacking(_gemm));
+        pack.Run(context, step.Input(0), _k, rows, _k, step.SharedScratch);
         step.Tiling ??= Tiling.For(1, _n, TileColumns(), rows, _gemm.MR);
         context.For(step.Tiling.Count, step, &Tile);
     }
@@ -177,7 +183,54 @@ internal sealed unsafe class LinearLayer : Layer
         long offset = (long)m0 * n + n0;
         var epilogue = new Epilogue(layer._activation, layer._alpha, layer._beta, layer._hasResidual ? step.Input(1) + offset : null);
         fixed (float* weights = layer._weights, bias = layer._bias)
-            layer._gemm.Multiply(k, step.Context.SharedScratch + (long)m0 * k, rows, weights + (long)n0 * k, columns, step.Output + offset, n, null, bias + n0, epilogue);
+            layer._gemm.Multiply(k, step.SharedScratch + (long)m0 * k, rows, weights + (long)n0 * k, columns, step.Output + offset, n, null, bias + n0, epilogue);
+    }
+}
+
+/// <summary>
+/// Packs the rows of a matrix product's activations into the kernel's row panels on the context's threads, a few panels
+/// per item. The recogniser's linear layers packed up to 600 rows on one thread while the others waited, which was most
+/// of what kept them from scaling with threads. Each panel is packed alone, so the result does not depend on the split.
+/// </summary>
+internal sealed unsafe class RowPacking(GemmKernel gemm)
+{
+    private const int PanelsPerItem = 4;
+    private readonly GemmKernel _gemm = gemm;
+    private float* _source, _destination;
+    private nint _ld;
+    private int _rows, _k;
+
+    public void Run(InferenceContext context, float* source, nint ld, int rows, int k, float* destination)
+    {
+        int block = PanelsPerItem * _gemm.MR;
+        int items = (rows + block - 1) / block;
+        if (items <= 1 || context.MaxDegreeOfParallelism == 1)
+        {
+            _gemm.PackARows(source, ld, rows, k, destination);
+            return;
+        }
+
+        _source = source;
+        _ld = ld;
+        _rows = rows;
+        _k = k;
+        _destination = destination;
+        try
+        {
+            context.For(items, this, &Item);
+        }
+        finally
+        {
+            _source = _destination = null;
+        }
+    }
+
+    private static void Item(object state, int item, int worker)
+    {
+        var job = (RowPacking)state;
+        int block = PanelsPerItem * job._gemm.MR;
+        int first = item * block;
+        job._gemm.PackARows(job._source + (first * job._ld), job._ld, Math.Min(block, job._rows - first), job._k, job._destination + ((nint)first * job._k));
     }
 }
 
@@ -208,11 +261,21 @@ internal sealed unsafe class AttentionLayer : Layer
 
     private static readonly int Width = Vector<float>.Count;
 
+    // The lanes the head's loops take at a time: 512-bit vectors where the processor has AVX-512 (Vector<T> stays 256
+    // bits wide there), Vector<T> otherwise. Each lane is one score or one output value with its own sum, so the width
+    // does not change any result.
+    private static readonly bool Wide = VectorMath.Wide && Width == 8;
+    private static readonly int Lanes = Wide ? 16 : Width;
+
+    // Every query is computed alike from its own row and all the keys, so equal rows of a run stay equal; the run
+    // must lie along the tokens, which leaves only axis 1.
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: true);
+
     /// <summary>The scratch of one head: q, k transposed, v with rows padded to whole vectors, and one row of scores.</summary>
     private static (int KeyStride, int ValueStride, long Floats) Layout(int t, int d)
     {
-        int keyStride = GemmKernel.RoundUp(t, Width);
-        int valueStride = GemmKernel.RoundUp(d, Width);
+        int keyStride = GemmKernel.RoundUp(t, Lanes);
+        int valueStride = GemmKernel.RoundUp(d, Lanes);
         return (keyStride, valueStride, d + ((long)d * keyStride) + ((long)t * valueStride) + keyStride);
     }
 
@@ -259,6 +322,12 @@ internal sealed unsafe class AttentionLayer : Layer
 
         for (int i = 0; i < d; i++) new Span<float>(keys + ((long)i * keyStride) + t, keyStride - t).Clear();
 
+        if (Wide)
+        {
+            HeadWide(qkv, output, q, keys, values, scores, t, c, d, h, keyStride, valueStride, layer._scale);
+            return;
+        }
+
         for (int t1 = 0; t1 < t; t1++)
         {
             float* qRow = qkv + ((long)t1 * 3 * c) + (h * d);
@@ -287,6 +356,44 @@ internal sealed unsafe class AttentionLayer : Layer
             }
         }
     }
+
+    /// <summary>
+    /// The scores and outputs of <see cref="Head"/> on 512-bit vectors, the same products and sums in the same order
+    /// for each lane.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void HeadWide(float* qkv, float* output, float* q, float* keys, float* values, float* scores, int t, int c, int d, int h, int keyStride, int valueStride, float scale)
+    {
+        float* tail = stackalloc float[16];
+        for (int t1 = 0; t1 < t; t1++)
+        {
+            float* qRow = qkv + ((long)t1 * 3 * c) + (h * d);
+            for (int i = 0; i < d; i++) q[i] = qRow[i] * scale;
+            for (int t2 = 0; t2 < keyStride; t2 += 16)
+            {
+                var acc = Vector512<float>.Zero;
+                for (int i = 0; i < d; i++) acc += Vector512.Create(q[i]) * Vector512.Load(keys + ((long)i * keyStride) + t2);
+                Vector512.Store(acc, scores + t2);
+            }
+
+            VectorMath.Softmax(scores, t);
+            float* outRow = output + ((long)t1 * c) + (h * d);
+            for (int i = 0; i < d; i += 16)
+            {
+                var acc = Vector512<float>.Zero;
+                for (int t2 = 0; t2 < t; t2++) acc += Vector512.Create(scores[t2]) * Vector512.Load(values + ((long)t2 * valueStride) + i);
+                if (i + 16 <= d)
+                {
+                    Vector512.Store(acc, outRow + i);
+                }
+                else
+                {
+                    Vector512.Store(acc, tail);
+                    new Span<float>(tail, d - i).CopyTo(new Span<float>(outRow + i, d - i));
+                }
+            }
+        }
+    }
 }
 
 /// <summary>Softmax over the last axis, row by row in place.</summary>
@@ -296,6 +403,8 @@ internal sealed unsafe class SoftmaxLayer(NodeDefinition node) : Layer(node)
         inputs[0].Length == 0 ? throw Unsupported("Softmax needs at least one dimension.") : (int[])inputs[0].Clone();
 
     public override int InPlaceInput(int[][] inputs, int[] output) => 0;
+
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: true);
 
     public override void Execute(Step step, InferenceContext context)
     {
@@ -322,9 +431,10 @@ internal sealed unsafe class SoftmaxLayer(NodeDefinition node) : Layer(node)
 /// <summary>
 /// A <see cref="LinearLayer"/> followed by a softmax over its output, reduced to what greedy decoding reads: for each row,
 /// the index of the most probable class and its probability, as [.., 2]. Both values are bit for bit what the two layers
-/// and a search for the first largest probability give (see <see cref="VectorMath.SoftmaxArgMax"/>), but the
-/// probabilities of all classes are never kept: the recogniser's 18,710 classes made an output of 75 KB per time step,
-/// 45 to 180 MB for a batch of long lines, which the decoder then read once more.
+/// and a search for the first largest probability give (see
+/// <see cref="VectorMath.SoftmaxArgMax(float*, int, float, out float)"/>), but the probabilities of all classes are
+/// never kept: the recogniser's 18,710 classes made an output of 75 KB per time step, 45 to 180 MB for a batch of long
+/// lines, which the decoder then read once more.
 /// </summary>
 /// <remarks>
 /// The rows go in chunks: the linear layer writes a chunk's logits into shared scratch, tiled over blocks of output
@@ -360,29 +470,84 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         return output;
     }
 
-    // The packed rows come first in the shared scratch, and the chunk's logits after them on a 64-byte boundary.
+    public override void FindRuns(Step step) => KeepRuns(step, mixesLast: true);
+
+    // The packed rows come first in the shared scratch, then the chunk's logits on a 64-byte boundary, then the largest
+    // logit of each of the chunk's rows in each column block of the product (the blocks do not depend on the rows).
     private long PackedSize(int rows) => (_linear.Gemm.PackedASize(rows, _linear.InputFeatures) + 15) / 16 * 16;
+
+    private int Blocks
+    {
+        get
+        {
+            var tiling = _linear.ColumnTiling(1);
+            return (tiling.Columns + tiling.TileColumns - 1) / tiling.TileColumns;
+        }
+    }
 
     public override long SharedScratch(Step step)
     {
         int rows = Rows.Count(step.OutputShape);
-        return PackedSize(rows) + (long)Math.Min(rows, ChunkRows) * _stride;
+        return PackedSize(rows) + ((long)Math.Min(rows, ChunkRows) * (_stride + Blocks));
     }
 
     public override void Execute(Step step, InferenceContext context)
     {
         int rows = Rows.Count(step.OutputShape);
         var gemm = _linear.Gemm;
-        gemm.PackARows(step.Input(0), _linear.InputFeatures, rows, _linear.InputFeatures, context.SharedScratch);
-        var chunk = step.State as Chunk ?? (Chunk)(step.State = new Chunk(step));
-        chunk.Logits = context.SharedScratch + PackedSize(rows);
-        for (int m0 = 0; m0 < rows; m0 += ChunkRows)
+        var chunk = step.State as Chunk ?? (Chunk)(step.State = new Chunk(step, gemm));
+        var runs = step.OutputRuns;
+        int computed = rows;
+        chunk.Indexed = step.OutputShape.Length == 3 && runs.Any(1, 3);
+        if (chunk.Indexed)
+        {
+            // Time steps in a run of equal ones (see ColumnRuns) are computed once, at the run's first step, and copied.
+            int steps = step.OutputShape[1];
+            chunk.Rows = context.Indices(rows);
+            computed = 0;
+            for (int n = 0; n < runs.Batch; n++)
+            {
+                bool run = runs.HasRun(n);
+                int s = runs.Start[n], e = runs.End[n];
+                for (int t = 0; t < steps; t++)
+                    if (!run || t <= s || t >= e) chunk.Rows[computed++] = n * steps + t;
+            }
+
+            gemm.PackARows(step.Input(0), _linear.InputFeatures, chunk.Rows.AsSpan(0, computed), _linear.InputFeatures, step.SharedScratch);
+        }
+        else
+        {
+            chunk.Packing.Run(context, step.Input(0), _linear.InputFeatures, rows, _linear.InputFeatures, step.SharedScratch);
+        }
+
+        chunk.Logits = step.SharedScratch + PackedSize(rows);
+        chunk.Blocks = Blocks;
+        chunk.Maxima = chunk.Logits + ((long)Math.Min(rows, ChunkRows) * _stride);
+        for (int m0 = 0; m0 < computed; m0 += ChunkRows)
         {
             chunk.First = m0;
-            chunk.Count = Math.Min(ChunkRows, rows - m0);
+            chunk.Count = Math.Min(ChunkRows, computed - m0);
             chunk.Tiling = _linear.ColumnTiling(chunk.Count);
             context.For(chunk.Tiling.Count, chunk, &Product);
             context.For((chunk.Count + RowsPerTile - 1) / RowsPerTile, chunk, &Reduce);
+        }
+
+        if (chunk.Indexed) FillRuns(step.Output, step.OutputShape[1], runs);
+    }
+
+    /// <summary>Copies the class and probability of each run's first time step to the rest of the run.</summary>
+    private static void FillRuns(float* output, int steps, ColumnRuns runs)
+    {
+        for (int n = 0; n < runs.Batch; n++)
+        {
+            if (!runs.HasRun(n)) continue;
+            float* first = output + (((long)n * steps) + runs.Start[n]) * 2;
+            for (int t = runs.Start[n] + 1; t < runs.End[n]; t++)
+            {
+                float* row = output + (((long)n * steps) + t) * 2;
+                row[0] = first[0];
+                row[1] = first[1];
+            }
         }
     }
 
@@ -394,9 +559,14 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         var linear = layer._linear;
         int k = linear.InputFeatures;
         chunk.Tiling!.Decode(tile, out _, out int n0, out int columns, out int m0, out int rows);
-        float* a = chunk.Step.Context.SharedScratch + (long)(chunk.First + m0) * k;
+        float* a = chunk.Step.SharedScratch + (long)(chunk.First + m0) * k;
+        float* logits = chunk.Logits + (long)m0 * layer._stride + n0;
         fixed (float* weights = linear.PackedWeights, bias = linear.PaddedBias)
-            linear.Gemm.Multiply(k, a, rows, weights + (long)n0 * k, columns, chunk.Logits + (long)m0 * layer._stride + n0, layer._stride, null, bias + n0);
+            linear.Gemm.Multiply(k, a, rows, weights + (long)n0 * k, columns, logits, layer._stride, null, bias + n0);
+
+        // The largest logit of each row in this block of columns, while the block is still in the cache.
+        int blocks = chunk.Blocks, block = n0 / chunk.Tiling.TileColumns;
+        for (int r = 0; r < rows; r++) chunk.Maxima[((m0 + r) * blocks) + block] = VectorMath.Max(logits + ((long)r * layer._stride), columns);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -405,19 +575,25 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         var chunk = (Chunk)state;
         var layer = (ArgMaxHeadLayer)chunk.Step.Layer;
         int n = layer._linear.OutputFeatures;
-        float* output = chunk.Step.Output + (long)chunk.First * 2;
+        float* output = chunk.Step.Output;
+        int blocks = chunk.Blocks;
         for (int r = tile * RowsPerTile, end = Math.Min(chunk.Count, r + RowsPerTile); r < end; r++)
         {
-            int index = VectorMath.SoftmaxArgMax(chunk.Logits + (long)r * layer._stride, n, out float probability);
-            output[2 * r] = index;
-            output[(2 * r) + 1] = probability;
+            float max = chunk.Maxima[r * blocks];
+            for (int b = 1; b < blocks; b++) max = Math.Max(max, chunk.Maxima[(r * blocks) + b]);
+            int index = VectorMath.SoftmaxArgMax(chunk.Logits + (long)r * layer._stride, n, max, out float probability);
+            long row = chunk.Indexed ? chunk.Rows[chunk.First + r] : chunk.First + r;
+            output[2 * row] = index;
+            output[(2 * row) + 1] = probability;
         }
     }
 
     /// <summary>The rows of one chunk and where its logits go, handed to the tiles; kept with the step between runs.</summary>
-    private sealed class Chunk(Step step)
+    private sealed class Chunk(Step step, GemmKernel gemm)
     {
         public Step Step { get; } = step;
+
+        public RowPacking Packing { get; } = new(gemm);
 
         public float* Logits { get; set; }
 
@@ -426,5 +602,15 @@ internal sealed unsafe class ArgMaxHeadLayer : Layer
         public int Count { get; set; }
 
         public Tiling? Tiling { get; set; }
+
+        /// <summary>The column blocks of the tiling, and the largest logit of each row in each of them.</summary>
+        public int Blocks { get; set; }
+
+        public float* Maxima { get; set; }
+
+        /// <summary>Whether this run computes only the rows in <see cref="Rows"/>, the output row of each packed row.</summary>
+        public bool Indexed { get; set; }
+
+        public int[] Rows { get; set; } = [];
     }
 }

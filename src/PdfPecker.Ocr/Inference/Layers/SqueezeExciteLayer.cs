@@ -69,6 +69,13 @@ internal sealed unsafe class SqueezeExciteLayer : Layer
 
     public override int InPlaceInput(int[][] inputs, int[] output) => 0;
 
+    // Each channel plane is scaled by one value, the same for all its columns; channels are scaled differently.
+    public override void FindRuns(Step step)
+    {
+        if (step.InputRuns[0].Axis >= 2) KeepRuns(step, mixesLast: false);
+        else step.OutputRuns.Clear();
+    }
+
     public override long SharedScratch(Step step) => (long)step.OutputShape[0] * _channels * 2;
 
     public override long ScratchPerWorker(Step step, InferenceContext context) => _hiddenStride + _channelStride;
@@ -88,7 +95,7 @@ internal sealed unsafe class SqueezeExciteLayer : Layer
         var step = (Step)state;
         var layer = (SqueezeExciteLayer)step.Layer;
         int batch = step.InputShapes[0][0], channels = layer._channels, hiddenCount = layer._hidden;
-        float* mean = step.Context.SharedScratch + (long)batch * channels + (long)n * channels;
+        float* mean = step.SharedScratch + (long)batch * channels + (long)n * channels;
         float* hidden = step.Context.Scratch(worker);
         float* scale = hidden + layer._hiddenStride;
         fixed (float* w1 = layer._w1, b1 = layer._b1, w2 = layer._w2, b2 = layer._b2)
@@ -108,7 +115,7 @@ internal sealed unsafe class SqueezeExciteLayer : Layer
             }
         }
 
-        new Span<float>(scale, channels).CopyTo(new Span<float>(step.Context.SharedScratch + (long)n * channels, channels));
+        new Span<float>(scale, channels).CopyTo(new Span<float>(step.SharedScratch + (long)n * channels, channels));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -118,7 +125,7 @@ internal sealed unsafe class SqueezeExciteLayer : Layer
         var layer = (SqueezeExciteLayer)step.Layer;
         int[] x = step.InputShapes[0];
         int size = x[2] * x[3];
-        float* means = step.Context.SharedScratch + (long)x[0] * layer._channels;
+        float* means = step.SharedScratch + (long)x[0] * layer._channels;
         means[plane] = VectorMath.Sum(step.Input(0) + (long)plane * size, size) / size;
     }
 
@@ -129,7 +136,7 @@ internal sealed unsafe class SqueezeExciteLayer : Layer
         var layer = (SqueezeExciteLayer)step.Layer;
         int[] x = step.InputShapes[0];
         int size = x[2] * x[3];
-        float s = step.Context.SharedScratch[plane];
+        float s = step.SharedScratch[plane];
         float* input = step.Input(0) + (long)plane * size;
         float* output = step.Output + (long)plane * size;
         if (layer._addInput) VectorMath.AddScaled(input, s, output, size);

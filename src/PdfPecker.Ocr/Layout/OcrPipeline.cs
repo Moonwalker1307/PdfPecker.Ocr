@@ -15,11 +15,11 @@ internal sealed class OcrPipeline
 
     /// <summary>
     /// A pipeline over the given networks; <paramref name="context"/>, the one the networks run in, lends its threads to
-    /// the work between them as well.
+    /// the work between them as well, and its observer sees the stages of that work.
     /// </summary>
     public OcrPipeline(INetwork detection, INetwork recognition, INetwork? orientation, CharacterSet characters, DetectionOptions? detectionOptions = null, RecognitionOptions? recognitionOptions = null, INetwork? detectionGray = null, InferenceContext? context = null)
     {
-        _detector = new TextDetector(detection, detectionOptions, detectionGray);
+        _detector = new TextDetector(detection, detectionOptions, detectionGray, context);
         _recognizer = new TextRecognizer(recognition, orientation, characters, recognitionOptions, context);
     }
 

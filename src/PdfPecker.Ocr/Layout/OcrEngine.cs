@@ -1,5 +1,6 @@
 using System.Text;
 using PdfPecker.Ocr.Detection;
+using PdfPecker.Ocr.Inference;
 using PdfPecker.Ocr.Input;
 using PdfPecker.Ocr.Models;
 using PdfPecker.Ocr.Recognition;
@@ -76,7 +77,7 @@ internal sealed class OcrEngine : IPageRecognizer
         PageResult result;
         try
         {
-            result = worker.Run(page, dpi, recognition, cancellationToken);
+            result = worker.Run(page, dpi, recognition, s_observer?.Value, cancellationToken);
         }
         catch
         {
@@ -88,6 +89,34 @@ internal sealed class OcrEngine : IPageRecognizer
 
         EnginePool.Return(worker);
         return ToPage(result, pageIndex);
+    }
+
+    /// <summary>
+    /// The observer of the network runs of the pages read in the current flow of execution, for tests (see
+    /// <see cref="Observe"/>). It is created by the first test that observes, so the normal path checks only for null.
+    /// </summary>
+    private static AsyncLocal<RunObserver?>? s_observer;
+
+    /// <summary>
+    /// Hands <paramref name="observer"/> to the worker of every page read in the calling flow of execution until the
+    /// result is disposed, so tests can cancel at a known operator through the public entry points, which take no
+    /// observer of their own. The observer flows with the execution context: tests that run at the same time on other
+    /// flows do not see it, and work the call starts on other tasks does.
+    /// </summary>
+    internal static IDisposable Observe(RunObserver observer)
+    {
+        ArgumentNullException.ThrowIfNull(observer);
+        var created = new AsyncLocal<RunObserver?>();
+        AsyncLocal<RunObserver?> local = Interlocked.CompareExchange(ref s_observer, created, null) ?? created;
+        var scope = new ObserverScope(local, local.Value);
+        local.Value = observer;
+        return scope;
+    }
+
+    /// <summary>Puts back the observer that was there before <see cref="Observe"/>.</summary>
+    private sealed class ObserverScope(AsyncLocal<RunObserver?> local, RunObserver? previous) : IDisposable
+    {
+        public void Dispose() => local.Value = previous;
     }
 
     /// <summary>

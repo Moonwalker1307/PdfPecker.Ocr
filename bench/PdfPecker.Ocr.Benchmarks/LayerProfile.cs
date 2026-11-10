@@ -81,15 +81,10 @@ static unsafe class LayerProfile
             var page = new double[count];
             foreach (var (input, shape) in net.Inputs)
             {
-                var plan = context.GetPlan(model, shape);
-                context.EnsureScratch(plan.ScratchPerWorker, plan.SharedScratch);
-                float* arena = context.Arena(plan.ArenaFloats);
-                float[] output = context.OutputBuffer(model, plan.OutputLength, out int offset);
-                fixed (float* x = input, y = output)
+                fixed (float* x = input)
                 {
-                    plan.Frame.Arena = arena;
-                    plan.Frame.Input = x;
-                    plan.Frame.Output = y + offset;
+                    // The same preparation as a run, the runs of equal columns of this input included.
+                    var plan = model.Prepare(x, shape, context);
                     for (int i = 0; i < plan.Steps.Length; i++)
                     {
                         long s = Stopwatch.GetTimestamp();
@@ -175,6 +170,8 @@ static unsafe class LayerProfile
             Inputs.Add((input[..Tensor.ElementCount(shape)].ToArray(), shape.ToArray()));
             return inner.Run(input, shape, out outputShape);
         }
+
+        public Span<float> InputBuffer(ReadOnlySpan<int> shape) => inner.InputBuffer(shape);
 
         /// <summary>The step of layer i in the plan of the largest recorded input, for describing the layer.</summary>
         public Step LargestPlanStep(InferenceContext context, int i)

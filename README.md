@@ -78,8 +78,9 @@ OcrDocument report = PdfOcr.Recognize(File.ReadAllBytes("report.pdf"), options);
 
 The methods are static and thread-safe, so documents can be recognised in parallel. The models are loaded once, on
 first use, and shared. Pages are read one after another, each with up to `MaxDegreeOfParallelism` threads (at most the
-number of processors) working inside the networks; the threads and buffers are kept for the next call and released after
-30 seconds without one, so a stream of pages allocates little after the first.
+number of processors) working inside the networks; the threads and buffers are kept for the next call, so a stream of
+pages allocates little after the first. The largest buffer is released after 2 seconds without a call, and the rest
+after 30.
 
 ## How it works
 
@@ -158,8 +159,8 @@ flatters every engine. Cloud machines differ too much in processor to compare a 
 versions, run `bench/compare-versions.sh` on one machine.
 
 **Memory.** Reading an A4 page at 300 dpi takes about 220 to 240 MB beyond the .NET runtime's own: the models (30 MB,
-kept once loaded) and the detector's working memory (about 100 MB of native memory, released with the threads after 30
-seconds without a call). Recognising pixels allocates under 1 MB per page once warm, so the garbage collector's settings
+kept once loaded) and the detector's working memory (about 77 MB of native memory, kept for 2 seconds after a call; the
+threads for 30). Recognising pixels allocates under 1 MB per page once warm, so the garbage collector's settings
 make no difference there. Rendering PDF pages does allocate: about 117 MB of short-lived pixel buffers per scanned A4
 page at 300 dpi, in PdfPecker's renderer. A process that reads PDFs all day keeps less memory resident with
 `System.GC.ConserveMemory` set to 5 (in `runtimeconfig.json`, or `DOTNET_GCConserveMemory=5`): on the benchmark machine,

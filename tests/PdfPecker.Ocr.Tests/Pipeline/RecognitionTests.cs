@@ -197,6 +197,82 @@ public sealed class RecognitionTests(ITestOutputHelper output)
     }
 
     [Theory]
+    [InlineData("rotated")]
+    [InlineData("table")]
+    public void CropSamplingEqualsMappingEachPixel(string name)
+    {
+        // Sample works out the homography a row and a column at a time; every value must be what mapping each pixel
+        // through ToPage gives, for every combination of turns, for windows, and for colour and grey pages.
+        using PipelineFixture fx = PipelineFixture.Load(name);
+        List<float[]> boxes = fx.Boxes("det_sorted_boxes");
+        byte[] image = fx.Image();
+        var pages = new List<(byte[] Data, int Channels)> { (image, fx.Channels) };
+        if (fx.Channels == 3)
+        {
+            var grey = new byte[fx.Width * fx.Height];
+            for (int i = 0; i < grey.Length; i++) grey[i] = image[3 * i + 1];
+            pages.Add((grey, 1));
+        }
+
+        foreach (var (pixels, channels) in pages)
+        {
+            var page = new PixelView(pixels, fx.Width, fx.Height, channels);
+            for (int i = 0; i < boxes.Count; i++)
+            {
+                foreach (bool tall in new[] { true, false })
+                {
+                    var crop = new LineCrop(QuadMath.FromArray(boxes[i]), i, tall) { Rotated180 = (i + (tall ? 0 : 1)) % 2 == 1 };
+                    const int width = 333, plane = 48 * width;
+                    int resized = Math.Clamp((int)Math.Ceiling(48 * crop.AspectRatio), 1, width);
+                    double x = i % 3, window = Math.Max(1, crop.CropWidth - x - (i % 2));
+                    var expected = new float[3 * plane];
+                    var actual = new float[3 * plane];
+                    SampleEachPixel(crop, page, expected, plane, width, resized, 48, x, window);
+                    crop.Sample(page, actual, plane, width, resized, 48, x, window);
+                    Assert.Equal(expected, actual);
+                }
+            }
+        }
+    }
+
+    /// <summary>The crop sampling as it was before it was taken apart: every pixel through ToPage.</summary>
+    private static void SampleEachPixel(LineCrop crop, PixelView page, Span<float> planes, int planeSize, int stride, int width, int height, double windowX, double windowWidth)
+    {
+        double scaleX = windowWidth / width, scaleY = (double)crop.CropHeight / height;
+        int cn = page.Channels, pw = page.Width, ph = page.Height;
+        ReadOnlySpan<byte> data = page.Data;
+        for (int v = 0; v < height; v++)
+        {
+            double y = Math.Clamp(((v + 0.5) * scaleY) - 0.5, 0, crop.CropHeight - 1);
+            for (int u = 0; u < width; u++)
+            {
+                double x = windowX + Math.Clamp(((u + 0.5) * scaleX) - 0.5, 0, windowWidth - 1);
+                System.Numerics.Vector2 p = crop.ToPage(x, y);
+                float fx = Math.Clamp(p.X, 0, pw - 1), fy = Math.Clamp(p.Y, 0, ph - 1);
+                if (float.IsNaN(fx) || float.IsNaN(fy))
+                {
+                    fx = 0;
+                    fy = 0;
+                }
+
+                int x0 = (int)fx, y0 = (int)fy;
+                int x1 = Math.Min(x0 + 1, pw - 1), y1 = Math.Min(y0 + 1, ph - 1);
+                float ax = fx - x0, ay = fy - y0;
+                int i00 = ((y0 * pw) + x0) * cn, i01 = ((y0 * pw) + x1) * cn, i10 = ((y1 * pw) + x0) * cn, i11 = ((y1 * pw) + x1) * cn;
+                int offset = (v * stride) + u;
+                for (int c = 0; c < 3; c++)
+                {
+                    int ch = cn == 1 ? 0 : 2 - c;
+                    float top = data[i00 + ch] + ((data[i01 + ch] - data[i00 + ch]) * ax);
+                    float bottom = data[i10 + ch] + ((data[i11 + ch] - data[i10 + ch]) * ax);
+                    float level = top + ((bottom - top) * ay);
+                    planes[(c * planeSize) + offset] = (((int)(level + 0.5f) / 255f) - 0.5f) / 0.5f;
+                }
+            }
+        }
+    }
+
+    [Theory]
     [MemberData(nameof(CropCases))]
     public void CropPixelsAreCloseToRapidocrs(string name)
     {

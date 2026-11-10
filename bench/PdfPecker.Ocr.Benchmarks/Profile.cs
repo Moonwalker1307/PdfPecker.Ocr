@@ -75,6 +75,8 @@ static class Profile
 
         public bool Recording { get; set; }
 
+        public Span<float> InputBuffer(ReadOnlySpan<int> shape) => model.InputBuffer(shape, context);
+
         public ReadOnlySpan<float> Run(ReadOnlySpan<float> input, ReadOnlySpan<int> shape, out int[] outputShape)
         {
             if (!Recording) return model.Run(input, shape, context, out outputShape);
@@ -82,17 +84,11 @@ static class Profile
             _shapes.Add(shape.ToArray());
             if (shape.Length == 4) _contentSteps += ContentSteps(input, shape);
             long start = Stopwatch.GetTimestamp();
-            var plan = context.GetPlan(model, shape);
-            context.EnsureScratch(plan.ScratchPerWorker, plan.SharedScratch);
-            float* arena = context.Arena(plan.ArenaFloats);
-            float[] output = context.OutputBuffer(model, plan.OutputLength, out int offset);
+            ExecutionPlan plan;
             fixed (float* inputPointer = input)
-            fixed (float* outputPointer = output)
             {
-                var frame = plan.Frame;
-                frame.Arena = arena;
-                frame.Input = inputPointer;
-                frame.Output = outputPointer + offset;
+                // The same preparation as a run, the runs of equal columns of this input included.
+                plan = model.Prepare(inputPointer, shape, context);
                 for (int s = 0; s < plan.Steps.Length; s++)
                 {
                     var step = plan.Steps[s];
@@ -108,7 +104,7 @@ static class Profile
             }
             _ticks += Stopwatch.GetTimestamp() - start;
             outputShape = (int[])plan.OutputShape.Clone();
-            return output.AsSpan(offset, plan.OutputLength);
+            return new ReadOnlySpan<float>(plan.Frame.Arena + plan.OutputOffset, plan.OutputLength);
         }
 
         /// <summary>

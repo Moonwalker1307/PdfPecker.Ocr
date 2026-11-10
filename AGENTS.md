@@ -201,6 +201,13 @@ must be unchanged unless the output change is intended. If only one runtime is i
 - Native AOT builds target a baseline processor unless `IlcInstructionSet` says otherwise, so the AVX2, FMA and
   AVX-512 kernels are skipped and an A4 page takes two and a half to four times as long as under the JIT. The
   Tesseract comparison sets `native`; a published sample without it is slow, not broken.
-- An idle engine worker keeps the buffers of the largest page it read (an activation arena of about 96 MB after an
-  A4 page at 300 dpi) until `EnginePool` disposes it after 30 seconds without a call; tests and benchmarks that need a
-  cold start call `EnginePool.Clear()`.
+- An idle engine worker keeps the buffers of the largest page it read. `EnginePool` frees its activation arena, most
+  of that memory after an A4 page at 300 dpi, after 2 seconds without a call, and disposes the worker with its threads
+  and plans after 30; tests and benchmarks that need a cold start call `EnginePool.Clear()`, and a memory measurement
+  that should include the arena is taken within those 2 seconds.
+- The JIT's switch for AVX-512 is `DOTNET_EnableAVX512F=0` on .NET 8 and 9 but `DOTNET_EnableAVX512=0` on .NET 10,
+  which ignores the old name without a warning; a run meant to take the AVX2 path checks that
+  `Vector512.IsHardwareAccelerated` is false (`TESTING.md`). The 128-bit paths need `DOTNET_EnableAVX=0` on every
+  runtime: `DOTNET_EnableAVX2=0` leaves AVX and FMA on under .NET 8 and 9, so the GEMM kernel keeps its AVX2 path.
+- Skipping runs of equal columns is a setting of `InferenceContext` (`SkipsEqualColumns`), not a static switch, so
+  tests that compare the two paths run in parallel with the rest.

@@ -181,6 +181,222 @@ public sealed class RuntimeTests
         Assert.Throws<InvalidOperationException>(() => ModelStore.DetectionGray.WithGrayInput());
     }
 
+    [Theory]
+    [InlineData("det", 1, 3, 1536, 1088)]
+    [InlineData("det", 1, 3, 96, 160)]
+    [InlineData("det", 1, 3, 32, 32)]
+    [InlineData("det", 2, 3, 224, 320)]
+    [InlineData("det-gray", 1, 1, 1536, 1088)]
+    [InlineData("det-gray", 1, 1, 320, 96)]
+    [InlineData("rec", 6, 3, 48, 2400)]
+    [InlineData("rec", 6, 3, 48, 320)]
+    [InlineData("rec", 3, 3, 48, 1601)]
+    [InlineData("rec", 1, 3, 48, 335)]
+    [InlineData("rec", 1, 3, 48, 48)]
+    public void FusedStemGivesTheLayersBits(string name, int n, int c, int h, int w)
+    {
+        // The stem computed block by block in scratch must give the bits of its six layers run one after the other, for
+        // maps that split into many blocks, a few, or one, and for any degree of parallelism.
+        var layers = ModelStore.Load(name == "rec" ? "rec" : "det");
+        if (name == "det-gray") layers = layers.WithGrayInput();
+        var fused = layers.WithFusedStem();
+        Assert.NotSame(layers, fused);
+        Assert.Equal(layers.Layers.Count - 5, fused.Layers.Count);
+        int[] shape = [n, c, h, w];
+        var input = Random(Tensor.ElementCount(shape), 11);
+        float[] expected;
+        using (var context = new InferenceContext(2)) expected = layers.Run(input, shape, context, out _).ToArray();
+        foreach (int degree in new[] { 1, 4, 3 })
+        {
+            using var context = new InferenceContext(degree);
+            var result = fused.Run(input, shape, context, out int[] outputShape);
+            Assert.Equal(expected.Length, result.Length);
+            Assert.True(expected.AsSpan().SequenceEqual(result), $"{name} {string.Join('x', shape)} with {degree} threads");
+        }
+    }
+
+    [Fact]
+    public void FusedStemGivesTheLayersBitsWithEveryMatrixKernel()
+    {
+        byte[] data = ModelStore.Inflate("det").ToArray();
+        var input = ReferenceFixture.Load("det_96x128").Input();
+        foreach (var kernel in GemmKernel.Supported)
+        {
+            var layers = OcrModel.Load(data, kernel);
+            float[] expected;
+            using (var context = new InferenceContext(2)) expected = layers.Run(input, context).Span.ToArray();
+            using var fused = new InferenceContext(3);
+            Assert.True(expected.AsSpan().SequenceEqual(layers.WithFusedStem().Run(input, fused).Span), kernel.Name);
+        }
+    }
+
+    [Fact]
+    public void FusedStemNeedsTheStem()
+    {
+        // The classifier starts differently, and the bundled detector and recogniser already have their stems fused.
+        Assert.Same(ModelStore.Classifier, ModelStore.Classifier.WithFusedStem());
+        Assert.Same(ModelStore.Detection, ModelStore.Detection.WithFusedStem());
+        Assert.Same(ModelStore.RecognitionArgMax, ModelStore.RecognitionArgMax.WithFusedStem());
+        var graph = new GraphBuilder(4);
+        int a = graph.Add(OpKind.Conv, [0], ConvInts(3, 3, pt: 1, pl: 1, pb: 1, pr: 1), [0, 0], Weight([4, 3, 3, 3], 1), Weight([4], 2));
+        graph.Add(OpKind.Conv, [a], ConvInts(1, 1), [0, 0], Weight([2, 4, 1, 1], 3), Weight([2], 4));
+        var model = OcrModel.FromDefinition(graph.Model);
+        Assert.Same(model, model.WithFusedStem());
+    }
+
+    [Theory]
+    [InlineData("det", 1, 3, 96, 160)]
+    [InlineData("rec", 3, 3, 48, 320)]
+    [InlineData("cls", 4, 3, 48, 192)]
+    public void InputsBuiltInTheArenaGiveTheSameBits(string name, int n, int c, int h, int w)
+    {
+        // The arena keeps a block for the model's input, which the pipeline builds its input in. No value or scratch may
+        // use that block before the input's last reader, and a run on it must give what a run on the caller's array does.
+        var model = name switch { "det" => ModelStore.Detection, "rec" => ModelStore.RecognitionArgMax, _ => ModelStore.Classifier };
+        int[] shape = [n, c, h, w];
+        var input = Random(Tensor.ElementCount(shape), 12);
+        foreach (int degree in new[] { 1, 3 })
+        {
+            using var context = new InferenceContext(degree);
+            float[] expected = model.Run(input, shape, context, out _).ToArray();
+            Span<float> buffer = model.InputBuffer(shape, context);
+            Assert.Equal(input.Length, buffer.Length);
+            input.CopyTo(buffer);
+            var result = model.Run(buffer, shape, context, out _);
+            Assert.True(expected.AsSpan().SequenceEqual(result), $"{name} with {degree} threads");
+
+            // The tensor path copies the output out of the arena into a buffer of the context's.
+            var tensor = model.Run(new Tensor(input, shape), context);
+            Assert.True(expected.AsSpan().SequenceEqual(tensor.Span), $"{name} tensor with {degree} threads");
+        }
+    }
+
+    [Fact]
+    public void OutputsWrittenOverTheirInputsKeepTheirBits()
+    {
+        // A convolution's output may take the memory of a residual that dies with it, and a depthwise convolution whose
+        // tiles take whole planes the memory of its input. A one-input concatenation copies the model's input into the
+        // arena, where its memory can be taken; the same layers reading the model's input, whose memory is never
+        // written, must give the same bits.
+        var x = RandomTensor(21, 2, 64, 23, 37);
+        var residualOver = new GraphBuilder(4);
+        int copy = residualOver.Add(OpKind.Concat, [0], [1, 1, 1]);
+        int a = residualOver.Add(OpKind.Conv, [0], ConvInts(1, 1, act: ActivationKind.HardSwish), [1 / 6f, 0.5f], Weight([96, 64, 1, 1], 1), Weight([96], 2));
+        residualOver.Add(OpKind.Conv, [a, copy], ConvInts(1, 1, residual: true), [0, 0], Weight([64, 96, 1, 1], 3), Weight([64], 4));
+        var residualApart = new GraphBuilder(4);
+        a = residualApart.Add(OpKind.Conv, [0], ConvInts(1, 1, act: ActivationKind.HardSwish), [1 / 6f, 0.5f], Weight([96, 64, 1, 1], 1), Weight([96], 2));
+        residualApart.Add(OpKind.Conv, [a, 0], ConvInts(1, 1, residual: true), [0, 0], Weight([64, 96, 1, 1], 3), Weight([64], 4));
+
+        var depthwiseOver = new GraphBuilder(4);
+        copy = depthwiseOver.Add(OpKind.Concat, [0], [1, 1, 1]);
+        depthwiseOver.Add(OpKind.Conv, [copy], ConvInts(5, 5, pt: 2, pl: 2, pb: 2, pr: 2, group: 64, act: ActivationKind.Relu), [0, 0], Weight([64, 1, 5, 5], 5), Weight([64], 6));
+        var depthwiseApart = new GraphBuilder(4);
+        depthwiseApart.Add(OpKind.Conv, [0], ConvInts(5, 5, pt: 2, pl: 2, pb: 2, pr: 2, group: 64, act: ActivationKind.Relu), [0, 0], Weight([64, 1, 5, 5], 5), Weight([64], 6));
+
+        foreach (var (over, apart) in new[] { (residualOver, residualApart), (depthwiseOver, depthwiseApart) })
+        {
+            foreach (var kernel in GemmKernel.Supported)
+            {
+                var model = OcrModel.FromDefinition(over.Model, kernel);
+                using (var context = new InferenceContext(1))
+                {
+                    var last = context.GetPlan(model, x.Shape).Steps[^1];
+                    Assert.Equal(last.InputLocations[^1], last.OutputLocation);
+                }
+
+                float[] expected = apart.Run(x, kernel, degree: 1).Span.ToArray();
+                foreach (int degree in new[] { 1, 3 })
+                    Assert.True(expected.AsSpan().SequenceEqual(over.Run(x, kernel, degree).Span), $"{kernel.Name} with {degree} threads");
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(64, 64, 1, 1, 0)] // pointwise, packed rows
+    [InlineData(64, 64, 3, 1, 1)] // stride 1, panels read in place
+    [InlineData(3, 16, 3, 1, 1)] // stride 1 read in place, too few values per output to leave out runs
+    [InlineData(16, 24, 3, 2, 1)] // stride 2, panels read from split rows
+    [InlineData(64, 24, 3, 2, 1)] // stride 2 with k above the split rows' limit, packed patches
+    public void ConvolutionsOverTheirResidualKeepTheirBitsOnEveryPath(int channels, int cout, int kernel, int stride, int pad)
+    {
+        // A convolution writes over a residual that dies with it, on each of its ways to read the input: packed,
+        // read in place, read from split rows, and gathered around the runs of equal columns, where the right part of
+        // the input is zero. The same convolution without a residual followed by an addition, with the skip off,
+        // must give the same bits.
+        var conv = ConvInts(kernel, kernel, stride, stride, pt: pad, pl: pad, pb: pad, pr: pad);
+        var withResidual = ConvInts(kernel, kernel, stride, stride, pt: pad, pl: pad, pb: pad, pr: pad, residual: true);
+        float[] noFloats = [0, 0];
+        var over = new GraphBuilder(4);
+        int r = over.Add(OpKind.Conv, [0], conv, noFloats, Weight([cout, channels, kernel, kernel], 31), Weight([cout], 32));
+        over.Add(OpKind.Conv, [0, r], withResidual, noFloats, Weight([cout, channels, kernel, kernel], 33), Weight([cout], 34));
+        var apart = new GraphBuilder(4);
+        r = apart.Add(OpKind.Conv, [0], conv, noFloats, Weight([cout, channels, kernel, kernel], 31), Weight([cout], 32));
+        int product = apart.Add(OpKind.Conv, [0], conv, noFloats, Weight([cout, channels, kernel, kernel], 33), Weight([cout], 34));
+        apart.Add(OpKind.Add, [product, r], [1, 1]);
+
+        var full = RandomTensor(23, 2, channels, 13, 100);
+        var padded = full.Clone();
+        for (int n = 0; n < 2; n++)
+            for (int c = 0; c < channels; c++)
+                for (int y = 0; y < 13; y++)
+                    padded.Span.Slice((((n * channels) + c) * 13 + y) * 100 + (n == 0 ? 41 : 70), n == 0 ? 59 : 30).Clear();
+
+        foreach (var input in new[] { full, padded })
+        {
+            foreach (var gemm in GemmKernel.Supported)
+            {
+                var overModel = OcrModel.FromDefinition(over.Model, gemm);
+                float[] expected = RunWith(OcrModel.FromDefinition(apart.Model, gemm), input, 1, skip: false);
+                foreach (int degree in new[] { 1, 3 })
+                {
+                    foreach (bool skip in new[] { false, true })
+                    {
+                        using var context = new InferenceContext(degree) { SkipsEqualColumns = skip };
+                        float[] actual = overModel.Run(input, context).Span.ToArray();
+                        var last = context.GetPlan(overModel, input.Shape).Steps[^1];
+                        Assert.Equal(last.InputLocations[1], last.OutputLocation);
+                        if (skip && input == padded) Assert.True(last.OutputRuns.HasRun(0), "The padded input has no runs.");
+                        Assert.True(expected.AsSpan().SequenceEqual(actual), $"{gemm.Name}, {degree} threads, skip {skip}, padded {input == padded}");
+                    }
+                }
+            }
+        }
+    }
+
+    private static float[] RunWith(OcrModel model, Tensor input, int degree, bool skip)
+    {
+        using var context = new InferenceContext(degree) { SkipsEqualColumns = skip };
+        return model.Run(input, context).Span.ToArray();
+    }
+
+    [Fact]
+    public void AnOutputNeverTakesMemoryThatAnotherInputReads()
+    {
+        // The residual dies at the convolution, but a view of the same memory is its other input: writing over the
+        // residual would overwrite what the matrix product still reads. The plan must give the output memory of its own.
+        var x = RandomTensor(22, 2, 64, 23, 37);
+        var shared = new GraphBuilder(4);
+        int copy = shared.Add(OpKind.Concat, [0], [1, 1, 1]);
+        int view = shared.Add(OpKind.Reshape, [copy], [0, 0, 0, 0]);
+        shared.Add(OpKind.Conv, [view, copy], ConvInts(1, 1, residual: true), [0, 0], Weight([64, 64, 1, 1], 7), Weight([64], 8));
+        var apart = new GraphBuilder(4);
+        apart.Add(OpKind.Conv, [0, 0], ConvInts(1, 1, residual: true), [0, 0], Weight([64, 64, 1, 1], 7), Weight([64], 8));
+
+        foreach (var kernel in GemmKernel.Supported)
+        {
+            var model = OcrModel.FromDefinition(shared.Model, kernel);
+            using (var context = new InferenceContext(1))
+            {
+                var last = context.GetPlan(model, x.Shape).Steps[^1];
+                Assert.NotEqual(last.InputLocations[1], last.OutputLocation);
+            }
+
+            float[] expected = apart.Run(x, kernel, degree: 1).Span.ToArray();
+            foreach (int degree in new[] { 1, 3 })
+                Assert.True(expected.AsSpan().SequenceEqual(shared.Run(x, kernel, degree).Span), $"{kernel.Name} with {degree} threads");
+        }
+    }
+
     [Fact]
     public void LayersAreDeterministicAcrossDegrees()
     {
@@ -257,6 +473,35 @@ public sealed class RuntimeTests
         Assert.Throws<OperationCanceledException>(() => ModelStore.Classifier.Run(new Tensor(1, 3, 48, 192), context));
         context.CancellationToken = CancellationToken.None;
         Assert.Equal([1, 2], ModelStore.Classifier.Run(new Tensor(1, 3, 48, 192), context).Shape);
+    }
+
+    [Fact]
+    public void CancellationStopsARunBetweenItsSteps()
+    {
+        // The token is cancelled after the third step of a run that has already started, so a check only as the run
+        // begins would let it finish: the run must stop before its fourth step starts, and a check after each step
+        // rather than before it would let that step run.
+        using var cancel = new CancellationTokenSource();
+        using var context = new InferenceContext(2) { CancellationToken = cancel.Token };
+        int steps = 0, started = 0;
+        context.Observer = new RunObserver
+        {
+            StepStarting = (_, _) => started++,
+            StepDone = (_, step) =>
+            {
+                steps++;
+                if (step == 2) cancel.Cancel();
+            },
+        };
+        Assert.Throws<OperationCanceledException>(() => ModelStore.Classifier.Run(new Tensor(1, 3, 48, 192), context));
+        Assert.Equal(3, steps);
+        Assert.Equal(3, started);
+
+        // The same run without the token goes on to the end, and that is more than three steps.
+        context.CancellationToken = CancellationToken.None;
+        steps = 0;
+        Assert.Equal([1, 2], ModelStore.Classifier.Run(new Tensor(1, 3, 48, 192), context).Shape);
+        Assert.True(steps > 3, steps.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [Fact]

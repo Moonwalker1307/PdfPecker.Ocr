@@ -1,4 +1,7 @@
+using System.Buffers;
 using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using PdfPecker.Ocr.Detection;
 
 namespace PdfPecker.Ocr.Recognition;
@@ -143,41 +146,127 @@ internal sealed class LineCrop
         int cn = page.Channels, pw = page.Width, ph = page.Height;
         ReadOnlySpan<byte> data = page.Data;
         float[] table = RecNormalize;
-        for (int v = 0; v < height; v++)
+
+        // ToPage, taken apart: the strip's x depends only on the column and y only on the row, and so, after the turns,
+        // do u and v (one each way), so each product of the homography is computed once per column or row instead of
+        // once per pixel. Per pixel only the two sums and the two divisions by w remain, in the same order and on the
+        // same values, so every coordinate has the same bits as ToPage gives.
+        double[] rented = ArrayPool<double>.Shared.Rent(3 * width);
+        float[] coordinates = ArrayPool<float>.Shared.Rent(2 * width);
+        try
         {
-            double y = Math.Clamp(((v + 0.5) * scaleY) - 0.5, 0, CropHeight - 1);
+            Span<double> columnW = rented.AsSpan(0, width), columnX = rented.AsSpan(width, width), columnY = rented.AsSpan(2 * width, width);
             for (int u = 0; u < width; u++)
             {
                 double x = windowX + Math.Clamp(((u + 0.5) * scaleX) - 0.5, 0, windowWidth - 1);
-                Vector2 p = ToPage(x, y);
-                float fx = Math.Clamp(p.X, 0, pw - 1), fy = Math.Clamp(p.Y, 0, ph - 1);
-                if (float.IsNaN(fx) || float.IsNaN(fy))
-                {
-                    fx = 0;
-                    fy = 0;
-                }
+                if (Rotated180) x = CropWidth - 1 - x;
 
-                int x0 = (int)fx, y0 = (int)fy;
-                int x1 = Math.Min(x0 + 1, pw - 1), y1 = Math.Min(y0 + 1, ph - 1);
-                float ax = fx - x0, ay = fy - y0;
-                int i00 = ((y0 * pw) + x0) * cn, i01 = ((y0 * pw) + x1) * cn, i10 = ((y1 * pw) + x0) * cn, i11 = ((y1 * pw) + x1) * cn;
-                int offset = (v * stride) + u;
-                if (cn == 1)
+                // Unturned, x is the warped x and gives u; turned a quarter, it is the warped y and gives v.
+                if (Rotated90)
                 {
-                    float n = table[(int)(Lerp(data[i00], data[i01], data[i10], data[i11], ax, ay) + 0.5f)];
-                    planes[offset] = n;
-                    planes[planeSize + offset] = n;
-                    planes[(2 * planeSize) + offset] = n;
-                    continue;
+                    double vv = x / WarpHeight;
+                    (columnW[u], columnX[u], columnY[u]) = (_h * vv, _b * vv, _e * vv);
                 }
-
-                for (int c = 0; c < 3; c++)
+                else
                 {
-                    // Plane 0 is blue, channel 2 of RGB.
-                    int ch = 2 - c;
-                    planes[(c * planeSize) + offset] = table[(int)(Lerp(data[i00 + ch], data[i01 + ch], data[i10 + ch], data[i11 + ch], ax, ay) + 0.5f)];
+                    double uu = x / WarpWidth;
+                    (columnW[u], columnX[u], columnY[u]) = (_g * uu, _a * uu, _d * uu);
                 }
             }
+
+            Span<float> fxs = coordinates.AsSpan(0, width), fys = coordinates.AsSpan(width, width);
+            for (int v = 0; v < height; v++)
+            {
+                double y = Math.Clamp(((v + 0.5) * scaleY) - 0.5, 0, CropHeight - 1);
+                if (Rotated180) y = CropHeight - 1 - y;
+                double rowW, rowX, rowY;
+                if (Rotated90)
+                {
+                    double uu = (WarpWidth - 1 - y) / WarpWidth;
+                    (rowW, rowX, rowY) = (_g * uu, _a * uu, _d * uu);
+                }
+                else
+                {
+                    double vv = y / WarpHeight;
+                    (rowW, rowX, rowY) = (_h * vv, _b * vv, _e * vv);
+                }
+
+                // Sums of two products commute, so the column's product may stand first.
+                Coordinates(columnW, columnX, columnY, rowW, rowX, rowY, _c, _f, fxs, fys);
+                for (int u = 0; u < width; u++)
+                {
+                    float fx = Math.Clamp(fxs[u], 0, pw - 1), fy = Math.Clamp(fys[u], 0, ph - 1);
+                    if (float.IsNaN(fx) || float.IsNaN(fy))
+                    {
+                        fx = 0;
+                        fy = 0;
+                    }
+
+                    int x0 = (int)fx, y0 = (int)fy;
+                    int x1 = Math.Min(x0 + 1, pw - 1), y1 = Math.Min(y0 + 1, ph - 1);
+                    float ax = fx - x0, ay = fy - y0;
+                    int i00 = ((y0 * pw) + x0) * cn, i01 = ((y0 * pw) + x1) * cn, i10 = ((y1 * pw) + x0) * cn, i11 = ((y1 * pw) + x1) * cn;
+                    int offset = (v * stride) + u;
+                    if (cn == 1)
+                    {
+                        float n = table[(int)(Lerp(data[i00], data[i01], data[i10], data[i11], ax, ay) + 0.5f)];
+                        planes[offset] = n;
+                        planes[planeSize + offset] = n;
+                        planes[(2 * planeSize) + offset] = n;
+                        continue;
+                    }
+
+                    for (int c = 0; c < 3; c++)
+                    {
+                        // Plane 0 is blue, channel 2 of RGB.
+                        int ch = 2 - c;
+                        planes[(c * planeSize) + offset] = table[(int)(Lerp(data[i00 + ch], data[i01 + ch], data[i10 + ch], data[i11 + ch], ax, ay) + 0.5f)];
+                    }
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<double>.Shared.Return(rented);
+            ArrayPool<float>.Shared.Return(coordinates);
+        }
+    }
+
+    /// <summary>
+    /// The page coordinates of one row of samples: x = (float)((cx + rx + c) / w) and y = (float)((cy + ry + f) / w)
+    /// with w = cw + rw + 1, each sum taken left to right, in vectors where the processor has them; division and the
+    /// narrowing to float round the same in a vector as alone.
+    /// </summary>
+    private static void Coordinates(ReadOnlySpan<double> cw, ReadOnlySpan<double> cx, ReadOnlySpan<double> cy, double rw, double rx, double ry, double c, double f, Span<float> xs, Span<float> ys)
+    {
+        int u = 0, n = xs.Length;
+        if (Vector256.IsHardwareAccelerated)
+        {
+            var vrw = Vector256.Create(rw);
+            var vrx = Vector256.Create(rx);
+            var vry = Vector256.Create(ry);
+            var vc = Vector256.Create(c);
+            var vf = Vector256.Create(f);
+            var one = Vector256.Create(1.0);
+            ref double rcw = ref MemoryMarshal.GetReference(cw), rcx = ref MemoryMarshal.GetReference(cx), rcy = ref MemoryMarshal.GetReference(cy);
+            for (; u <= n - 4; u += 4)
+            {
+                var w = Vector256.LoadUnsafe(ref rcw, (nuint)u) + vrw + one;
+                var x = (Vector256.LoadUnsafe(ref rcx, (nuint)u) + vrx + vc) / w;
+                var y = (Vector256.LoadUnsafe(ref rcy, (nuint)u) + vry + vf) / w;
+                for (int i = 0; i < 4; i++)
+                {
+                    xs[u + i] = (float)x.GetElement(i);
+                    ys[u + i] = (float)y.GetElement(i);
+                }
+            }
+        }
+
+        for (; u < n; u++)
+        {
+            double w = cw[u] + rw + 1;
+            xs[u] = (float)((cx[u] + rx + c) / w);
+            ys[u] = (float)((cy[u] + ry + f) / w);
         }
     }
 

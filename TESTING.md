@@ -44,9 +44,23 @@ dpi and compare the text exactly: Latin with Nordic and German letters, numbers,
 90 and 180 degrees, 8 point text, a whole invoice, PNG and scanned PDF input, the searchable PDF read back with
 `PdfText`, identical results at 1, 3 and 4 threads, and cancellation. `RapidocrAgreementTests` read the eight pipeline
 pages with the package's own runtime: with rapidocr's settings the lines must be rapidocr's exactly, and with the
-defaults its words. These tests, `EnginePoolTests` and `GoldenTests` share one test collection and `HostileInputTests`
-has `HostileInputCollection`; both run alone, after the other tests, so their threads and time bounds do not compete
-with other tests.
+defaults its words. `CancellationTests` cancel at a known operator of a network through each of the twelve public
+methods that take a token. `ImageOcr.Recognize` (bytes and stream), `RecognizeFile`, `RecognizeRgba` and `RecognizeGray`
+are cancelled inside the detection network. `PdfOcr.Recognize` (bytes and stream), `RecognizeFile`, `MakeSearchable`
+(bytes, and stream to stream), `MakeSearchableFile` and `ImageOcr.ToSearchablePdf` read two pages and are cancelled
+inside the first page's recognition, so a token checked only between pages fails them; `PdfOcr.Recognize` must also not
+start the second page's detection, and a cancelled `MakeSearchable` to a stream or a file writes nothing.
+`RecognizeRgba` is cancelled inside the orientation network, and `RecognizeGray` right after the last operator of the
+detection network, of the first orientation batch and of the first recognition batch, where only the code between the
+runs can see the token. Every one of these calls must throw with not one more operator started, no network run started
+and the detector's post-processing, which reports its start, not started. After the cancel behind the detection network,
+the engine still reads a page correctly. A last test checks that a probe sees only its own flow. Reading the input
+stream, before any network runs, is cancelled in `HostileInputTests` through the three stream overloads, and
+`RuntimeTests` cancel a bare run between its operators. The `CancelProbe` of `CancellationTests` reaches the pooled
+worker of every page read on the test's flow through an internal observer of the engine (null outside tests); it follows
+the execution context, so a test running at the same time does not see it. These tests, `EnginePoolTests` and
+`GoldenTests` share one test collection and `HostileInputTests` has `HostileInputCollection`; both run alone, after the
+other tests, so their threads and time bounds do not compete with other tests.
 
 ## Golden baselines
 
@@ -81,8 +95,14 @@ PDFPECKER_OCR_UPDATE_GOLDEN=1 dotnet test -f net10.0 --filter "FullyQualifiedNam
 ```
 
 Never regenerate just to make a failing test pass. A refactor or a speed-up must leave every golden unchanged. The
-baselines were checked to be identical on .NET 8 and 10 and with the JIT's AVX-512, AVX2 and SSE paths
-(`DOTNET_EnableAVX512F=0`, `DOTNET_EnableAVX2=0`).
+baselines were checked to be identical on .NET 8 and 10 and with the JIT's AVX-512, AVX2 and SSE paths. To take the AVX2
+path on a processor with AVX-512, set `DOTNET_EnableAVX512F=0` on .NET 8 and 9 and `DOTNET_EnableAVX512=0` on .NET 10,
+which ignores the older name (setting both covers every runtime). For the 128-bit and portable paths, set
+`DOTNET_EnableAVX=0`, which turns off AVX, FMA, AVX2 and AVX-512 on all three. `DOTNET_EnableAVX2=0` is not enough on
+.NET 8 and 9: AVX and FMA stay on there, and the GEMM kernel, which needs only those two, keeps its 256-bit path
+(`GemmKernel.Best` is still `avx2`). Check that a knob took effect, since a name the runtime does not know is ignored
+without a word: for the AVX2 path `Avx512F.IsSupported` and `Vector512.IsHardwareAccelerated` must both be false, and
+for the 128-bit paths `Avx.IsSupported`, `Fma.IsSupported` and `Vector256.IsHardwareAccelerated` as well.
 
 ## Hostile input
 

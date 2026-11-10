@@ -5,13 +5,14 @@ namespace PdfPecker.Ocr.Inference;
 
 /// <summary>
 /// The working memory and the threads of one inference worker. A context runs one model at a time: it owns the
-/// activation arena, per-worker scratch buffers, the execution plans, the output buffers and, for a degree of
-/// parallelism above one, that many threads less one (the caller's thread is the first worker), and reuses them across
-/// runs, so a steady stream of runs of similar sizes allocates nothing. It is not thread-safe; give each concurrent
+/// activation arena (which also holds each step's shared scratch and each run's input and output), per-worker scratch
+/// buffers, the execution plans and, for a degree of parallelism above one, that many threads less one (the caller's
+/// thread is the first worker), and reuses them across runs, so a steady stream of runs of similar sizes allocates
+/// nothing. It is not thread-safe; give each concurrent
 /// worker its own context, and dispose it to stop its threads. Models are shared.
 /// </summary>
 /// <remarks>
-/// The arena and the shared scratch, the two large buffers, are native memory rather than pinned arrays. When a page
+/// The arena, the large buffer, is native memory rather than a pinned array. When a page
 /// needs a larger arena than the last one, the old one is freed at once and its pages go back to the system; a pinned
 /// array would stay resident until a full garbage collection and then often in the collector's free regions, so a run
 /// of growing pages left several arenas resident. The finalizer frees them if a context is never disposed.
@@ -24,9 +25,9 @@ internal sealed unsafe class InferenceContext : IDisposable
     private float* _arena;
     private long _arenaFloats;
     private float[]?[] _scratch;
-    private float* _shared;
-    private long _sharedFloats;
     private bool _disposed;
+    private Layers.RunTiling? _runTiling;
+    private int[] _indices = [];
 
     /// <summary>Creates a context that uses at most the given number of threads for one run.</summary>
     public InferenceContext(int maxDegreeOfParallelism)
@@ -40,8 +41,37 @@ internal sealed unsafe class InferenceContext : IDisposable
     /// <summary>The largest number of threads one run uses.</summary>
     public int MaxDegreeOfParallelism { get; }
 
+    /// <summary>
+    /// The tiles of the convolution that is leaving out the columns of runs (see <see cref="ColumnRuns"/>), rebuilt by
+    /// each such layer when it runs: layers run one at a time, so one serves them all and its arrays are reused.
+    /// </summary>
+    internal Layers.RunTiling RunTiling => _runTiling ??= new Layers.RunTiling();
+
+    /// <summary>
+    /// A list of at least <paramref name="count"/> indices for one step's use while it runs, such as the rows the
+    /// recogniser's head computes; reused by every step, and grown when needed.
+    /// </summary>
+    internal int[] Indices(int count)
+    {
+        if (_indices.Length < count) _indices = new int[Math.Max(count, _indices.Length * 2)];
+        return _indices;
+    }
+
+    /// <summary>
+    /// Whether runs find the columns of their values that are known to be equal and leave them out (see
+    /// <see cref="ColumnRuns"/>). Always on outside the tests that compare the skip with the full computation; the
+    /// output is the same either way.
+    /// </summary>
+    public bool SkipsEqualColumns { get; set; } = true;
+
     /// <summary>Checked between the operators of a run, so a long run can be stopped.</summary>
     public CancellationToken CancellationToken { get; set; }
+
+    /// <summary>
+    /// The callbacks from inside this context's runs, or null. Tests use them to cancel from inside a run at a known
+    /// step, which a delay cannot do on a machine of unknown speed.
+    /// </summary>
+    internal RunObserver? Observer { get; set; }
 
     /// <summary>The size of the activation arena, in bytes, for memory measurements.</summary>
     public long ArenaBytes => _arenaFloats * sizeof(float);
@@ -60,11 +90,13 @@ internal sealed unsafe class InferenceContext : IDisposable
 
     ~InferenceContext() => FreeNative();
 
-    private void FreeNative()
-    {
-        Free(ref _arena, ref _arenaFloats);
-        Free(ref _shared, ref _sharedFloats);
-    }
+    /// <summary>
+    /// Frees the activation arena, for a context that may sit idle for a while; the next run allocates it again. The
+    /// plans, the threads and the smaller buffers stay, so that run costs only the page faults of the new arena.
+    /// </summary>
+    internal void ReleaseArena() => FreeNative();
+
+    private void FreeNative() => Free(ref _arena, ref _arenaFloats);
 
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -72,7 +104,7 @@ internal sealed unsafe class InferenceContext : IDisposable
     internal ExecutionPlan GetPlan(OcrModel model, ReadOnlySpan<int> inputShape)
     {
         if (_plans.TryGetValue(model, out var plan) && plan.InputShape.AsSpan().SequenceEqual(inputShape)) return plan;
-        plan = ExecutionPlan.Create(model, inputShape.ToArray(), this);
+        plan = ExecutionPlan.Create(model, inputShape.ToArray(), this, plan?.Runs);
         _plans[model] = plan;
         return plan;
     }
@@ -81,8 +113,8 @@ internal sealed unsafe class InferenceContext : IDisposable
     internal float* Arena(long floats) => Native(ref _arena, ref _arenaFloats, floats);
 
     /// <summary>
-    /// The output buffer of a model, owned by this context and overwritten by its next run of the model; offset is where
-    /// its 64-byte aligned part starts.
+    /// The buffer that <see cref="OcrModel.Run(Tensor, InferenceContext)"/> copies a model's output into, owned by this
+    /// context and overwritten by its next run of the model; offset is where its 64-byte aligned part starts.
     /// </summary>
     internal float[] OutputBuffer(OcrModel model, int floats, out int offset)
     {
@@ -96,18 +128,14 @@ internal sealed unsafe class InferenceContext : IDisposable
         return buffer;
     }
 
-    /// <summary>Makes sure each worker has at least the given scratch, and the shared scratch its size.</summary>
-    internal void EnsureScratch(long perWorker, long shared)
+    /// <summary>Makes sure each worker has at least the given scratch.</summary>
+    internal void EnsureScratch(long perWorker)
     {
         for (int i = 0; i < _scratch.Length; i++) Pointer(ref _scratch[i], perWorker);
-        Native(ref _shared, ref _sharedFloats, shared);
     }
 
     /// <summary>The scratch of one worker, as sized by <see cref="EnsureScratch"/>.</summary>
     internal float* Scratch(int worker) => Aligned(_scratch[worker]!);
-
-    /// <summary>The scratch shared by all workers of one operator, as sized by <see cref="EnsureScratch"/>.</summary>
-    internal float* SharedScratch => _shared;
 
     /// <summary>
     /// Runs body(state, i, worker) for i in [0, count), on up to <see cref="MaxDegreeOfParallelism"/> threads. Each i

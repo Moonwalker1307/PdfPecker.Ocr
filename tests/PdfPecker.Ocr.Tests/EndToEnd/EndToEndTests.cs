@@ -1,6 +1,6 @@
-using System.Diagnostics;
 using PdfPecker.Ocr.Detection;
 using PdfPecker.Ocr.Layout;
+using PdfPecker.Ocr.Models;
 
 namespace PdfPecker.Ocr.Tests.EndToEnd;
 
@@ -278,16 +278,18 @@ public sealed class EndToEndTests
     [Fact]
     public void CancelledWhileReading()
     {
+        // The public entry point with a pooled worker, its context and its token, cancelled from inside the work rather
+        // than after a fixed delay, which a fast engine can beat: at the fourth step of the recognition network's second
+        // batch of lines, when the page is detected, turned and partly read, and the network is half way through a run.
         RenderedPage page = TestPages.Invoice;
-        var options = new OcrOptions { MaxDegreeOfParallelism = 1 };
-        using var cts = new CancellationTokenSource();
-        var watch = new Stopwatch();
-        cts.Token.Register(watch.Start);
-        cts.CancelAfter(150);
-        Assert.ThrowsAny<OperationCanceledException>(() => ImageOcr.RecognizeRgba(page.Rgba, page.Width, page.Height, options, cts.Token));
+        byte[] gray = page.Gray();
+        var options = new OcrOptions { MaxDegreeOfParallelism = 2 };
+        using var probe = new CancelProbe(s => s.Model == ModelStore.RecognitionArgMax && s.Run == 1 && s.Index == 3);
+        Assert.ThrowsAny<OperationCanceledException>(() => ImageOcr.RecognizeGray(gray, page.Width, page.Height, options, probe.Token));
 
-        // The token is checked between the operators of each network, so the call stops within one operator.
-        Assert.InRange(watch.ElapsedMilliseconds, 0, 3000);
+        // The network itself stopped: the worker hands the token to its context, which is checked between the
+        // operators of a run, so not one more operator ran.
+        probe.AssertStoppedAtOnce();
 
         // The engine is still in order afterwards.
         RenderedPage small = TestPages.Small;

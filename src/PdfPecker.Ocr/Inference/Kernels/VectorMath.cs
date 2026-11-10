@@ -167,31 +167,97 @@ internal static unsafe partial class VectorMath
     /// <summary>
     /// The largest probability of a softmax over one row and the first index that has it, exactly as if the row had
     /// gone through <see cref="Softmax(float*, int)"/> and then a search for the first largest value: the same exponentials, the same
-    /// sum and the same products. The row is overwritten with the exponentials, and the probabilities are never stored.
+    /// sum and the same products. The row is left as it is, and neither the exponentials nor the probabilities are stored.
+    /// </summary>
+    public static int SoftmaxArgMax(float* row, int length, out float probability) => SoftmaxArgMax(row, length, Max(row, length), out probability);
+
+    /// <summary>
+    /// <see cref="SoftmaxArgMax(float*, int, out float)"/> for a row whose largest value the caller already has, such
+    /// as the largest of the maxima of its parts: the maximum of a set does not depend on how it is taken.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public static int SoftmaxArgMax(float* row, int length, out float probability)
+    public static int SoftmaxArgMax(float* row, int length, float max, out float probability)
     {
-        float scale = 1f / ExpShiftedSum(row, length, Max(row, length), out float largest);
+        float scale = 1f / ExpSum(row, length, max, out float largest);
 
         // Rounding a product to nearest never puts a smaller factor above a larger one, so the largest probability is
         // the largest exponential times the scale. Two exponentials can still round to the same probability, so the
-        // index is the first one whose own product equals it.
+        // index is the first one whose own product equals it. The largest exponential is at least exp(0) = 1, and an
+        // exponential whose product rounds to the same value is within two units in the last place of it, so only
+        // values within far less than ArgMaxWindow of the maximum can match: the search compares the row with that
+        // bound and computes the exponential, as the sum did, only where it passes.
         probability = largest * scale;
+        var bound = new Vector<float>(-ArgMaxWindow);
+        var vmax = new Vector<float>(max);
         int i = 0;
-        var target = new Vector<float>(probability);
-        var factor = new Vector<float>(scale);
         for (; i <= length - Width; i += Width)
         {
-            if (Vector.EqualsAny(Load(row + i) * factor, target)) break;
+            var d = Load(row + i) - vmax;
+            if (!Vector.GreaterThanOrEqualAny(d, bound)) continue;
+            for (int j = 0; j < Width; j++)
+            {
+                if (d[j] >= -ArgMaxWindow && Exp(new Vector<float>(d[j]))[0] * scale == probability) return i + j;
+            }
         }
 
         for (; i < length; i++)
         {
-            if (row[i] * scale == probability) return i;
+            float d = row[i] - max;
+            if (d >= -ArgMaxWindow && Exp(new Vector<float>(d))[0] * scale == probability) return i;
         }
 
         return 0;
+    }
+
+    // exp(-1/1024) is about 1 - 2^-10, thousands of units in the last place below 1.
+    private const float ArgMaxWindow = 1f / 1024;
+
+    /// <summary>
+    /// The sum of exp(x - max) over a row and the largest of the exponentials, without storing them: the same
+    /// exponentials and the same sum, in the same order, as <see cref="ExpShiftedSum"/>.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static float ExpSum(float* row, int length, float max, out float largest)
+    {
+        var acc = Vector<float>.Zero;
+        var top = Vector<float>.Zero;
+        int i = 0;
+        if (Wide && Width == 8)
+        {
+            // The two halves of each 512-bit block go into the sum in the order of the row, as the narrow loop adds
+            // them, straight from the register.
+            var wmax = Vector512.Create(max);
+            for (; i <= length - 16; i += 16)
+            {
+                var e = ExpWide(Vector512.Load(row + i) - wmax);
+                var low = e.GetLower().AsVector();
+                var high = e.GetUpper().AsVector();
+                acc += low;
+                top = Vector.Max(top, low);
+                acc += high;
+                top = Vector.Max(top, high);
+            }
+        }
+
+        var vmax = new Vector<float>(max);
+        for (; i <= length - Width; i += Width)
+        {
+            var e = Exp(Load(row + i) - vmax);
+            acc += e;
+            top = Vector.Max(top, e);
+        }
+
+        float sum = Vector.Sum(acc);
+        largest = 0;
+        for (int j = 0; j < Width; j++) largest = Math.Max(largest, top[j]);
+        for (; i < length; i++)
+        {
+            float e = Exp(new Vector<float>(row[i] - max))[0];
+            sum += e;
+            largest = Math.Max(largest, e);
+        }
+
+        return sum;
     }
 
     /// <summary>

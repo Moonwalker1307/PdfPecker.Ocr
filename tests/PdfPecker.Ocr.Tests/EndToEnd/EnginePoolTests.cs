@@ -2,7 +2,7 @@ using PdfPecker.Ocr.Layout;
 
 namespace PdfPecker.Ocr.Tests.EndToEnd;
 
-/// <summary>The pool of engine workers: reuse between calls, a bound on idle workers, and their release when idle.</summary>
+/// <summary>The pool of engine workers: reuse between calls, a bound on idle workers, and their arenas and themselves released when idle.</summary>
 [Collection("EndToEnd")]
 public sealed class EnginePoolTests
 {
@@ -46,6 +46,44 @@ public sealed class EnginePoolTests
         finally
         {
             EnginePool.IdleTimeout = timeout;
+            EnginePool.Clear();
+        }
+    }
+
+    [Fact]
+    public void IdleWorkersFreeTheirArenaFirst()
+    {
+        EnginePool.Return(EnginePool.Rent(1));
+        EnginePool.Clear();
+        TimeSpan arenaTimeout = EnginePool.ArenaTimeout;
+        try
+        {
+            EnginePool.ArenaTimeout = TimeSpan.FromMilliseconds(500);
+            RenderedPage page = TestPages.Numbers;
+            byte[] gray = page.Gray();
+            var options = new OcrOptions { MaxDegreeOfParallelism = 1 };
+            Assert.Equal(TestPages.NumbersText, ImageOcr.RecognizeGray(gray, page.Width, page.Height, options).Text);
+
+            EngineWorker worker = EnginePool.Rent(1);
+            Assert.True(worker.ArenaBytes > 0);
+            EnginePool.Return(worker);
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+            while (worker.ArenaBytes > 0 && DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(20);
+            }
+
+            // The worker stays in the pool without its arena, and the next call allocates one again.
+            Assert.Equal(0, worker.ArenaBytes);
+            Assert.Equal(1, EnginePool.IdleCount);
+            Assert.Equal(TestPages.NumbersText, ImageOcr.RecognizeGray(gray, page.Width, page.Height, options).Text);
+            Assert.Same(worker, EnginePool.Rent(1));
+            Assert.True(worker.ArenaBytes > 0);
+            EnginePool.Return(worker);
+        }
+        finally
+        {
+            EnginePool.ArenaTimeout = arenaTimeout;
             EnginePool.Clear();
         }
     }

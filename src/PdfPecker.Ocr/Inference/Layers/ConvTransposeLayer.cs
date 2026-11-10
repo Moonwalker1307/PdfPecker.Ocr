@@ -1,4 +1,8 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.Arm;
+using System.Runtime.Intrinsics.X86;
 using PdfPecker.Ocr.Inference.Kernels;
 using PdfPecker.Ocr.Models;
 
@@ -89,10 +93,17 @@ internal sealed unsafe class ConvTransposeLayer : Layer
         int kh = layer._kh, kw = layer._kw, taps = kh * kw;
         int ow = w * kw;
         float* output = step.Output + (long)n * layer._cout * plane * taps;
+        for (int r = 0; r < rows; r++) VectorMath.Activate(result + (long)r * columns, columns, layer._activation, layer._alpha, layer._beta);
+
+        // With a kernel two wide, the rows of dx = 0 and 1 follow each other and are interleaved into the output rows
+        // together. That needs the tile to start and end on a pair: tiles start at a multiple of the panel height, which
+        // is even for every kernel, and the layer's rows are even, so they always do; a tile that did not would write
+        // its rows one at a time.
+        bool pair = kw == 2 && (m0 & 1) == 0 && (rows & 1) == 0;
+        Debug.Assert(kw != 2 || pair, "A tile of a transposed convolution splits a pair of rows.");
         for (int r = 0; r < rows; r++)
         {
             float* src = result + (long)r * columns;
-            VectorMath.Activate(src, columns, layer._activation, layer._alpha, layer._beta);
             int row = m0 + r;
             int co = row / taps, dy = row % taps / kw, dx = row % kw;
             float* outPlane = output + (long)co * plane * taps + dx;
@@ -101,9 +112,61 @@ internal sealed unsafe class ConvTransposeLayer : Layer
             {
                 int run = Math.Min(w - x, columns - j);
                 float* dst = outPlane + (long)(y * kh + dy) * ow + (long)x * kw;
-                for (int t = 0; t < run; t++) dst[t * kw] = src[j + t];
+                if (pair) Interleave(src + j, src + columns + j, dst, run);
+                else for (int t = 0; t < run; t++) dst[t * kw] = src[j + t];
                 j += run;
             }
+
+            if (pair) r++;
+        }
+    }
+
+    /// <summary>dst[2 t] = a[t] and dst[2 t + 1] = b[t] for t in [0, count).</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Interleave(float* a, float* b, float* dst, int count)
+    {
+        int t = 0;
+        if (Avx512F.IsSupported)
+        {
+            var low = Vector512.Create(0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23);
+            var high = Vector512.Create(8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31);
+            for (; t + 16 <= count; t += 16)
+            {
+                var va = Avx512F.LoadVector512(a + t);
+                var vb = Avx512F.LoadVector512(b + t);
+                Avx512F.Store(dst + (2 * t), Avx512F.PermuteVar16x32x2(va, low, vb));
+                Avx512F.Store(dst + (2 * t) + 16, Avx512F.PermuteVar16x32x2(va, high, vb));
+            }
+        }
+        else if (Avx.IsSupported)
+        {
+            for (; t + 8 <= count; t += 8)
+            {
+                // Within each 128-bit half: a0 b0 a1 b1 | a4 b4 a5 b5 and a2 b2 a3 b3 | a6 b6 a7 b7; the halves
+                // then go in order.
+                var va = Avx.LoadVector256(a + t);
+                var vb = Avx.LoadVector256(b + t);
+                var low = Avx.UnpackLow(va, vb);
+                var high = Avx.UnpackHigh(va, vb);
+                Avx.Store(dst + (2 * t), Avx.Permute2x128(low, high, 0x20));
+                Avx.Store(dst + (2 * t) + 8, Avx.Permute2x128(low, high, 0x31));
+            }
+        }
+        else if (AdvSimd.Arm64.IsSupported)
+        {
+            for (; t + 4 <= count; t += 4)
+            {
+                var va = AdvSimd.LoadVector128(a + t);
+                var vb = AdvSimd.LoadVector128(b + t);
+                AdvSimd.Store(dst + (2 * t), AdvSimd.Arm64.ZipLow(va, vb));
+                AdvSimd.Store(dst + (2 * t) + 4, AdvSimd.Arm64.ZipHigh(va, vb));
+            }
+        }
+
+        for (; t < count; t++)
+        {
+            dst[2 * t] = a[t];
+            dst[(2 * t) + 1] = b[t];
         }
     }
 }

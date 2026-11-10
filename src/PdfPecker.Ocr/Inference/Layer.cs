@@ -32,8 +32,46 @@ internal abstract class Layer
     /// <summary>Floats of scratch each worker needs for this step.</summary>
     public virtual long ScratchPerWorker(Step step, InferenceContext context) => 0;
 
-    /// <summary>Floats of scratch shared by the workers of this step.</summary>
+    /// <summary>
+    /// Floats of scratch shared by the workers of this step (<see cref="Step.SharedScratch"/>). The plan places it in
+    /// the arena for the duration of the step, so it costs memory only where it is larger than what other steps need.
+    /// </summary>
     public virtual long SharedScratch(Step step) => 0;
+
+    /// <summary>
+    /// Sets where the output of this run holds equal columns (<see cref="Step.OutputRuns"/>) from where its inputs do
+    /// (<see cref="Step.InputRuns"/>), before the run. A layer may say so only for columns whose values are computed by
+    /// the same operations from equal inputs; the default knows of none.
+    /// </summary>
+    public virtual void FindRuns(Step step) => step.OutputRuns.Clear();
+
+    /// <summary>
+    /// The output's runs as the first input's, for a layer that computes every index of the leading axes alike from the
+    /// same index of its inputs. <paramref name="mixesLast"/> says that it works on whole rows of the last axis (which may
+    /// change length), so that runs cannot lie on it; otherwise the output has the input's shape. Other inputs must
+    /// have the output's shape, and only what is in a run of each of them stays in one.
+    /// </summary>
+    protected static void KeepRuns(Step step, bool mixesLast)
+    {
+        var input = step.InputRuns[0];
+        int[] x = step.InputShapes[0], o = step.OutputShape;
+        int axis = input.Axis;
+        bool fits = axis > 0 && x.Length == o.Length && axis < o.Length && !(mixesLast && axis == o.Length - 1);
+        for (int d = 0; fits && d < o.Length; d++)
+            if (x[d] != o[d] && !(mixesLast && d == o.Length - 1)) fits = false;
+        if (!fits)
+        {
+            step.OutputRuns.Clear();
+            return;
+        }
+
+        step.OutputRuns.CopyFrom(input, axis);
+        for (int i = 1; i < step.InputRuns.Length; i++)
+        {
+            if (!step.InputShapes[i].AsSpan().SequenceEqual(o)) step.OutputRuns.Clear();
+            else step.OutputRuns.Intersect(step.InputRuns[i]);
+        }
+    }
 
     /// <summary>Runs the layer for one step of a plan.</summary>
     public abstract void Execute(Step step, InferenceContext context);
