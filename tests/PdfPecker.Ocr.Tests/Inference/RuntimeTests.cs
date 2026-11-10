@@ -479,12 +479,14 @@ public sealed class RuntimeTests
     public void CancellationStopsARunBetweenItsSteps()
     {
         // The token is cancelled after the third step of a run that has already started, so a check only as the run
-        // begins would let it finish: the run must stop before its fourth step.
+        // begins would let it finish: the run must stop before its fourth step starts, and a check after each step
+        // rather than before it would let that step run.
         using var cancel = new CancellationTokenSource();
         using var context = new InferenceContext(2) { CancellationToken = cancel.Token };
-        int steps = 0;
+        int steps = 0, started = 0;
         context.Observer = new RunObserver
         {
+            StepStarting = (_, _) => started++,
             StepDone = (_, step) =>
             {
                 steps++;
@@ -493,6 +495,7 @@ public sealed class RuntimeTests
         };
         Assert.Throws<OperationCanceledException>(() => ModelStore.Classifier.Run(new Tensor(1, 3, 48, 192), context));
         Assert.Equal(3, steps);
+        Assert.Equal(3, started);
 
         // The same run without the token goes on to the end, and that is more than three steps.
         context.CancellationToken = CancellationToken.None;

@@ -202,12 +202,14 @@ internal sealed unsafe class OcrModel
         observer?.RunStarting?.Invoke(this);
         var plan = Prepare(input, shape, context);
         var token = context.CancellationToken;
+        var stepStarting = observer?.StepStarting;
         var stepDone = observer?.StepDone;
         var steps = plan.Steps;
         for (int i = 0; i < steps.Length; i++)
         {
             token.ThrowIfCancellationRequested();
             var step = steps[i];
+            stepStarting?.Invoke(this, i);
             step.Layer.Execute(step, context);
             stepDone?.Invoke(this, i);
         }

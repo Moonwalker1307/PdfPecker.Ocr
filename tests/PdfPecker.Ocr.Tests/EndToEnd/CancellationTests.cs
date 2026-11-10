@@ -3,10 +3,13 @@ using PdfPecker.Ocr.Models;
 namespace PdfPecker.Ocr.Tests.EndToEnd;
 
 /// <summary>
-/// Cancellation through each public entry point, at known operators of the engine's networks rather than after a
-/// delay, which a fast machine can beat and a busy one overshoot. Each test cancels at one operator and requires the
-/// call to throw with not one more operator run and no network run started, which fails when any layer between the
-/// entry point and the networks drops the token or stops checking it.
+/// Cancellation through each public entry point that takes a token, at known operators of the engine's networks rather
+/// than after a delay, which a fast machine can beat and a busy one overshoot. Each test cancels at one operator and
+/// requires the call to throw with not one more operator started, no network run started and no stage of the work
+/// between runs started, which fails when any layer between the entry point and the networks drops the token or stops
+/// checking it. The images are read through the byte array, stream and file overloads of ImageOcr.Recognize and through
+/// RecognizeRgba and RecognizeGray; the PDFs through every overload of PdfOcr.Recognize and PdfOcr.MakeSearchable, and
+/// ImageOcr.ToSearchablePdf. Reading a stream's bytes, before any of this, is cancelled in HostileInputTests.
 /// </summary>
 [Collection("EndToEnd")]
 public sealed class CancellationTests
@@ -42,6 +45,7 @@ public sealed class CancellationTests
     [InlineData("rgba")]
     [InlineData("png")]
     [InlineData("png stream")]
+    [InlineData("png file")]
     public void ImageEntryPointsStopInsideTheDetector(string entry)
     {
         RenderedPage invoice = TestPages.Invoice;
@@ -50,21 +54,27 @@ public sealed class CancellationTests
         probe.AssertStoppedAtOnce();
     }
 
-    [Fact]
-    public void PdfRecognizeStopsInsideAPage()
+    [Theory]
+    [InlineData("bytes")]
+    [InlineData("stream")]
+    [InlineData("file")]
+    public void PdfRecognizeStopsInsideAPage(string entry)
     {
         // Within the first page's recognition, so a token checked only between pages lets the page finish.
         using var probe = new CancelProbe(s => s.Model == ModelStore.RecognitionArgMax && s.Run == 1 && s.Index == 3);
-        Assert.ThrowsAny<OperationCanceledException>(() => PdfOcr.Recognize(s_twoPagePdf.Value, s_options, probe.Token));
+        Assert.ThrowsAny<OperationCanceledException>(() => ReadPdf(entry, probe.Token));
         probe.AssertStoppedAtOnce();
         Assert.Equal(1, probe.Runs(ModelStore.DetectionGray) + probe.Runs(ModelStore.Detection));
     }
 
-    [Fact]
-    public void MakeSearchableStopsInsideAPage()
+    [Theory]
+    [InlineData("bytes")]
+    [InlineData("stream")]
+    [InlineData("file")]
+    public void MakeSearchableStopsInsideAPage(string entry)
     {
         using var probe = new CancelProbe(s => s.Model == ModelStore.RecognitionArgMax && s.Run == 1 && s.Index == 3);
-        Assert.ThrowsAny<OperationCanceledException>(() => PdfOcr.MakeSearchable(s_twoPagePdf.Value, s_options, probe.Token));
+        Assert.ThrowsAny<OperationCanceledException>(() => MakeSearchable(entry, probe.Token));
         probe.AssertStoppedAtOnce();
     }
 
@@ -150,12 +160,99 @@ public sealed class CancellationTests
         probe.AssertStoppedAtOnce();
     }
 
-    private static OcrPage ReadImage(string entry, RenderedPage page, CancellationToken token) => entry switch
+    private static OcrPage ReadImage(string entry, RenderedPage page, CancellationToken token)
     {
-        "gray" => ImageOcr.RecognizeGray(page.Gray(), page.Width, page.Height, s_options, token),
-        "rgba" => ImageOcr.RecognizeRgba(page.Rgba, page.Width, page.Height, s_options, token),
-        "png" => ImageOcr.Recognize(page.Png, s_options, token),
-        "png stream" => ImageOcr.Recognize(new MemoryStream(page.Png), s_options, token),
-        _ => throw new ArgumentOutOfRangeException(nameof(entry)),
-    };
+        switch (entry)
+        {
+            case "gray": return ImageOcr.RecognizeGray(page.Gray(), page.Width, page.Height, s_options, token);
+            case "rgba": return ImageOcr.RecognizeRgba(page.Rgba, page.Width, page.Height, s_options, token);
+            case "png": return ImageOcr.Recognize(page.Png, s_options, token);
+            case "png stream": return ImageOcr.Recognize(new MemoryStream(page.Png), s_options, token);
+            case "png file":
+                using (var file = new TempFile(".png", page.Png))
+                {
+                    return ImageOcr.RecognizeFile(file.Path, s_options, token);
+                }
+
+            default: throw new ArgumentOutOfRangeException(nameof(entry));
+        }
+    }
+
+    private static OcrDocument ReadPdf(string entry, CancellationToken token)
+    {
+        byte[] pdf = s_twoPagePdf.Value;
+        switch (entry)
+        {
+            case "bytes": return PdfOcr.Recognize(pdf, s_options, token);
+            case "stream": return PdfOcr.Recognize(new MemoryStream(pdf), s_options, token);
+            case "file":
+                using (var file = new TempFile(".pdf", pdf))
+                {
+                    return PdfOcr.RecognizeFile(file.Path, s_options, token);
+                }
+
+            default: throw new ArgumentOutOfRangeException(nameof(entry));
+        }
+    }
+
+    private static void MakeSearchable(string entry, CancellationToken token)
+    {
+        byte[] pdf = s_twoPagePdf.Value;
+        switch (entry)
+        {
+            case "bytes":
+                PdfOcr.MakeSearchable(pdf, s_options, token);
+                break;
+            case "stream":
+                var output = new MemoryStream();
+                try
+                {
+                    PdfOcr.MakeSearchable(new MemoryStream(pdf), output, s_options, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    Assert.Equal(0, output.Length);
+                    throw;
+                }
+
+                break;
+            case "file":
+                using (var file = new TempFile(".pdf", pdf))
+                {
+                    string outputPath = file.Path + ".out.pdf";
+                    try
+                    {
+                        PdfOcr.MakeSearchableFile(file.Path, outputPath, s_options, token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // The output appears only once it is complete, so a cancelled call leaves no file behind.
+                        Assert.False(File.Exists(outputPath), "A cancelled call wrote its output file.");
+                        throw;
+                    }
+                    finally
+                    {
+                        File.Delete(outputPath);
+                    }
+                }
+
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(entry));
+        }
+    }
+
+    /// <summary>A file of its own in the temporary folder, with the given contents, deleted when disposed.</summary>
+    private sealed class TempFile : IDisposable
+    {
+        public TempFile(string extension, byte[] contents)
+        {
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "pdfpecker-ocr-" + Guid.NewGuid().ToString("N") + extension);
+            File.WriteAllBytes(Path, contents);
+        }
+
+        public string Path { get; }
+
+        public void Dispose() => File.Delete(Path);
+    }
 }

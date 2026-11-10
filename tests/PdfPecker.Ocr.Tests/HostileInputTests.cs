@@ -173,13 +173,28 @@ public sealed class HostileInputTests
         Assert.Throws<InvalidDataException>(() => PdfOcr.MakeSearchable(PastTheEnd(TestPages.Small.Pdf), new MemoryStream()));
     }
 
-    [Fact]
-    public void ReadingAStreamStopsWhenCancelled()
+    [Theory]
+    [InlineData("pdf")]
+    [InlineData("image")]
+    [InlineData("searchable")]
+    public void ReadingAStreamStopsWhenCancelled(string entry)
     {
-        // The token is cancelled during the first read; the rest of the stream must not be read.
+        // The token is cancelled during the first read; the rest of the stream must not be read, by any of the
+        // overloads that read a stream.
         using var cts = new CancellationTokenSource();
         var stream = new SlowStream(cts);
-        Assert.ThrowsAny<OperationCanceledException>(() => Bounded(_ => PdfOcr.Recognize(stream, null, cts.Token), Quick));
+        Func<CancellationToken, object?> read = entry switch
+        {
+            "pdf" => _ => PdfOcr.Recognize(stream, null, cts.Token),
+            "image" => _ => ImageOcr.Recognize(stream, null, cts.Token),
+            "searchable" => _ =>
+            {
+                PdfOcr.MakeSearchable(stream, new MemoryStream(), null, cts.Token);
+                return null;
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(entry)),
+        };
+        Assert.ThrowsAny<OperationCanceledException>(() => Bounded(read, Quick));
         Assert.Equal(1, stream.Reads);
     }
 

@@ -1,4 +1,5 @@
 using System.Numerics;
+using PdfPecker.Ocr.Inference;
 
 namespace PdfPecker.Ocr.Detection;
 
@@ -11,6 +12,7 @@ internal sealed class TextDetector
     private readonly INetwork _network;
     private readonly INetwork? _grayNetwork;
     private readonly DbPostProcessor _postProcessor = new();
+    private readonly InferenceContext? _context;
 
     /// <param name="network">The detection network, input [1, 3, H, W].</param>
     /// <param name="options">The detection settings.</param>
@@ -18,10 +20,12 @@ internal sealed class TextDetector
     /// Optionally the same network on a one-plane input [1, 1, H, W] (<see cref="Models.ModelStore.DetectionGray"/>),
     /// for gray images: a third of the input to build and hold, and the same map.
     /// </param>
-    public TextDetector(INetwork network, DetectionOptions? options = null, INetwork? grayNetwork = null)
+    /// <param name="context">The context the networks run in, if any, whose observer tests use (see <see cref="RunObserver"/>).</param>
+    public TextDetector(INetwork network, DetectionOptions? options = null, INetwork? grayNetwork = null, InferenceContext? context = null)
     {
         _network = network;
         _grayNetwork = grayNetwork;
+        _context = context;
         Options = options ?? new DetectionOptions();
     }
 
@@ -46,6 +50,10 @@ internal sealed class TextDetector
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+
+        // Tests see here whether the post-processing starts after the token was cancelled: the loops after it check the
+        // token before the next network runs, so a missing check above would otherwise go unnoticed.
+        _context?.Observer?.StageStarting?.Invoke("detection post-processing");
         List<DetectedQuad> boxes = _postProcessor.Process(map[..(dw * dh)], dw, dh, layout.PaddedWidth, layout.PaddedHeight, Options, cancellationToken);
         return layout.PaddingTop == 0 ? boxes : RemovePadding(boxes, layout.PaddingTop, image.Width, image.Height);
     }

@@ -44,14 +44,23 @@ dpi and compare the text exactly: Latin with Nordic and German letters, numbers,
 90 and 180 degrees, 8 point text, a whole invoice, PNG and scanned PDF input, the searchable PDF read back with
 `PdfText`, identical results at 1, 3 and 4 threads, and cancellation. `RapidocrAgreementTests` read the eight pipeline
 pages with the package's own runtime: with rapidocr's settings the lines must be rapidocr's exactly, and with the
-defaults its words. `CancellationTests` cancel through each public entry point at a known operator of a network,
-inside the detector, the orientation classifier and the recogniser and right after a network's last operator, and
-require the call to throw with not one more operator run and no network run started. Their `CancelProbe` reaches the
-pooled worker of every page read on the test's flow through an internal observer of the engine (null outside tests);
-it follows the execution context, so a test running at the same time does not see it. These tests, `EnginePoolTests`
-and `GoldenTests` share one test collection and `HostileInputTests`
-has `HostileInputCollection`; both run alone, after the other tests, so their threads and time bounds do not compete
-with other tests.
+defaults its words. `CancellationTests` cancel at a known operator of a network through each of the twelve public
+methods that take a token. `ImageOcr.Recognize` (bytes and stream), `RecognizeFile`, `RecognizeRgba` and `RecognizeGray`
+are cancelled inside the detection network. `PdfOcr.Recognize` (bytes and stream), `RecognizeFile`, `MakeSearchable`
+(bytes, and stream to stream), `MakeSearchableFile` and `ImageOcr.ToSearchablePdf` read two pages and are cancelled
+inside the first page's recognition, so a token checked only between pages fails them; `PdfOcr.Recognize` must also not
+start the second page's detection, and a cancelled `MakeSearchable` to a stream or a file writes nothing.
+`RecognizeRgba` is cancelled inside the orientation network, and `RecognizeGray` right after the last operator of the
+detection network, of the first orientation batch and of the first recognition batch, where only the code between the
+runs can see the token. Every one of these calls must throw with not one more operator started, no network run started
+and the detector's post-processing, which reports its start, not started. After the cancel behind the detection network,
+the engine still reads a page correctly. A last test checks that a probe sees only its own flow. Reading the input
+stream, before any network runs, is cancelled in `HostileInputTests` through the three stream overloads, and
+`RuntimeTests` cancel a bare run between its operators. The `CancelProbe` of `CancellationTests` reaches the pooled
+worker of every page read on the test's flow through an internal observer of the engine (null outside tests); it follows
+the execution context, so a test running at the same time does not see it. These tests, `EnginePoolTests` and
+`GoldenTests` share one test collection and `HostileInputTests` has `HostileInputCollection`; both run alone, after the
+other tests, so their threads and time bounds do not compete with other tests.
 
 ## Golden baselines
 
