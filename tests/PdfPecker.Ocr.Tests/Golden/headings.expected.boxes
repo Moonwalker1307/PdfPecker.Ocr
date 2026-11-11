@@ -1,6 +1,6 @@
 page 1772x1299 dpi 300 lines 7 confidence 1.00
 line 98,110 879x105 angle -0 conf 1.00 | Annual Report 2026
-  word 115,110 315x105 conf 1.00 | Annual
+  word 115,110 315x105 conf 0.99 | Annual
   word 448,110 315x105 conf 1.00 | Report
   word 763,110 210x105 conf 1.00 | 2026
 line 97,241 754x84 angle 0 conf 1.00 | 1. Summary of the Year

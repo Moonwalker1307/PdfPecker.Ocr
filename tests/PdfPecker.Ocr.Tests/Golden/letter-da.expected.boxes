@@ -5,10 +5,10 @@ line 114,128 651x46 angle -0 conf 1.00 | København, den 3. november 2026
   word 429,128 45x46 conf 1.00 | 3.
   word 483,128 184x46 conf 1.00 | november
   word 675,128 90x46 conf 1.00 | 2026
-line 111,229 423x53 angle -0 conf 1.00 | Kære Søren AErtebjerg
-  word 122,229 100x51 conf 1.00 | Kære
-  word 234,230 107x51 conf 1.00 | Søren
-  word 353,231 181x51 conf 1.00 | AErtebjerg
+line 111,229 423x53 angle -0 conf 0.97 | Kære Søren Ærtebjerg
+  word 121,229 100x51 conf 1.00 | Kære
+  word 233,230 108x51 conf 1.00 | Søren
+  word 353,231 181x51 conf 0.94 | Ærtebjerg
 line 114,330 886x49 angle -0 conf 1.00 | Tak for dit brev og for de flotte æbler fra haven.
   word 125,330 60x49 conf 1.00 | Tak
   word 199,330 60x49 conf 1.00 | for
@@ -60,6 +60,6 @@ line 111,630 595x55 angle -0 conf 1.00 | Mange hilsner fra Åse og Bjørn
   word 132,630 120x53 conf 1.00 | Mange
   word 258,631 128x53 conf 1.00 | hilsner
   word 400,631 47x53 conf 1.00 | fra
-  word 462,632 65x53 conf 0.99 | Åse
+  word 462,632 65x53 conf 1.00 | Åse
   word 542,632 47x52 conf 1.00 | og
   word 603,632 99x53 conf 1.00 | Bjørn

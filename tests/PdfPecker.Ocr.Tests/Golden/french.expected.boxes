@@ -22,11 +22,11 @@ line 110,261 923x57 angle -0 conf 1.00 | Le dîner aura lieu à côté de l'égl
   word 579,261 38x57 conf 1.00 | de
   word 627,261 133x57 conf 1.00 | l'église
   word 769,261 264x57 conf 1.00 | Saint-Étienne.
-line 113,335 833x51 angle -0 conf 0.98 | Où était le cœur de l'été ? Déjà à Noël, hélas.
-  word 132,335 43x48 conf 1.00 | Où
+line 113,335 833x51 angle -0 conf 0.97 | Où était le cœur de l'été ? Déjà à Noël, hélas.
+  word 132,335 43x48 conf 0.99 | Où
   word 188,335 83x48 conf 1.00 | était
   word 276,335 35x48 conf 1.00 | le
-  word 324,336 92x49 conf 0.99 | cœur
+  word 324,336 92x49 conf 0.90 | cœur
   word 430,336 35x49 conf 1.00 | de
   word 478,336 76x49 conf 1.00 | l'été
   word 568,336 19x49 conf 1.00 | ?

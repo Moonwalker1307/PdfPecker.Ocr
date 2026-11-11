@@ -1,6 +1,6 @@
 page 1772x827 dpi 300 lines 3 confidence 0.99
 line 110,124 686x64 angle -0 conf 0.99 | A faded copy of a copy of a letter
-  word 125,124 22x62 conf 1.00 | A
+  word 125,124 22x62 conf 0.99 | A
   word 167,124 106x62 conf 1.00 | faded
   word 293,125 95x62 conf 1.00 | copy
   word 408,125 42x62 conf 1.00 | of

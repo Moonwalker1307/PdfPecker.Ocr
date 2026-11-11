@@ -46,6 +46,7 @@
     <InternalsVisibleTo Include="PdfPecker.Ocr.Fuzz" />
     <InternalsVisibleTo Include="PdfPecker.Ocr.Benchmarks" />
     <InternalsVisibleTo Include="ModelBuilder" />
+    <InternalsVisibleTo Include="HeadTuner" />
   </ItemGroup>
 
   <ItemGroup>
@@ -56,6 +57,8 @@
     <EmbeddedResource Include="Models\det.bin.deflate" LogicalName="PdfPecker.Ocr.Models.det.bin.deflate" WithCulture="false" />
     <EmbeddedResource Include="Models\rec.bin.deflate" LogicalName="PdfPecker.Ocr.Models.rec.bin.deflate" WithCulture="false" />
     <EmbeddedResource Include="Models\cls.bin.deflate" LogicalName="PdfPecker.Ocr.Models.cls.bin.deflate" WithCulture="false" />
+    <!-- Retrained output weights of the recogniser's Nordic capitals, written by tools/HeadTuner. -->
+    <EmbeddedResource Include="Models\rec-head.bin" LogicalName="PdfPecker.Ocr.Models.rec-head.bin" WithCulture="false" />
   </ItemGroup>
 
   <!-- An assembly without its models builds and fails only when it first reads a page, so refuse to build it. -->

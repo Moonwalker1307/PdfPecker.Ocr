@@ -29,6 +29,14 @@ layer normalisation, squeeze-and-excitation and attention blocks fused into sing
 stored as single-precision values rounded to 24 bits. Each converted file carries a notice saying so. The weights
 remain copyright of their rights holders and are licensed under the Apache License 2.0, not under the MIT License.
 
+**The recogniser's output layer was also changed.** `src/PdfPecker.Ocr/Models/rec-head.bin`, written by
+`tools/HeadTuner`, holds retrained weights and biases of the last linear layer of `PP-OCRv6_small_rec` for 18 of its
+classes (A, Å, Æ, E, É, È, Ê, e, Ø, ø, a, å, æ, ∅, Ä, Ö, ö, ä), which the recogniser takes in place of the converted
+ones when it loads. They were refitted, starting from the original weights, on the features the unchanged network
+computes for text that PdfPecker rendered in its bundled Liberation fonts, so that Danish and Norwegian capitals are
+read correctly. The file is a modified part of the same work: it is copyright of the same rights holders, changed by
+PdfPecker.Ocr, and licensed under the Apache License 2.0.
+
 The model notice shipped in the wheel (`rapidocr-3.10.0.dist-info/licenses/MODEL_LICENSES.md`) follows verbatim, its
 headings nested under this section.
 

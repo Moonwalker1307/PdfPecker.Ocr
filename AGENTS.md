@@ -42,7 +42,9 @@ wins here.
   ONNX files in the rapidocr wheel on PyPI, pinned by SHA-256. Change the builder, never its output, and keep the model
   notices in `THIRD-PARTY-NOTICES.md` accurate: the weights are Apache-2.0, copyright Baidu and/or the PaddleOCR rights
   holders, and the converted files must say that and how they were changed. A new model, a new source or a change to
-  what the builder does to the weights updates the notices in the same pull request.
+  what the builder does to the weights updates the notices in the same pull request. `Models/rec-head.bin`, the
+  recogniser's retrained output weights for the Nordic letters, is written by `tools/HeadTuner` and is generated data
+  in the same way; it is applied when the recogniser loads, so `rec.bin.deflate` stays the converted model.
 - **Licences.** The code is MIT (`LICENSE`, unchanged); the package's licence expression is
   `MIT AND Apache-2.0 AND BSL-1.0`, and it carries `THIRD-PARTY-NOTICES.md` with the full Apache-2.0 and Boost texts.
   Pre- and post-processing follows RapidOCR and PaddleOCR (both Apache-2.0); the minimum-area rectangle follows OpenCV
@@ -130,7 +132,8 @@ must be unchanged unless the output change is intended. If only one runtime is i
   why. A refactor or a pure speed-up must leave every golden unchanged.
 - **Model regeneration**: run `tools/ModelBuilder`, commit its output with the builder change, regenerate the ONNX
   Runtime references if the inputs changed, and update `THIRD-PARTY-NOTICES.md` when the source, the hashes or what is
-  done to the weights changes. Never hand-edit `Models/*.bin.deflate`.
+  done to the weights changes. Never hand-edit `Models/*.bin.deflate`. A new recogniser or character list means
+  running `tools/HeadTuner` again, since its output belongs to the converted model it was trained on.
 - **Kernel and inference changes**: the reference tests (model outputs within 1e-3 of ONNX Runtime) must pass on every
   SIMD path the kernel has, the scalar one included; add a reference test for a new kernel or fusion. Compare speed and
   allocations with `bench/compare-versions.sh <base-ref>` on one machine and put the numbers in the PR.
@@ -148,6 +151,7 @@ must be unchanged unless the output change is intended. If only one runtime is i
   `fuzz/PdfPecker.Ocr.Fuzz` (see `fuzz/README.md`), and for each bug fix a regression test in `HostileInputTests`.
 - **Generated data**: change the generator, never its output.
   - `tools/ModelBuilder` → `src/PdfPecker.Ocr/Models/*.bin.deflate`
+  - `tools/HeadTuner` → `src/PdfPecker.Ocr/Models/rec-head.bin`
   - `tools/OnnxReference` → the reference outputs in `tests/PdfPecker.Ocr.Tests/Fixtures`
 - **CI**: actions are pinned to the same commit SHAs as PdfPecker's workflows; update both together.
 - **Releases**: follow `RELEASING.md`; only the repository owner publishes a release.

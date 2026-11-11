@@ -73,8 +73,8 @@ line 103,1101 452x45 angle -0 conf 0.98 | Total due NOK 4,481.25
   word 208,1101 68x45 conf 1.00 | due
   word 291,1101 83x45 conf 1.00 | NOK
   word 388,1101 165x45 conf 0.95 | 4,481.25
-line 103,1195 968x44 angle -0 conf 0.99 | Bank account 9710.05.12345, reference 2026-0731.
-  word 110,1195 95x44 conf 0.88 | Bank
+line 103,1195 968x44 angle -0 conf 1.00 | Bank account 9710.05.12345, reference 2026-0731.
+  word 110,1195 95x44 conf 1.00 | Bank
   word 213,1195 154x44 conf 1.00 | account
   word 374,1195 293x44 conf 1.00 | 9710.05.12345,
   word 668,1195 183x44 conf 1.00 | reference
