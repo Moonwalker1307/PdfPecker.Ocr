@@ -123,6 +123,18 @@ languages (`æ ø å ä ö ü ß é ç ñ ł ő č ž` and others), Greek, Chine
 (kana and kanji), as well as digits, punctuation and common symbols. Its character list has no Cyrillic, Korean,
 Arabic, Hebrew, Devanagari or Thai letters, so text in those scripts is not recognised.
 
+PP-OCRv6 saw few capital Danish and Norwegian letters in training and read Æ as "AE", Ø as O or a zero, and Å as A,
+especially in capitals, monospaced fonts and poor scans. The package retrains the model's output weights for those
+letters and the letters they were mistaken for (`tools/HeadTuner`), which leaves everything before the last layer and
+every other character as the original model has them. On Danish test lines in fonts left out of that training, clean
+and degraded, Å, Ø and ø now read 99 to 100% right (from 62 to 94%) and Æ 93% (from 0%), with no change on English
+text.
+
+Some punctuation is limited by the model: `„` (the low opening quotation mark of Danish and German) is not in its
+character list and is left out, `…` comes out as three full stops, and a long run of dots, such as a dot leader in a
+table of contents, is mostly read as a few dots or not detected, because the recogniser emits at most one character
+per 8 pixels of its 48-pixel-high input.
+
 ## Limitations
 
 - **Printed text only.** The models are trained on printed and screen text. Handwriting is not supported.

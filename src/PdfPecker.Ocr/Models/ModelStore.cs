@@ -13,7 +13,8 @@ internal static class ModelStore
     // The detector as loaded, before its stem is fused, which the gray variant starts from.
     private static readonly LoadOnce<OcrModel> s_detectionLayers = new(() => Load("det"));
     private static readonly LoadOnce<OcrModel> s_detection = new(() => s_detectionLayers.Value.WithFusedStem());
-    private static readonly LoadOnce<OcrModel> s_recognition = new(() => Load("rec").WithFusedStem());
+    private static readonly LoadOnce<OcrModel> s_recognition = new(() => LoadRecognition().WithFusedStem());
+    private static readonly LoadOnce<OcrModel> s_convertedRecognition = new(() => Load("rec").WithFusedStem());
     private static readonly LoadOnce<OcrModel> s_classifier = new(() => Load("cls"));
     private static readonly LoadOnce<OcrModel> s_recognitionArgMax = new(() => Recognition.WithArgMaxOutput());
     private static readonly LoadOnce<OcrModel> s_detectionGray = new(() => s_detectionLayers.Value.WithGrayInput().WithFusedStem());
@@ -27,8 +28,17 @@ internal static class ModelStore
     /// </summary>
     public static OcrModel DetectionGray => s_detectionGray.Value;
 
-    /// <summary>The line recogniser: input [N, 3, 48, W], output [N, W / 8, classes], a softmax over <see cref="Characters"/>.</summary>
+    /// <summary>
+    /// The line recogniser: input [N, 3, 48, W], output [N, W / 8, classes], a softmax over <see cref="Characters"/>. Its
+    /// last layer has the retrained columns of <see cref="HeadPatch"/>; <c>Load("rec")</c> is the converted model alone.
+    /// </summary>
     public static OcrModel Recognition => s_recognition.Value;
+
+    /// <summary>
+    /// The line recogniser as converted from the ONNX model, without the retrained columns of <see cref="HeadPatch"/>:
+    /// what ONNX Runtime and rapidocr compute, for the tests that compare with them.
+    /// </summary>
+    public static OcrModel ConvertedRecognition => s_convertedRecognition.Value;
 
     /// <summary>
     /// The line recogniser with the output greedy decoding reads, [N, W / 8, 2]: the most probable class at each time
@@ -50,6 +60,34 @@ internal static class ModelStore
     {
         using var data = Inflate(name);
         return OcrModel.Load(data.GetBuffer().AsSpan(0, (int)data.Length));
+    }
+
+    /// <summary>The bundled recogniser with the retrained output weights of <see cref="HeadPatch"/> in its last layer.</summary>
+    internal static OcrModel LoadRecognition()
+    {
+        ModelDefinition definition;
+        using (var data = Inflate("rec"))
+        {
+            definition = ModelDefinition.Deserialize(data.GetBuffer().AsSpan(0, (int)data.Length));
+        }
+
+        RecognitionHeadPatch.ApplyTo(definition);
+        return OcrModel.FromDefinition(definition);
+    }
+
+    /// <summary>The retrained output weights the recogniser loads with, read from the assembly's resources.</summary>
+    internal static HeadPatch RecognitionHeadPatch
+    {
+        get
+        {
+            const string Resource = "PdfPecker.Ocr.Models.rec-head.bin";
+            var assembly = typeof(ModelStore).Assembly;
+            using var stream = assembly.GetManifestResourceStream(Resource)
+                ?? throw new InvalidOperationException($"The model resource {Resource} is missing from {assembly.FullName}.");
+            var data = new byte[stream.Length];
+            stream.ReadExactly(data);
+            return HeadPatch.Read(data);
+        }
     }
 
     /// <summary>The model file of a bundled model, inflated; the model data is the stream's buffer up to its length.</summary>

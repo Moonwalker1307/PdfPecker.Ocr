@@ -22,7 +22,7 @@ public sealed class ReferenceTests(ITestOutputHelper output)
         var model = fixture.Model switch
         {
             "det" => ModelStore.Detection,
-            "rec" => ModelStore.Recognition,
+            "rec" => ModelStore.ConvertedRecognition,
             _ => ModelStore.Classifier,
         };
         using var context = new InferenceContext(4);

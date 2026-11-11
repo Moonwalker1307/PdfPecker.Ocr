@@ -10,7 +10,8 @@ namespace PdfPecker.Ocr.Tests.EndToEnd;
 
 /// <summary>
 /// The pages rapidocr 3.10 read with ONNX Runtime (tools/PipelineReference), read again with this package's own
-/// runtime and the real models, and the text compared with rapidocr's.
+/// runtime and the real models, and the text compared with rapidocr's. The recogniser is the converted model without
+/// the package's retrained Nordic columns (see <see cref="HeadPatch"/>), which rapidocr does not have.
 /// </summary>
 [Collection("EndToEnd")]
 public sealed class RapidocrAgreementTests(ITestOutputHelper output)
@@ -68,7 +69,7 @@ public sealed class RapidocrAgreementTests(ITestOutputHelper output)
         using var context = new InferenceContext(4);
         var pipeline = new OcrPipeline(
             new ModelNetwork(ModelStore.Detection, context),
-            new ModelNetwork(ModelStore.Recognition, context),
+            new ModelNetwork(ModelStore.ConvertedRecognition, context),
             new ModelNetwork(ModelStore.Classifier, context),
             OcrEngine.Characters,
             detection,

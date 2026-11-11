@@ -1,0 +1,81 @@
+page 2008x1535 dpi 300 lines 10 confidence 0.99
+line 114,122 1191x61 angle 0 conf 0.99 | ÆBLER, ØL OG ÅL FRA ÆRØ, ØRESUND OG ÅRHUS
+  word 123,123 194x60 conf 0.97 | ÆBLER,
+  word 317,123 61x60 conf 1.00 | ØL
+  word 397,123 62x60 conf 1.00 | OG
+  word 478,123 62x60 conf 1.00 | ÅL
+  word 558,123 92x60 conf 1.00 | FRA
+  word 669,122 132x60 conf 1.00 | ÆRØ,
+  word 809,122 230x60 conf 1.00 | ØRESUND
+  word 1057,122 61x59 conf 1.00 | OG
+  word 1137,122 168x59 conf 1.00 | ÅRHUS
+line 112,216 1010x64 angle 0 conf 0.99 | ÆRLIG TALT: ØSTER ÅBY LIGGER PÅ FYN
+  word 121,218 167x61 conf 0.98 | ÆRLIG
+  word 305,218 126x61 conf 0.99 | TALT:
+  word 437,218 166x61 conf 1.00 | ØSTER
+  word 621,217 105x61 conf 1.00 | ÅBY
+  word 733,217 186x62 conf 1.00 | LIGGER
+  word 937,216 74x61 conf 1.00 | PÅ
+  word 1019,216 103x61 conf 1.00 | FYN
+line 112,319 810x60 angle -0 conf 1.00 | Ærtebjerg, Ølstykke og Åbenrå
+  word 123,319 269x60 conf 1.00 | Ærtebjerg,
+  word 424,319 219x60 conf 1.00 | Ølstykke
+  word 674,319 58x60 conf 1.00 | og
+  word 755,319 167x60 conf 1.00 | Åbenrå
+line 114,415 880x63 angle 0 conf 0.98 | Øjvind og Åse bor i Ølstykke ved Århus Å.
+  word 127,418 131x60 conf 1.00 | Øjvind
+  word 275,418 42x59 conf 1.00 | og
+  word 344,418 72x59 conf 1.00 | Åse
+  word 423,417 72x59 conf 1.00 | bor
+  word 501,417 23x59 conf 1.00 | i
+  word 541,416 171x60 conf 1.00 | Ølstykke
+  word 728,416 73x59 conf 1.00 | ved
+  word 817,415 122x60 conf 1.00 | Århus
+  word 954,415 40x59 conf 1.00 | Å.
+line 114,513 1078x61 angle -0 conf 1.00 | Blåbærsyltetøj, rødgrød med fløde og æblegrød.
+  word 126,513 340x60 conf 1.00 | Blåbærsyltetøj,
+  word 470,514 176x60 conf 1.00 | rødgrød
+  word 670,514 86x60 conf 1.00 | med
+  word 770,514 115x59 conf 1.00 | fløde
+  word 899,514 55x59 conf 1.00 | og
+  word 968,515 224x59 conf 1.00 | æblegrød.
+line 112,611 946x57 angle 0 conf 0.99 | Østergade 7, 2. th., 8000 Aarhus C
+  word 122,612 245x56 conf 1.00 | Østergade
+  word 396,612 56x56 conf 1.00 | 7,
+  word 480,612 55x56 conf 1.00 | 2.
+  word 565,611 102x56 conf 1.00 | th.,
+  word 695,611 111x56 conf 1.00 | 8000
+  word 834,611 165x55 conf 1.00 | Aarhus
+  word 1027,611 27x55 conf 1.00 | C
+line 114,709 1106x57 angle -0 conf 0.99 | AEROSPACE AND CAESAR, paper sizes A0 and B0.
+  word 124,709 280x56 conf 1.00 | AEROSPACE
+  word 422,709 93x56 conf 1.00 | AND
+  word 544,709 214x56 conf 1.00 | CAESAR,
+  word 758,710 121x56 conf 1.00 | paper
+  word 880,710 102x56 conf 1.00 | sizes
+  word 992,710 65x56 conf 0.99 | A0
+  word 1066,710 74x56 conf 1.00 | and
+  word 1150,710 70x56 conf 0.94 | B0.
+line 112,805 886x64 angle -0 conf 1.00 | Vent lidt... og så kom færgen alligevel...
+  word 125,805 96x61 conf 1.00 | Vent
+  word 227,805 127x61 conf 1.00 | lidt...
+  word 360,806 45x61 conf 1.00 | og
+  word 421,806 56x61 conf 1.00 | så
+  word 492,806 86x61 conf 1.00 | kom
+  word 594,807 157x62 conf 1.00 | færgen
+  word 777,807 221x62 conf 1.00 | alligevel...
+line 112,907 937x63 angle -0 conf 1.00 | Han sagde: »Det går nok« og fint“ og "godt".
+  word 126,907 74x60 conf 1.00 | Han
+  word 216,907 134x60 conf 1.00 | sagde:
+  word 356,908 104x60 conf 1.00 | »Det
+  word 466,908 64x60 conf 0.99 | går
+  word 547,908 94x60 conf 1.00 | nok«
+  word 657,909 54x60 conf 0.98 | og
+  word 737,909 94x60 conf 1.00 | fint“
+  word 847,909 44x60 conf 1.00 | og
+  word 907,910 142x60 conf 1.00 | "godt".
+line 114,1007 435x60 angle 0 conf 0.90 | Indledning .... . 3
+  word 116,1008 233x59 conf 1.00 | Indledning
+  word 354,1008 100x58 conf 0.74 | ....
+  word 496,1007 24x57 conf 0.91 | .
+  word 525,1007 24x57 conf 1.00 | 3

@@ -9,7 +9,7 @@ configure the package itself (`OcrOptions`) is in the XML doc comments and the R
 | --- | --- |
 | `global.json` | .NET SDK 10.0.100, rolling forward to the latest feature band. |
 | `Directory.Build.props` | Nullable and `TreatWarningsAsErrors` for every project, the local `-dev` version, and `PdfPeckerVersion`, the PdfPecker release the package builds against and depends on at least. |
-| `src/PdfPecker.Ocr/PdfPecker.Ocr.csproj` | Target frameworks, trimming and AOT analyzers, unsafe code, XML docs, package metadata, the licence expression `MIT AND Apache-2.0 AND BSL-1.0`, the README, notices and licence packed with it, symbols, and `InternalsVisibleTo` for the tests, fuzzer, benchmarks and ModelBuilder. On GitHub Actions it also sets `ContinuousIntegrationBuild` for reproducible PDBs. Package validation is off until the first release (see `RELEASING.md`). |
+| `src/PdfPecker.Ocr/PdfPecker.Ocr.csproj` | Target frameworks, trimming and AOT analyzers, unsafe code, XML docs, package metadata, the licence expression `MIT AND Apache-2.0 AND BSL-1.0`, the README, notices and licence packed with it, symbols, and `InternalsVisibleTo` for the tests, fuzzer, benchmarks, ModelBuilder and HeadTuner. On GitHub Actions it also sets `ContinuousIntegrationBuild` for reproducible PDBs. Package validation is off until the first release (see `RELEASING.md`). |
 | `src/PdfPecker.Ocr/.globalconfig` | The performance (CA18xx) and culture (CA1305, CA1310) analyzer rules as warnings, and so as errors. |
 | `.editorconfig` | UTF-8, four-space indents (two for YAML and JSON), file-scoped namespaces, `System` usings first. |
 | `.gitattributes` | LF line endings everywhere and binary handling for images, PDFs, fonts and the model data. |

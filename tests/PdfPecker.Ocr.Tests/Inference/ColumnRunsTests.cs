@@ -64,7 +64,7 @@ public sealed class ColumnRunsTests
     {
         byte[] data = ModelStore.Inflate("rec").ToArray();
         var input = PaddedBatch(480);
-        float[] full = Run(ModelStore.Recognition, input, 2, skip: false);
+        float[] full = Run(ModelStore.ConvertedRecognition, input, 2, skip: false);
         foreach (var kernel in GemmKernel.Supported)
         {
             float[] skipped = Run(OcrModel.Load(data, kernel), input, 2, skip: true);
