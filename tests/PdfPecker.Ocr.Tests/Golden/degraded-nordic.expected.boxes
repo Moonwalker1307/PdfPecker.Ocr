@@ -9,8 +9,8 @@ line 114,119 1192x61 angle 0 conf 0.96 | ÆBLER, ØL OG ÅL FRA ÆRØ, ØRESUND 
   word 809,119 224x60 conf 1.00 | ØRESUND
   word 1051,119 73x60 conf 1.00 | OG
   word 1142,119 164x60 conf 1.00 | ÅRHUS
-line 112,216 1011x64 angle 0 conf 0.95 | ÆÆRLIG TALT: ØSTER ÅBY LIGGER PÅ FYN
-  word 122,219 161x61 conf 0.81 | ÆÆRLIG
+line 112,216 1011x64 angle 0 conf 0.94 | ÆÆRLIG TALT: ØSTER ÅBY LIGGER PÅ FYN
+  word 122,219 161x61 conf 0.78 | ÆÆRLIG
   word 302,219 131x61 conf 1.00 | TALT:
   word 442,218 161x61 conf 1.00 | ØSTER
   word 622,218 101x60 conf 1.00 | ÅBY
@@ -21,17 +21,17 @@ line 112,316 808x63 angle 0 conf 0.99 | Ærtebjerg, Ølstykke og Åbenrå
   word 123,318 268x61 conf 1.00 | Ærtebjerg,
   word 423,317 218x61 conf 1.00 | Ølstykke
   word 673,317 58x60 conf 1.00 | og
-  word 752,316 168x61 conf 0.99 | Åbenrå
-line 111,412 880x68 angle 0 conf 0.99 | Øjvind og Åse bor i Ølstykke ved Århus Å.
+  word 752,316 168x61 conf 1.00 | Åbenrå
+line 111,412 880x68 angle 0 conf 0.98 | Øjvind og Åse bor i Ølstykke ved Århus Å.
   word 126,415 131x65 conf 0.95 | Øjvind
   word 275,415 45x64 conf 1.00 | og
-  word 339,415 77x64 conf 1.00 | Åse
+  word 339,415 77x64 conf 0.99 | Åse
   word 424,414 67x64 conf 1.00 | bor
   word 499,414 24x64 conf 1.00 | i
   word 542,413 173x65 conf 1.00 | Ølstykke
   word 723,413 77x64 conf 1.00 | ved
-  word 819,412 109x64 conf 1.00 | Århus
-  word 947,412 44x64 conf 1.00 | Å.
+  word 819,412 109x64 conf 0.99 | Århus
+  word 947,412 44x64 conf 0.99 | Å.
 line 112,511 1080x66 angle -0 conf 0.99 | Blåbærsyltetøj, rødgrød med fløde og æblegrød.
   word 126,511 332x64 conf 1.00 | Blåbærsyltetøj,
   word 464,512 185x64 conf 1.00 | rødgrød
@@ -39,7 +39,7 @@ line 112,511 1080x66 angle -0 conf 0.99 | Blåbærsyltetøj, rødgrød med flød
   word 763,512 122x64 conf 1.00 | fløde
   word 902,512 47x64 conf 1.00 | og
   word 967,513 225x64 conf 1.00 | æblegrød.
-line 110,607 949x62 angle 0 conf 0.99 | Østergade 7, 2. th., 8000 Aarhus C
+line 110,607 949x62 angle 0 conf 0.98 | Østergade 7, 2. th., 8000 Aarhus C
   word 121,608 251x61 conf 1.00 | Østergade
   word 394,608 59x60 conf 1.00 | 7,
   word 474,608 59x60 conf 1.00 | 2.
@@ -71,9 +71,10 @@ line 112,908 935x59 angle -0 conf 0.99 | Han sagde: »Det går nok« og fint“ 
   word 470,908 62x59 conf 1.00 | går
   word 549,908 91x59 conf 1.00 | nok«
   word 657,908 42x59 conf 1.00 | og
-  word 736,908 91x59 conf 0.99 | fint“
+  word 736,908 91x59 conf 1.00 | fint“
   word 844,908 52x59 conf 1.00 | og
-  word 903,908 144x59 conf 1.00 | "godt".
-line 110,1003 442x65 angle 1 conf 0.89 | Indledning.... ..3
-  word 112,1004 381x64 conf 0.91 | Indledning....
-  word 551,1003 1x61 conf 0.78 | ..3
+  word 903,908 144x59 conf 0.99 | "godt".
+line 110,1003 442x65 angle 1 conf 0.95 | Indledning .......... 3
+  word 114,1003 241x65 conf 1.00 | Indledning
+  word 366,1003 132x65 conf 0.89 | ..........
+  word 508,1003 44x65 conf 1.00 | 3

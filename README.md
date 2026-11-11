@@ -90,8 +90,10 @@ after 30.
    that are upside down (`OcrOptions.DetectRotation`).
 4. **Recognition.** The PP-OCRv6 small recognition model reads each line, and its output is decoded into characters
    with a confidence and a position along the line, from which the words and their boxes come.
-5. **Layout.** Lines are put into reading order, top to bottom and left to right, column by column.
-6. **Searchable PDF.** The text is written as invisible text over each word, scaled to the word's width, and stamped
+5. **Dots.** Runs of dots that the recogniser cannot count, such as dot leaders, are counted on the page (see
+   [Languages](#languages)).
+6. **Layout.** Lines are put into reading order, top to bottom and left to right, column by column.
+7. **Searchable PDF.** The text is written as invisible text over each word, scaled to the word's width, and stamped
    onto the original pages, so the scan itself is not changed.
 
 The runtime that executes the models is the package's own: a graph executor with SIMD kernels (AVX2, FMA, AVX-512
@@ -123,17 +125,37 @@ languages (`æ ø å ä ö ü ß é ç ñ ł ő č ž` and others), Greek, Chine
 (kana and kanji), as well as digits, punctuation and common symbols. Its character list has no Cyrillic, Korean,
 Arabic, Hebrew, Devanagari or Thai letters, so text in those scripts is not recognised.
 
-PP-OCRv6 saw few capital Danish and Norwegian letters in training and read Æ as "AE", Ø as O or a zero, and Å as A,
-especially in capitals, monospaced fonts and poor scans. The package retrains the model's output weights for those
-letters and the letters they were mistaken for (`tools/HeadTuner`), which leaves everything before the last layer and
-every other character as the original model has them. On Danish test lines in fonts left out of that training, clean
-and degraded, Å, Ø and ø now read 99 to 100% right (from 62 to 94%) and Æ 93% (from 0%), with no change on English
-text.
+PP-OCRv6 saw few accented European capitals in training. It read Æ as "AE", Ø as O or a zero, Å as A, Ê and Ô as E
+and O, œ as æ, Þ and Ð as P and D, curly quotation marks as straight ones, en dashes as hyphens and § as S, most of
+all in capitals, monospaced fonts and poor scans. The package retrains the model's output weights for 75 of those
+letters and marks (`tools/HeadTuner`), on text in eleven languages, which leaves everything before the last layer and
+every other character as the original model has them. On test lines in fonts left out of that training, clean and
+degraded, the character error rate is now:
 
-Some punctuation is limited by the model: `„` (the low opening quotation mark of Danish and German) is not in its
-character list and is left out, `…` comes out as three full stops, and a long run of dots, such as a dot leader in a
-table of contents, is mostly read as a few dots or not detected, because the recogniser emits at most one character
-per 8 pixels of its 48-pixel-high input.
+| Language | Before | After |
+|---|---:|---:|
+| Danish | 2.40% | 0.65% |
+| Norwegian | 2.61% | 0.58% |
+| Swedish | 4.27% | 1.68% |
+| Finnish | 0.32% | 0.00% |
+| Icelandic | 3.38% | 0.05% |
+| German | 0.85% | 0.43% |
+| French | 1.43% | 0.34% |
+| Spanish | 1.91% | 1.02% |
+| Portuguese | 0.03% | 0.00% |
+| Italian | 1.58% | 0.07% |
+| English | 0.32% | 0.32% |
+
+Some punctuation is limited by the model: `„` (the low opening quotation mark of Danish and German) and `¡` are not in
+its character list and are left out, and `…` comes out as three full stops.
+
+The recogniser emits at most one character per 8 pixels of its 48-pixel-high input, so it cannot count a run of dots
+set closer than that, and the detector does not see a dot leader in a table of contents as text at all. The package
+counts such dots on the page instead: where the recogniser read a run of dots, between a title and its page number on
+one row, or after the last text on a row, a run of evenly spaced round dots on the baseline is counted, and the text
+beside a leader is read again without it (a page number the detector missed on a poor scan is read on its own). Only
+dots are counted, never letters. A leader of spaced dots (`. . . .`) comes out without its spaces, an ellipsis
+character (`…`) is read as three full stops, and a row of underscores is not counted.
 
 ## Limitations
 

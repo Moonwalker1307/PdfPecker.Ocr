@@ -5,10 +5,10 @@ line 114,128 651x46 angle -0 conf 1.00 | København, den 3. november 2026
   word 429,128 45x46 conf 1.00 | 3.
   word 483,128 184x46 conf 1.00 | november
   word 675,128 90x46 conf 1.00 | 2026
-line 111,229 423x53 angle -0 conf 0.97 | Kære Søren Ærtebjerg
+line 111,229 423x53 angle -0 conf 0.98 | Kære Søren Ærtebjerg
   word 121,229 100x51 conf 1.00 | Kære
   word 233,230 108x51 conf 1.00 | Søren
-  word 353,231 181x51 conf 0.94 | Ærtebjerg
+  word 353,231 181x51 conf 0.97 | Ærtebjerg
 line 114,330 886x49 angle -0 conf 1.00 | Tak for dit brev og for de flotte æbler fra haven.
   word 125,330 60x49 conf 1.00 | Tak
   word 199,330 60x49 conf 1.00 | for
@@ -47,7 +47,7 @@ line 111,463 864x53 angle -0 conf 0.99 | Husk at tage varmt tøj med, for vinden
   word 894,463 81x53 conf 1.00 | kold
 line 112,528 1009x55 angle -0 conf 1.00 | ved stranden, og færgen sejler kun to gange om dagen.
   word 124,528 64x53 conf 1.00 | ved
-  word 195,528 171x53 conf 1.00 | stranden,
+  word 195,528 171x53 conf 0.99 | stranden,
   word 382,528 38x53 conf 1.00 | og
   word 436,528 119x54 conf 1.00 | færgen
   word 570,528 101x54 conf 1.00 | sejler

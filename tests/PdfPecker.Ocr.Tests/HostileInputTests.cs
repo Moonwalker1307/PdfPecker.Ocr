@@ -530,6 +530,22 @@ public sealed class HostileInputTests
         _output.WriteLine($"10,000 empty pages in {watch.ElapsedMilliseconds} ms");
     }
 
+    /// <summary>
+    /// A page of nothing but dot leaders between short words, so that every pair of neighbours on every row is checked
+    /// for a leader, counted and read again: the dot counting must stay a small part of the page's time.
+    /// </summary>
+    [Fact]
+    public void PageFullOfDotLeadersFinishesWithinTheBound()
+    {
+        string row = string.Join(" ........ ", Enumerable.Range(1, 6).Select(i => "A" + i));
+        string html = TestPages.Document("210mm 297mm", "p{font:9pt/1.3 sans-serif;margin:0;white-space:pre}", string.Concat(Enumerable.Repeat("<p>" + row + "</p>", 60)));
+        RenderedPage page = TestPages.Render(html);
+        var watch = Stopwatch.StartNew();
+        OcrPage result = Bounded(ct => ImageOcr.RecognizeRgba(page.Rgba, page.Width, page.Height, null, ct), Quick);
+        Assert.NotEmpty(result.Lines);
+        _output.WriteLine($"{result.Lines.Count} lines in {watch.ElapsedMilliseconds} ms; first: {result.Lines[0].Text}");
+    }
+
     [Fact]
     public void ManyPagesStopWhenCancelled()
     {

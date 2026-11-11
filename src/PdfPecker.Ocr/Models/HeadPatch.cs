@@ -5,8 +5,8 @@ namespace PdfPecker.Ocr.Models;
 
 /// <summary>
 /// Retrained output weights for some of the recogniser's classes, written by tools/HeadTuner, which the recogniser
-/// takes in place of its own when it loads. PP-OCRv6 saw few capital Danish and Norwegian letters in training: it reads
-/// Æ as the two letters A and E, Ø as O or a zero, and Å as A. Only the last linear layer's weights of the listed
+/// takes in place of its own when it loads. PP-OCRv6 saw few European accented capitals in training: it reads Æ as the
+/// two letters A and E, Ø as O or a zero, Å as A, Ê as E, Þ as P, and curly quotation marks as straight ones. Only the last linear layer's weights of the listed
 /// classes change, refitted on the features the unchanged network computes for rendered text, so every other class,
 /// and everything before the last layer, is the converted model as it was.
 /// </summary>

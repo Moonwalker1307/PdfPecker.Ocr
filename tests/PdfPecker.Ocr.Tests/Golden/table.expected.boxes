@@ -6,7 +6,7 @@ line 358,116 154x58 angle -0 conf 1.00 | Capital
 line 656,117 230x55 angle -0 conf 1.00 | Population
   word 668,117 214x55 conf 1.00 | Population
 line 934,120 191x47 angle -0 conf 1.00 | Area km²
-  word 941,120 96x47 conf 0.99 | Area
+  word 941,120 96x47 conf 1.00 | Area
   word 1042,120 80x47 conf 1.00 | km²
 line 127,183 161x62 angle -2 conf 1.00 | Norway
   word 138,183 149x62 conf 1.00 | Norway

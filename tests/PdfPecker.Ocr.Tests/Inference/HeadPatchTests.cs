@@ -5,8 +5,14 @@ namespace PdfPecker.Ocr.Tests.Inference;
 /// <summary>The recogniser's retrained Nordic columns (<see cref="HeadPatch"/>) and how they are loaded.</summary>
 public sealed class HeadPatchTests
 {
-    /// <summary>The classes tools/HeadTuner retrains; 0, O and o compete in the refit but keep their weights.</summary>
-    private static readonly string[] Retrained = ["A", "Å", "Æ", "E", "É", "È", "Ê", "e", "Ø", "ø", "a", "å", "æ", "∅", "Ä", "Ö", "ö", "ä"];
+    /// <summary>The classes tools/HeadTuner retrains; the plain letters, digits and marks they compete with keep their weights.</summary>
+    private static readonly string[] Retrained =
+    [
+        "A", "Å", "Ä", "Á", "À", "Â", "Ã", "Æ", "a", "å", "ä", "á", "à", "â", "ã", "æ", "ā", "E", "É", "È", "Ê", "Ë",
+        "e", "é", "è", "ê", "ë", "ē", "Ø", "Ö", "Ó", "Ò", "Ô", "Õ", "Œ", "ø", "ö", "ó", "ò", "ô", "õ", "œ", "ō", "∅",
+        "Í", "Ì", "Î", "Ï", "í", "ì", "î", "ï", "ī", "Ü", "Ú", "Ù", "Û", "ü", "ú", "ù", "û", "ū", "Þ", "þ", "Ð", "ð",
+        "”", "“", "’", "‘", "–", "—", "º", "°", "§",
+    ];
 
     [Fact]
     public void TheBundledPatchRetrainsOnlyTheNordicLettersAndTheirLookalikes()

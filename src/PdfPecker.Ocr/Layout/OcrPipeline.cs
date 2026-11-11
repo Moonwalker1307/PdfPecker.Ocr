@@ -32,6 +32,7 @@ internal sealed class OcrPipeline
     {
         List<DetectedQuad> quads = _detector.Detect(page, cancellationToken);
         List<RecognizedLine> lines = _recognizer.Recognize(page, quads, cancellationToken);
+        lines = DotRuns.Apply(page, lines, _recognizer.Recognize, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         return PageAssembler.Assemble(page.Width, page.Height, dpi, lines);
     }
