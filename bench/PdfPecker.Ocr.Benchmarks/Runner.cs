@@ -59,8 +59,13 @@ static class Runner
         return new CaseResult(c.Name, null, times.Count, first, median, mean, times[0], times[(int)(times.Count * 0.95)], alloc, cpu, mpix);
     }
 
+    /// <summary>
+    /// The process's resident peak: VmHWM on Linux, which Stages can reset, and ru_maxrss on macOS, where
+    /// Process.PeakWorkingSet64 is always 0.
+    /// </summary>
     public static double PeakRssMb()
     {
+        if (OperatingSystem.IsMacOS()) return MacOs.PeakResidentBytes() / 1048576.0;
         try
         {
             foreach (var line in File.ReadLines("/proc/self/status"))
@@ -156,6 +161,7 @@ static class Versions
 
     static string CpuName()
     {
+        if (OperatingSystem.IsMacOS()) return MacOs.CpuBrand() ?? "unknown CPU";
         try { return File.ReadLines("/proc/cpuinfo").First(l => l.StartsWith("model name", StringComparison.Ordinal)).Split(':')[1].Trim(); }
         catch (Exception e) when (e is IOException or InvalidOperationException) { return "unknown CPU"; }
     }

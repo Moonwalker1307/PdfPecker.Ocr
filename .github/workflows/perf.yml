@@ -1,9 +1,10 @@
 name: Performance
 
-# Runs the benchmark on main and keeps its results as an artifact, so runs can be compared over time. It is on demand
-# for now; a nightly schedule and an automatic comparison with earlier runs come once bench/PdfPecker.Ocr.Benchmarks
-# has settled, as in PdfPecker's perf.yml. Hosted runners come in several processor models, so only runs on the same
-# processor are comparable, and a change of your own is measured with bench/compare-versions.sh on one machine instead.
+# Runs the benchmark on the branch the run is started on (main by default) and keeps its results as an artifact, so
+# runs can be compared over time. It is on demand for now; a nightly schedule and an automatic comparison with earlier
+# runs come once bench/PdfPecker.Ocr.Benchmarks has settled, as in PdfPecker's perf.yml. Hosted runners come in several
+# processor models, so only runs on the same processor are comparable, and a change of your own is measured with
+# bench/compare-versions.sh on one machine instead.
 on:
   workflow_dispatch:
     inputs:
@@ -30,9 +31,10 @@ jobs:
   benchmark:
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     steps:
+      # The code measured is that of the branch the run was started on, main unless another is chosen, so a branch's
+      # bench or kernel change can be timed on a runner before it merges.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
           persist-credentials: false
 
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
