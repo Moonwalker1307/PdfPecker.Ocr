@@ -147,7 +147,8 @@ must be unchanged unless the output change is intended. If only one runtime is i
 - **Something PdfPecker cannot do**: don't work around it here with fragile code; fix PdfPecker in its own PR first,
   and use it here after its release.
 - **Newer .NET APIs**: the package also targets .NET 8, which lacks some APIs (`Vector512` is there; some span and
-  dictionary APIs are not). Guard them with `#if NET9_0_OR_GREATER` and keep a .NET 8 path.
+  dictionary APIs are not). Guard them with `#if NET9_0_OR_GREATER` and keep a .NET 8 path. 1.25.0 is the last release for
+  .NET 8 and 9 (`README.md`), as in PdfPecker; the release after it drops them.
 - **Untrusted input** (images, PDFs, pixel buffers, sizes): add resource limits, a fuzz target in
   `fuzz/PdfPecker.Ocr.Fuzz` (see `fuzz/README.md`), and for each bug fix a regression test in `HostileInputTests`.
 - **Generated data**: change the generator, never its output.

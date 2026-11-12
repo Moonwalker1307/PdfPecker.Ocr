@@ -43,6 +43,10 @@ The package and tests target `net8.0`, `net9.0` and `net10.0`. APIs that .NET 8 
 (`Vector128`, `Vector256`, `Vector512` and the x86 and Arm intrinsics), which all three have; each kernel checks
 `IsSupported` or `IsHardwareAccelerated` at run time and keeps a scalar path.
 
+1.25.0 is the last release with `net8.0` and `net9.0`, as the README says, because it is the last PdfPecker release for
+them. The release after it drops them from the package, the tests and the CI matrix, and the `#if NET9_0_OR_GREATER`
+guards and their .NET 8 paths go with them.
+
 ## Unsafe code
 
 `AllowUnsafeBlocks` is on for the package, because the inner loops of the kernels use pointers and
