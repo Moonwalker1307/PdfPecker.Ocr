@@ -917,7 +917,8 @@ internal sealed unsafe class GemmKernel
     /// broadcast of A. Each value takes the same fused multiply-adds, of the same broadcast A value and B vector, in the
     /// same order as in <see cref="Kernel6x8Vector128"/> on Arm64, from the same seed, so the two give the same bits and
     /// only the tiling differs. Twelve columns rather than eight need 11 loads for 24 multiply-adds per step of k instead
-    /// of the 14 that 12 rows of 8 would.
+    /// of the 14 that 12 rows of 8 would. The broadcasts are LD1R loads, which run on a load port, rather than a load
+    /// and a DUP, which would take one of the vector pipes the multiply-adds need.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Kernel8x12Neon(int k, float* a, float* b, float* c, nint ldc, float* rowBias, float* colBias)
@@ -1009,35 +1010,35 @@ internal sealed unsafe class GemmKernel
             var b0 = Vector128.Load(b + 0);
             var b1 = Vector128.Load(b + 4);
             var b2 = Vector128.Load(b + 8);
-            var a0 = Vector128.Create(a[0]);
+            var a0 = AdvSimd.LoadAndReplicateToVector128(a + 0);
             c0_0 = AdvSimd.FusedMultiplyAdd(c0_0, a0, b0);
             c0_1 = AdvSimd.FusedMultiplyAdd(c0_1, a0, b1);
             c0_2 = AdvSimd.FusedMultiplyAdd(c0_2, a0, b2);
-            var a1 = Vector128.Create(a[1]);
+            var a1 = AdvSimd.LoadAndReplicateToVector128(a + 1);
             c1_0 = AdvSimd.FusedMultiplyAdd(c1_0, a1, b0);
             c1_1 = AdvSimd.FusedMultiplyAdd(c1_1, a1, b1);
             c1_2 = AdvSimd.FusedMultiplyAdd(c1_2, a1, b2);
-            var a2 = Vector128.Create(a[2]);
+            var a2 = AdvSimd.LoadAndReplicateToVector128(a + 2);
             c2_0 = AdvSimd.FusedMultiplyAdd(c2_0, a2, b0);
             c2_1 = AdvSimd.FusedMultiplyAdd(c2_1, a2, b1);
             c2_2 = AdvSimd.FusedMultiplyAdd(c2_2, a2, b2);
-            var a3 = Vector128.Create(a[3]);
+            var a3 = AdvSimd.LoadAndReplicateToVector128(a + 3);
             c3_0 = AdvSimd.FusedMultiplyAdd(c3_0, a3, b0);
             c3_1 = AdvSimd.FusedMultiplyAdd(c3_1, a3, b1);
             c3_2 = AdvSimd.FusedMultiplyAdd(c3_2, a3, b2);
-            var a4 = Vector128.Create(a[4]);
+            var a4 = AdvSimd.LoadAndReplicateToVector128(a + 4);
             c4_0 = AdvSimd.FusedMultiplyAdd(c4_0, a4, b0);
             c4_1 = AdvSimd.FusedMultiplyAdd(c4_1, a4, b1);
             c4_2 = AdvSimd.FusedMultiplyAdd(c4_2, a4, b2);
-            var a5 = Vector128.Create(a[5]);
+            var a5 = AdvSimd.LoadAndReplicateToVector128(a + 5);
             c5_0 = AdvSimd.FusedMultiplyAdd(c5_0, a5, b0);
             c5_1 = AdvSimd.FusedMultiplyAdd(c5_1, a5, b1);
             c5_2 = AdvSimd.FusedMultiplyAdd(c5_2, a5, b2);
-            var a6 = Vector128.Create(a[6]);
+            var a6 = AdvSimd.LoadAndReplicateToVector128(a + 6);
             c6_0 = AdvSimd.FusedMultiplyAdd(c6_0, a6, b0);
             c6_1 = AdvSimd.FusedMultiplyAdd(c6_1, a6, b1);
             c6_2 = AdvSimd.FusedMultiplyAdd(c6_2, a6, b2);
-            var a7 = Vector128.Create(a[7]);
+            var a7 = AdvSimd.LoadAndReplicateToVector128(a + 7);
             c7_0 = AdvSimd.FusedMultiplyAdd(c7_0, a7, b0);
             c7_1 = AdvSimd.FusedMultiplyAdd(c7_1, a7, b1);
             c7_2 = AdvSimd.FusedMultiplyAdd(c7_2, a7, b2);
@@ -1135,35 +1136,35 @@ internal sealed unsafe class GemmKernel
             var b0 = Vector128.Load(bk);
             var b1 = Vector128.Load(bk + 4);
             var b2 = Vector128.Load(bk + 8);
-            var a0 = Vector128.Create(a[0]);
+            var a0 = AdvSimd.LoadAndReplicateToVector128(a + 0);
             c0_0 = AdvSimd.FusedMultiplyAdd(c0_0, a0, b0);
             c0_1 = AdvSimd.FusedMultiplyAdd(c0_1, a0, b1);
             c0_2 = AdvSimd.FusedMultiplyAdd(c0_2, a0, b2);
-            var a1 = Vector128.Create(a[1]);
+            var a1 = AdvSimd.LoadAndReplicateToVector128(a + 1);
             c1_0 = AdvSimd.FusedMultiplyAdd(c1_0, a1, b0);
             c1_1 = AdvSimd.FusedMultiplyAdd(c1_1, a1, b1);
             c1_2 = AdvSimd.FusedMultiplyAdd(c1_2, a1, b2);
-            var a2 = Vector128.Create(a[2]);
+            var a2 = AdvSimd.LoadAndReplicateToVector128(a + 2);
             c2_0 = AdvSimd.FusedMultiplyAdd(c2_0, a2, b0);
             c2_1 = AdvSimd.FusedMultiplyAdd(c2_1, a2, b1);
             c2_2 = AdvSimd.FusedMultiplyAdd(c2_2, a2, b2);
-            var a3 = Vector128.Create(a[3]);
+            var a3 = AdvSimd.LoadAndReplicateToVector128(a + 3);
             c3_0 = AdvSimd.FusedMultiplyAdd(c3_0, a3, b0);
             c3_1 = AdvSimd.FusedMultiplyAdd(c3_1, a3, b1);
             c3_2 = AdvSimd.FusedMultiplyAdd(c3_2, a3, b2);
-            var a4 = Vector128.Create(a[4]);
+            var a4 = AdvSimd.LoadAndReplicateToVector128(a + 4);
             c4_0 = AdvSimd.FusedMultiplyAdd(c4_0, a4, b0);
             c4_1 = AdvSimd.FusedMultiplyAdd(c4_1, a4, b1);
             c4_2 = AdvSimd.FusedMultiplyAdd(c4_2, a4, b2);
-            var a5 = Vector128.Create(a[5]);
+            var a5 = AdvSimd.LoadAndReplicateToVector128(a + 5);
             c5_0 = AdvSimd.FusedMultiplyAdd(c5_0, a5, b0);
             c5_1 = AdvSimd.FusedMultiplyAdd(c5_1, a5, b1);
             c5_2 = AdvSimd.FusedMultiplyAdd(c5_2, a5, b2);
-            var a6 = Vector128.Create(a[6]);
+            var a6 = AdvSimd.LoadAndReplicateToVector128(a + 6);
             c6_0 = AdvSimd.FusedMultiplyAdd(c6_0, a6, b0);
             c6_1 = AdvSimd.FusedMultiplyAdd(c6_1, a6, b1);
             c6_2 = AdvSimd.FusedMultiplyAdd(c6_2, a6, b2);
-            var a7 = Vector128.Create(a[7]);
+            var a7 = AdvSimd.LoadAndReplicateToVector128(a + 7);
             c7_0 = AdvSimd.FusedMultiplyAdd(c7_0, a7, b0);
             c7_1 = AdvSimd.FusedMultiplyAdd(c7_1, a7, b1);
             c7_2 = AdvSimd.FusedMultiplyAdd(c7_2, a7, b2);
