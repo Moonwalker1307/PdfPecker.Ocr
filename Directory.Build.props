@@ -8,8 +8,8 @@
 
   <!-- Local builds pack as a pre-release; CI passes the real version, which is PdfPeckerVersion for a release. -->
   <PropertyGroup>
-    <Version>1.24.1-dev</Version>
+    <Version>1.25.0-dev</Version>
     <!-- The PdfPecker release the package builds against and depends on at least, and the package's own version. -->
-    <PdfPeckerVersion>1.24.0</PdfPeckerVersion>
+    <PdfPeckerVersion>1.25.0</PdfPeckerVersion>
   </PropertyGroup>
 </Project>
