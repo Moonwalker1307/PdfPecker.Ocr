@@ -104,6 +104,35 @@ public sealed unsafe class KernelAgreementTests
 
     [Theory]
     [MemberData(nameof(KernelTests.Kernels), MemberType = typeof(KernelTests))]
+    public void ProductsOfSpecialValuesHaveThePortableKernelsBits(string kernel)
+    {
+        // NaNs with different payloads (quiet and signalling, both signs), infinities, zeros of both signs, subnormals
+        // and values whose products overflow, in A, B and the bias. Which NaN a multiply-add passes on depends on the
+        // operand it is in, so this holds a kernel to the portable one's choice of operands, not only to its sums.
+        float[] special =
+        [
+            BitConverter.UInt32BitsToSingle(0x7FC00001), BitConverter.UInt32BitsToSingle(0xFFC12345), BitConverter.UInt32BitsToSingle(0x7F800001),
+            BitConverter.UInt32BitsToSingle(0x7FBFFFFF), float.PositiveInfinity, float.NegativeInfinity, 0f, -0f, 1e-40f, -1e-40f, 3e38f, -3e38f,
+        ];
+        var gemm = Kernel(kernel);
+        var random = new Random(31);
+        float Pick() => random.Next(3) == 0 ? special[random.Next(special.Length)] : (float)((random.NextDouble() * 4) - 2);
+        foreach (var (rows, k, cols) in new[] { (8, 5, 12), (13, 9, 25), (25, 17, 37), (6, 3, 8), (17, 1, 13) })
+        {
+            float[] a = Enumerable.Range(0, rows * k).Select(_ => Pick()).ToArray();
+            float[] b = Enumerable.Range(0, k * cols).Select(_ => Pick()).ToArray();
+            float[] bias = Enumerable.Range(0, Math.Max(rows, cols)).Select(_ => Pick()).ToArray();
+            for (int biasMode = 0; biasMode < 3; biasMode++)
+            {
+                var portable = Multiply(GemmKernel.Portable, a, b, rows, k, cols, biasMode, bias, ActivationKind.None, null, cols);
+                var result = Multiply(gemm, a, b, rows, k, cols, biasMode, bias, ActivationKind.None, null, cols);
+                AssertSameBits(portable, result, $"{kernel} special values {rows}x{k}x{cols} bias {biasMode}");
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(KernelTests.Kernels), MemberType = typeof(KernelTests))]
     public void ProductsReadInPlaceHaveThePortableKernelsBits(string kernel)
     {
         // MultiplyDirect reads one panel of B at an offset per step of k; panels of every width up to NR and partial
