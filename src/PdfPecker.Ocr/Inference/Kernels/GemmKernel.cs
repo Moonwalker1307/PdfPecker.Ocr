@@ -1014,7 +1014,7 @@ internal sealed unsafe class GemmKernel
             var b0 = Vector128.Load(b);
             var b1 = Vector128.Load(b + 4);
             var b2 = Vector128.Load(b + 8);
-            c0_0 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_0, a0, b0, 0);
+            c0_0 = AdvSimd.Add(c0_0, AdvSimd.MultiplyBySelectedScalar(a0, b0, 0));
             c1_0 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_0, a1, b0, 0);
             c0_1 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_1, a0, b0, 1);
             c1_1 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_1, a1, b0, 1);
@@ -1140,7 +1140,7 @@ internal sealed unsafe class GemmKernel
             c0_10 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_10, a0, b2, 2);
             c1_10 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_10, a1, b2, 2);
             c0_11 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_11, a0, b2, 3);
-            c1_11 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_11, a1, b2, 3);
+            c1_11 = AdvSimd.Add(c1_11, AdvSimd.MultiplyBySelectedScalar(a1, b2, 3));
             a += 8;
         }
         StoreTransposed(c0_0, c0_1, c0_2, c0_3, c, ldc);
