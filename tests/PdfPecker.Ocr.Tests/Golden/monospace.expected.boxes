@@ -7,10 +7,10 @@ line 101,106 355x52 angle -1 conf 0.98 | int total = 0;
 line 102,172 703x50 angle -0 conf 0.97 | for (int i = 0; i < 10; i++)
   word 110,172 75x50 conf 1.00 | for
   word 210,172 100x50 conf 1.00 | (int
-  word 335,172 25x50 conf 1.00 | i
+  word 335,172 25x50 conf 0.99 | i
   word 385,172 25x50 conf 1.00 | =
   word 435,172 50x50 conf 1.00 | 0;
-  word 510,172 25x50 conf 1.00 | i
+  word 510,172 25x50 conf 0.99 | i
   word 560,172 25x50 conf 1.00 | <
   word 610,172 75x50 conf 1.00 | 10;
   word 710,172 95x50 conf 1.00 | i++)

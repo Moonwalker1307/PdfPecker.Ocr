@@ -43,8 +43,9 @@ wins here.
   notices in `THIRD-PARTY-NOTICES.md` accurate: the weights are Apache-2.0, copyright Baidu and/or the PaddleOCR rights
   holders, and the converted files must say that and how they were changed. A new model, a new source or a change to
   what the builder does to the weights updates the notices in the same pull request. `Models/rec-head.bin`, the
-  recogniser's retrained output weights for the Nordic letters, is written by `tools/HeadTuner` and is generated data
-  in the same way; it is applied when the recogniser loads, so `rec.bin.deflate` stays the converted model.
+  recogniser's retrained output weights for European accented letters and marks, is written by `tools/HeadTuner` and
+  is generated data in the same way; it is applied when the recogniser loads, so `rec.bin.deflate` stays the converted
+  model.
 - **Licences.** The code is MIT (`LICENSE`, unchanged); the package's licence expression is
   `MIT AND Apache-2.0 AND BSL-1.0`, and it carries `THIRD-PARTY-NOTICES.md` with the full Apache-2.0 and Boost texts.
   Pre- and post-processing follows RapidOCR and PaddleOCR (both Apache-2.0); the minimum-area rectangle follows OpenCV

@@ -1,6 +1,6 @@
 page 2008x1535 dpi 300 lines 10 confidence 0.99
 line 114,122 1191x61 angle 0 conf 0.99 | ÆBLER, ØL OG ÅL FRA ÆRØ, ØRESUND OG ÅRHUS
-  word 123,123 194x60 conf 0.97 | ÆBLER,
+  word 123,123 194x60 conf 0.99 | ÆBLER,
   word 317,123 61x60 conf 1.00 | ØL
   word 397,123 62x60 conf 1.00 | OG
   word 478,123 62x60 conf 1.00 | ÅL
@@ -15,7 +15,7 @@ line 112,216 1010x64 angle 0 conf 0.99 | ÆRLIG TALT: ØSTER ÅBY LIGGER PÅ FYN
   word 437,218 166x61 conf 1.00 | ØSTER
   word 621,217 105x61 conf 1.00 | ÅBY
   word 733,217 186x62 conf 1.00 | LIGGER
-  word 937,216 74x61 conf 1.00 | PÅ
+  word 937,216 74x61 conf 0.99 | PÅ
   word 1019,216 103x61 conf 1.00 | FYN
 line 112,319 810x60 angle -0 conf 1.00 | Ærtebjerg, Ølstykke og Åbenrå
   word 123,319 269x60 conf 1.00 | Ærtebjerg,
@@ -68,14 +68,13 @@ line 112,907 937x63 angle -0 conf 1.00 | Han sagde: »Det går nok« og fint“ 
   word 126,907 74x60 conf 1.00 | Han
   word 216,907 134x60 conf 1.00 | sagde:
   word 356,908 104x60 conf 1.00 | »Det
-  word 466,908 64x60 conf 0.99 | går
+  word 466,908 64x60 conf 1.00 | går
   word 547,908 94x60 conf 1.00 | nok«
   word 657,909 54x60 conf 0.98 | og
   word 737,909 94x60 conf 1.00 | fint“
   word 847,909 44x60 conf 1.00 | og
   word 907,910 142x60 conf 1.00 | "godt".
-line 114,1007 435x60 angle 0 conf 0.90 | Indledning .... . 3
-  word 116,1008 233x59 conf 1.00 | Indledning
-  word 354,1008 100x58 conf 0.74 | ....
-  word 496,1007 24x57 conf 0.91 | .
-  word 525,1007 24x57 conf 1.00 | 3
+line 114,1007 435x60 angle 0 conf 0.95 | Indledning .......... 3
+  word 117,1007 233x60 conf 1.00 | Indledning
+  word 367,1007 130x60 conf 0.90 | ..........
+  word 505,1007 44x60 conf 1.00 | 3

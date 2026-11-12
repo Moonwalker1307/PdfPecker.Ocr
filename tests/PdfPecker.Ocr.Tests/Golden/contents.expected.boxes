@@ -1,0 +1,54 @@
+page 2008x1417 dpi 300 lines 9 confidence 0.96
+line 111,124 170x54 angle -0 conf 1.00 | Indhold
+  word 122,124 157x54 conf 1.00 | Indhold
+line 114,227 812x53 angle -0 conf 0.96 | 1 Indledning ........................................ 3
+  word 125,227 22x53 conf 1.00 | 1
+  word 161,227 216x53 conf 1.00 | Indledning
+  word 388,227 494x53 conf 0.95 | ........................................
+  word 890,227 36x53 conf 1.00 | 3
+line 111,326 847x56 angle -0 conf 0.97 | 2 Metode og data ................................. 12
+  word 124,326 22x56 conf 1.00 | 2
+  word 170,326 143x56 conf 1.00 | Metode
+  word 329,326 40x56 conf 1.00 | og
+  word 385,326 87x56 conf 1.00 | data
+  word 482,326 406x56 conf 0.95 | .................................
+  word 903,326 55x56 conf 1.00 | 12
+line 112,421 934x49 angle -0 conf 0.94 | 3 Resultater ............................................... 27
+  word 122,421 21x49 conf 1.00 | 3
+  word 163,421 208x49 conf 1.00 | Resultater
+  word 382,421 591x49 conf 0.92 | ...............................................
+  word 994,421 49x49 conf 1.00 | 27
+line 110,510 358x61 angle -0 conf 0.89 | Bilag A .......... 41
+  word 127,510 89x61 conf 1.00 | Bilag
+  word 238,510 18x61 conf 1.00 | A
+  word 275,510 119x61 conf 0.80 | ..........
+  word 410,510 58x61 conf 1.00 | 41
+line 112,600 1033x52 angle -0 conf 0.96 | Kapitel 4 ............................ 58
+  word 121,600 172x52 conf 1.00 | Kapitel
+  word 321,600 25x52 conf 1.00 | 4
+  word 378,600 680x52 conf 0.95 | ............................
+  word 1102,600 35x52 conf 1.00 | 58
+line 110,690 439x55 angle 0 conf 1.00 | Register ..... 63
+  word 120,692 196x53 conf 1.00 | Register
+  word 346,691 127x53 conf 1.00 | .....
+  word 502,690 40x52 conf 1.00 | 63
+line 111,781 609x62 angle -1 conf 0.93 | Se side 4 ... og 5 .... og 6 ......
+  word 124,781 57x62 conf 1.00 | Se
+  word 186,781 88x62 conf 1.00 | side
+  word 289,781 26x62 conf 1.00 | 4
+  word 326,781 30x62 conf 0.87 | ...
+  word 372,781 62x62 conf 0.97 | og
+  word 434,781 31x62 conf 1.00 | 5
+  word 479,781 43x62 conf 0.87 | ....
+  word 539,781 62x62 conf 0.99 | og
+  word 600,781 31x62 conf 1.00 | 6
+  word 644,781 69x62 conf 0.87 | ......
+line 111,879 834x60 angle -0 conf 0.99 | Version 1.2.3, kl. 9.30 og 10.0.0.1 ... osv.
+  word 134,879 132x57 conf 1.00 | Version
+  word 293,880 113x57 conf 1.00 | 1.2.3,
+  word 415,880 57x56 conf 1.00 | kl.
+  word 481,881 76x56 conf 1.00 | 9.30
+  word 584,881 38x56 conf 0.99 | og
+  word 640,882 160x57 conf 1.00 | 10.0.0.1
+  word 809,882 57x56 conf 0.97 | ...
+  word 865,883 80x56 conf 1.00 | osv.

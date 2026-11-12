@@ -1,0 +1,116 @@
+page 2126x1772 dpi 300 lines 13 confidence 0.99
+line 113,119 1284x62 angle 0 conf 0.97 | ÅSKA, ÄLG OCH ÖL I ÖREBRO, ÄNGELHOLM OCH ÅRE
+  word 121,122 160x59 conf 0.99 | ÅSKA,
+  word 281,121 102x59 conf 0.98 | ÄLG
+  word 398,121 103x59 conf 0.98 | OCH
+  word 518,121 64x59 conf 0.97 | ÖL
+  word 588,121 34x59 conf 0.99 | I
+  word 628,120 223x60 conf 0.98 | ÖREBRO,
+  word 849,120 305x60 conf 0.97 | ÄNGELHOLM
+  word 1181,119 105x60 conf 0.99 | OCH
+  word 1303,119 94x60 conf 0.94 | ÅRE
+line 113,221 1030x61 angle -0 conf 0.99 | Smörgåsbord, köttbullar med lingon och gräddsås.
+  word 127,221 286x60 conf 1.00 | Smörgåsbord,
+  word 421,222 193x60 conf 1.00 | köttbullar
+  word 631,222 72x60 conf 1.00 | med
+  word 711,222 132x60 conf 1.00 | lingon
+  word 860,222 62x59 conf 1.00 | och
+  word 950,223 193x59 conf 1.00 | gräddsås.
+line 111,307 1030x61 angle -0 conf 0.99 | Han sa: ”Det går bra” och ’okej’, vi ses.
+  word 123,307 73x58 conf 1.00 | Han
+  word 220,307 73x58 conf 1.00 | sa:
+  word 317,308 102x58 conf 0.97 | ”Det
+  word 443,308 83x58 conf 1.00 | går
+  word 549,308 103x58 conf 0.99 | bra”
+  word 675,309 74x58 conf 1.00 | och
+  word 772,309 180x59 conf 1.00 | ’okej’,
+  word 976,310 45x58 conf 1.00 | vi
+  word 1053,310 88x58 conf 1.00 | ses.
+line 115,400 940x64 angle -0 conf 1.00 | ÄITI JA ISÄ ASUVAT HÄMEENLINNASSA
+  word 127,400 96x60 conf 1.00 | ÄITI
+  word 237,401 46x60 conf 1.00 | JA
+  word 297,401 76x60 conf 1.00 | ISÄ
+  word 397,401 176x61 conf 1.00 | ASUVAT
+  word 597,402 446x62 conf 1.00 | HÄMEENLINNASSA
+line 115,505 1165x58 angle -0 conf 0.99 | Þórður og Guðrún búa á Akureyri. ÞINGVELLIR, STAÐIR
+  word 127,505 142x58 conf 1.00 | Þórður
+  word 272,505 54x58 conf 1.00 | og
+  word 340,505 151x58 conf 1.00 | Guðrún
+  word 505,505 74x58 conf 1.00 | búa
+  word 593,505 25x58 conf 1.00 | á
+  word 632,505 190x58 conf 1.00 | Akureyri.
+  word 826,505 287x58 conf 1.00 | ÞINGVELLIR,
+  word 1117,505 161x58 conf 1.00 | STAÐIR
+line 112,594 993x66 angle 0 conf 0.98 | ÆRLIG TALT: ØYA I ÅLESUND ER VAKKER
+  word 122,596 158x63 conf 0.89 | ÆRLIG
+  word 291,596 148x64 conf 1.00 | TALT:
+  word 439,596 96x64 conf 1.00 | ØYA
+  word 545,596 32x64 conf 1.00 | I
+  word 577,595 236x64 conf 1.00 | ÅLESUND
+  word 822,595 65x64 conf 1.00 | ER
+  word 898,594 206x64 conf 1.00 | VAKKER
+line 112,689 1044x67 angle 0 conf 0.98 | ÇA VA ? OÙ ÊTES-VOUS ? À BIENTÔT, ÉLODIE !
+  word 125,692 60x64 conf 1.00 | ÇA
+  word 199,692 49x64 conf 1.00 | VA
+  word 263,691 28x64 conf 1.00 | ?
+  word 306,691 60x64 conf 1.00 | OÙ
+  word 381,690 262x65 conf 1.00 | ÊTES-VOUS
+  word 658,690 28x64 conf 1.00 | ?
+  word 701,690 28x64 conf 1.00 | À
+  word 743,690 209x65 conf 0.99 | BIENTÔT,
+  word 967,689 156x64 conf 1.00 | ÉLODIE
+  word 1127,689 28x64 conf 1.00 | !
+line 115,792 804x55 angle -0 conf 1.00 | Le cœur de l’été : crème brûlée et œufs.
+  word 117,792 59x55 conf 1.00 | Le
+  word 191,792 96x55 conf 1.00 | cœur
+  word 301,792 41x55 conf 1.00 | de
+  word 356,792 87x55 conf 1.00 | l’été
+  word 456,792 23x55 conf 1.00 | :
+  word 484,792 124x55 conf 1.00 | crème
+  word 621,792 124x55 conf 1.00 | brûlée
+  word 759,792 41x55 conf 1.00 | et
+  word 805,792 114x55 conf 0.98 | œufs.
+line 113,879 1177x61 angle -0 conf 1.00 | ¿Dónde está la estación? Señora Núñez, 2.º izq.
+  word 126,879 146x60 conf 1.00 | ¿Dónde
+  word 296,879 106x60 conf 1.00 | está
+  word 427,879 46x60 conf 1.00 | la
+  word 497,879 226x60 conf 1.00 | estación?
+  word 748,880 156x60 conf 1.00 | Señora
+  word 929,880 145x60 conf 1.00 | Núñez,
+  word 1099,880 75x60 conf 1.00 | 2.º
+  word 1200,880 90x60 conf 1.00 | izq.
+line 115,970 1190x66 angle 0 conf 0.99 | ÁRBOL, CAMIÓN, ÑANDÚ Y PINGÜINO EN ESPAÑA
+  word 126,972 193x64 conf 1.00 | ÁRBOL,
+  word 318,971 225x64 conf 1.00 | CAMIÓN,
+  word 543,971 182x64 conf 1.00 | ÑANDÚ
+  word 736,971 32x64 conf 1.00 | Y
+  word 779,970 246x64 conf 1.00 | PINGÜINO
+  word 1035,970 65x64 conf 1.00 | EN
+  word 1121,970 182x64 conf 1.00 | ESPAÑA
+line 115,1071 1031x63 angle -0 conf 0.98 | SÃO PAULO, JOÃO E CONCEIÇÃO – três irmãos
+  word 127,1071 87x60 conf 1.00 | SÃO
+  word 237,1071 168x60 conf 1.00 | PAULO,
+  word 408,1072 117x60 conf 1.00 | JOÃO
+  word 548,1072 27x60 conf 1.00 | E
+  word 598,1072 268x61 conf 0.99 | CONCEIÇÃO
+  word 879,1073 27x60 conf 1.00 | –
+  word 910,1073 87x60 conf 1.00 | três
+  word 1000,1074 146x60 conf 0.99 | irmãos
+line 111,1163 1089x69 angle 0 conf 0.99 | Perché la città è così bella? UNIVERSITÀ DI FORLÌ
+  word 126,1168 128x64 conf 1.00 | Perché
+  word 263,1168 43x63 conf 1.00 | la
+  word 316,1167 85x63 conf 1.00 | città
+  word 421,1167 22x63 conf 1.00 | è
+  word 453,1167 85x63 conf 1.00 | così
+  word 548,1166 117x64 conf 1.00 | bella?
+  word 685,1164 286x65 conf 1.00 | UNIVERSITÀ
+  word 1001,1164 43x63 conf 1.00 | DI
+  word 1064,1163 136x64 conf 1.00 | FORLÌ
+line 112,1268 1026x62 angle -0 conf 0.98 | Bahnhofstraße 7, 80335 München – E-Mail: »gut«
+  word 126,1268 296x61 conf 0.99 | Bahnhofstraße
+  word 439,1269 43x60 conf 1.00 | 7,
+  word 490,1269 123x60 conf 1.00 | 80335
+  word 630,1270 182x60 conf 1.00 | München
+  word 829,1270 23x59 conf 1.00 | –
+  word 869,1270 141x60 conf 1.00 | E-Mail:
+  word 1017,1271 111x59 conf 1.00 | »gut«

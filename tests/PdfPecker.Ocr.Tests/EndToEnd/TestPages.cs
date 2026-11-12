@@ -136,5 +136,5 @@ internal static class TestPages
     public static string Document(string size, string css, string body)
         => $"<!doctype html><html><head><meta charset=\"utf-8\"><style>@page{{size:{size};margin:8mm}}body{{margin:0}}{css}</style></head><body>{body}</body></html>";
 
-    private static string Paragraphs(string lines) => string.Concat(lines.Split('\n').Select(l => "<p>" + System.Net.WebUtility.HtmlEncode(l) + "</p>"));
+    internal static string Paragraphs(string lines) => string.Concat(lines.Split('\n').Select(l => "<p>" + System.Net.WebUtility.HtmlEncode(l) + "</p>"));
 }

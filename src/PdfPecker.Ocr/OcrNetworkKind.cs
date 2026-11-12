@@ -18,9 +18,9 @@ public enum OcrNetworkKind
     /// The line recognizer, PP-OCRv6 small (<c>PP-OCRv6_rec_small.onnx</c>). Input [N, 3, 48, W]; output [N, W / 8, C],
     /// a softmax over the model's C classes at each time step. An output of [N, W / 8, 2], the index of the most
     /// probable class (as a float) and its probability, is read the same way and is far smaller to copy back from a
-    /// device. The built-in recognizer differs from the ONNX model in one respect: the last layer's weights of 18 Latin
-    /// letters (Å, Æ, Ø, ø and the letters they were confused with) are retrained for Danish and Norwegian text, so an
-    /// accelerator that runs the ONNX model reads those letters as PP-OCRv6 does, with Æ often as "AE" and Å as A.
+    /// device. The built-in recognizer differs from the ONNX model in one respect: the last layer's weights of 75 classes
+    /// (accented Latin letters such as Å, Æ, Ø, Ê and Þ, curly quotation marks, dashes and §) are retrained for European
+    /// text, so an accelerator that runs the ONNX model reads those as PP-OCRv6 does, with Æ often as "AE" and Å as A.
     /// </summary>
     Recognition,
 

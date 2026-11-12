@@ -55,7 +55,7 @@ line 1069,361 440x51 angle -0 conf 1.00 | while volunteers painted
   word 1383,363 123x49 conf 1.00 | painted
 line 1071,429 423x46 angle -0 conf 0.98 | the tower white and red
   word 1073,429 58x46 conf 1.00 | the
-  word 1141,429 104x46 conf 0.99 | tower
+  word 1141,429 104x46 conf 0.98 | tower
   word 1256,429 96x46 conf 1.00 | white
   word 1363,429 58x46 conf 1.00 | and
   word 1432,429 58x46 conf 1.00 | red
