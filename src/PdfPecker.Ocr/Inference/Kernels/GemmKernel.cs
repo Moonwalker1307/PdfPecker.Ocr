@@ -38,14 +38,17 @@ internal sealed unsafe class GemmKernel
     /// <summary>6 x 16 with AVX2 and FMA.</summary>
     public static GemmKernel Avx2 { get; } = new("avx2", 6, 16, &Kernel6x16Avx2, &Direct6x16Avx2, Avx.IsSupported && Fma.IsSupported);
 
+    /// <summary>8 x 12 with Arm64's NEON, giving the same bits as <see cref="Portable"/> does there.</summary>
+    public static GemmKernel Neon { get; } = new("neon", 8, 12, &Kernel8x12Neon, &Direct8x12Neon, AdvSimd.Arm64.IsSupported);
+
     /// <summary>6 x 8 with Vector128, which every platform runs (in software where it has no SIMD).</summary>
     public static GemmKernel Portable { get; } = new("portable", 6, 8, &Kernel6x8Vector128, &Direct6x8Vector128, true);
 
     /// <summary>The fastest kernel the processor supports.</summary>
-    public static GemmKernel Best { get; } = Avx512.IsSupported ? Avx512 : Avx2.IsSupported ? Avx2 : Portable;
+    public static GemmKernel Best { get; } = Avx512.IsSupported ? Avx512 : Avx2.IsSupported ? Avx2 : Neon.IsSupported ? Neon : Portable;
 
     /// <summary>All kernels this processor can run, for tests.</summary>
-    public static IEnumerable<GemmKernel> Supported => new[] { Avx512, Avx2, Portable }.Where(k => k.IsSupported);
+    public static IEnumerable<GemmKernel> Supported => new[] { Avx512, Avx2, Neon, Portable }.Where(k => k.IsSupported);
 
     public string Name { get; }
 
@@ -907,6 +910,289 @@ internal sealed unsafe class GemmKernel
         Vector128.Store(c4_1, c + 4 * ldc + 4);
         Vector128.Store(c5_0, c + 5 * ldc);
         Vector128.Store(c5_1, c + 5 * ldc + 4);
+    }
+
+    /// <summary>
+    /// Arm64 NEON kernel: 8 rows by 12 columns in 24 of the 32 vector registers, with three for B and the rest for the
+    /// broadcast of A. Each value takes the same fused multiply-adds, of the same broadcast A value and B vector, in the
+    /// same order as in <see cref="Kernel6x8Vector128"/> on Arm64, from the same seed, so the two give the same bits and
+    /// only the tiling differs. Twelve columns rather than eight need 11 loads for 24 multiply-adds per step of k instead
+    /// of the 14 that 12 rows of 8 would.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Kernel8x12Neon(int k, float* a, float* b, float* c, nint ldc, float* rowBias, float* colBias)
+    {
+        Vector128<float> c0_0, c0_1, c0_2, c1_0, c1_1, c1_2, c2_0, c2_1, c2_2, c3_0, c3_1, c3_2, c4_0, c4_1, c4_2, c5_0, c5_1, c5_2, c6_0, c6_1, c6_2, c7_0, c7_1, c7_2;
+        if (rowBias != null)
+        {
+            c0_0 = Vector128.Create(rowBias[0]);
+            c0_1 = c0_0;
+            c0_2 = c0_0;
+            c1_0 = Vector128.Create(rowBias[1]);
+            c1_1 = c1_0;
+            c1_2 = c1_0;
+            c2_0 = Vector128.Create(rowBias[2]);
+            c2_1 = c2_0;
+            c2_2 = c2_0;
+            c3_0 = Vector128.Create(rowBias[3]);
+            c3_1 = c3_0;
+            c3_2 = c3_0;
+            c4_0 = Vector128.Create(rowBias[4]);
+            c4_1 = c4_0;
+            c4_2 = c4_0;
+            c5_0 = Vector128.Create(rowBias[5]);
+            c5_1 = c5_0;
+            c5_2 = c5_0;
+            c6_0 = Vector128.Create(rowBias[6]);
+            c6_1 = c6_0;
+            c6_2 = c6_0;
+            c7_0 = Vector128.Create(rowBias[7]);
+            c7_1 = c7_0;
+            c7_2 = c7_0;
+        }
+        else if (colBias != null)
+        {
+            c0_0 = Vector128.Load(colBias + 0);
+            c0_1 = Vector128.Load(colBias + 4);
+            c0_2 = Vector128.Load(colBias + 8);
+            c1_0 = c0_0;
+            c1_1 = c0_1;
+            c1_2 = c0_2;
+            c2_0 = c0_0;
+            c2_1 = c0_1;
+            c2_2 = c0_2;
+            c3_0 = c0_0;
+            c3_1 = c0_1;
+            c3_2 = c0_2;
+            c4_0 = c0_0;
+            c4_1 = c0_1;
+            c4_2 = c0_2;
+            c5_0 = c0_0;
+            c5_1 = c0_1;
+            c5_2 = c0_2;
+            c6_0 = c0_0;
+            c6_1 = c0_1;
+            c6_2 = c0_2;
+            c7_0 = c0_0;
+            c7_1 = c0_1;
+            c7_2 = c0_2;
+        }
+        else
+        {
+            c0_0 = Vector128<float>.Zero;
+            c0_1 = Vector128<float>.Zero;
+            c0_2 = Vector128<float>.Zero;
+            c1_0 = Vector128<float>.Zero;
+            c1_1 = Vector128<float>.Zero;
+            c1_2 = Vector128<float>.Zero;
+            c2_0 = Vector128<float>.Zero;
+            c2_1 = Vector128<float>.Zero;
+            c2_2 = Vector128<float>.Zero;
+            c3_0 = Vector128<float>.Zero;
+            c3_1 = Vector128<float>.Zero;
+            c3_2 = Vector128<float>.Zero;
+            c4_0 = Vector128<float>.Zero;
+            c4_1 = Vector128<float>.Zero;
+            c4_2 = Vector128<float>.Zero;
+            c5_0 = Vector128<float>.Zero;
+            c5_1 = Vector128<float>.Zero;
+            c5_2 = Vector128<float>.Zero;
+            c6_0 = Vector128<float>.Zero;
+            c6_1 = Vector128<float>.Zero;
+            c6_2 = Vector128<float>.Zero;
+            c7_0 = Vector128<float>.Zero;
+            c7_1 = Vector128<float>.Zero;
+            c7_2 = Vector128<float>.Zero;
+        }
+        for (; k > 0; k--)
+        {
+            var b0 = Vector128.Load(b + 0);
+            var b1 = Vector128.Load(b + 4);
+            var b2 = Vector128.Load(b + 8);
+            var a0 = Vector128.Create(a[0]);
+            c0_0 = AdvSimd.FusedMultiplyAdd(c0_0, a0, b0);
+            c0_1 = AdvSimd.FusedMultiplyAdd(c0_1, a0, b1);
+            c0_2 = AdvSimd.FusedMultiplyAdd(c0_2, a0, b2);
+            var a1 = Vector128.Create(a[1]);
+            c1_0 = AdvSimd.FusedMultiplyAdd(c1_0, a1, b0);
+            c1_1 = AdvSimd.FusedMultiplyAdd(c1_1, a1, b1);
+            c1_2 = AdvSimd.FusedMultiplyAdd(c1_2, a1, b2);
+            var a2 = Vector128.Create(a[2]);
+            c2_0 = AdvSimd.FusedMultiplyAdd(c2_0, a2, b0);
+            c2_1 = AdvSimd.FusedMultiplyAdd(c2_1, a2, b1);
+            c2_2 = AdvSimd.FusedMultiplyAdd(c2_2, a2, b2);
+            var a3 = Vector128.Create(a[3]);
+            c3_0 = AdvSimd.FusedMultiplyAdd(c3_0, a3, b0);
+            c3_1 = AdvSimd.FusedMultiplyAdd(c3_1, a3, b1);
+            c3_2 = AdvSimd.FusedMultiplyAdd(c3_2, a3, b2);
+            var a4 = Vector128.Create(a[4]);
+            c4_0 = AdvSimd.FusedMultiplyAdd(c4_0, a4, b0);
+            c4_1 = AdvSimd.FusedMultiplyAdd(c4_1, a4, b1);
+            c4_2 = AdvSimd.FusedMultiplyAdd(c4_2, a4, b2);
+            var a5 = Vector128.Create(a[5]);
+            c5_0 = AdvSimd.FusedMultiplyAdd(c5_0, a5, b0);
+            c5_1 = AdvSimd.FusedMultiplyAdd(c5_1, a5, b1);
+            c5_2 = AdvSimd.FusedMultiplyAdd(c5_2, a5, b2);
+            var a6 = Vector128.Create(a[6]);
+            c6_0 = AdvSimd.FusedMultiplyAdd(c6_0, a6, b0);
+            c6_1 = AdvSimd.FusedMultiplyAdd(c6_1, a6, b1);
+            c6_2 = AdvSimd.FusedMultiplyAdd(c6_2, a6, b2);
+            var a7 = Vector128.Create(a[7]);
+            c7_0 = AdvSimd.FusedMultiplyAdd(c7_0, a7, b0);
+            c7_1 = AdvSimd.FusedMultiplyAdd(c7_1, a7, b1);
+            c7_2 = AdvSimd.FusedMultiplyAdd(c7_2, a7, b2);
+            a += 8;
+            b += 12;
+        }
+        Vector128.Store(c0_0, c);
+        Vector128.Store(c0_1, c + 4);
+        Vector128.Store(c0_2, c + 8);
+        Vector128.Store(c1_0, c + ldc);
+        Vector128.Store(c1_1, c + ldc + 4);
+        Vector128.Store(c1_2, c + ldc + 8);
+        Vector128.Store(c2_0, c + 2 * ldc);
+        Vector128.Store(c2_1, c + 2 * ldc + 4);
+        Vector128.Store(c2_2, c + 2 * ldc + 8);
+        Vector128.Store(c3_0, c + 3 * ldc);
+        Vector128.Store(c3_1, c + 3 * ldc + 4);
+        Vector128.Store(c3_2, c + 3 * ldc + 8);
+        Vector128.Store(c4_0, c + 4 * ldc);
+        Vector128.Store(c4_1, c + 4 * ldc + 4);
+        Vector128.Store(c4_2, c + 4 * ldc + 8);
+        Vector128.Store(c5_0, c + 5 * ldc);
+        Vector128.Store(c5_1, c + 5 * ldc + 4);
+        Vector128.Store(c5_2, c + 5 * ldc + 8);
+        Vector128.Store(c6_0, c + 6 * ldc);
+        Vector128.Store(c6_1, c + 6 * ldc + 4);
+        Vector128.Store(c6_2, c + 6 * ldc + 8);
+        Vector128.Store(c7_0, c + 7 * ldc);
+        Vector128.Store(c7_1, c + 7 * ldc + 4);
+        Vector128.Store(c7_2, c + 7 * ldc + 8);
+    }
+
+    /// <summary>Kernel8x12Neon with B read in place: step kk of k reads the 12 values at b + offsets[kk].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Direct8x12Neon(int k, float* a, float* b, int* offsets, float* c, nint ldc, float* rowBias)
+    {
+        Vector128<float> c0_0, c0_1, c0_2, c1_0, c1_1, c1_2, c2_0, c2_1, c2_2, c3_0, c3_1, c3_2, c4_0, c4_1, c4_2, c5_0, c5_1, c5_2, c6_0, c6_1, c6_2, c7_0, c7_1, c7_2;
+        if (rowBias != null)
+        {
+            c0_0 = Vector128.Create(rowBias[0]);
+            c0_1 = c0_0;
+            c0_2 = c0_0;
+            c1_0 = Vector128.Create(rowBias[1]);
+            c1_1 = c1_0;
+            c1_2 = c1_0;
+            c2_0 = Vector128.Create(rowBias[2]);
+            c2_1 = c2_0;
+            c2_2 = c2_0;
+            c3_0 = Vector128.Create(rowBias[3]);
+            c3_1 = c3_0;
+            c3_2 = c3_0;
+            c4_0 = Vector128.Create(rowBias[4]);
+            c4_1 = c4_0;
+            c4_2 = c4_0;
+            c5_0 = Vector128.Create(rowBias[5]);
+            c5_1 = c5_0;
+            c5_2 = c5_0;
+            c6_0 = Vector128.Create(rowBias[6]);
+            c6_1 = c6_0;
+            c6_2 = c6_0;
+            c7_0 = Vector128.Create(rowBias[7]);
+            c7_1 = c7_0;
+            c7_2 = c7_0;
+        }
+        else
+        {
+            c0_0 = Vector128<float>.Zero;
+            c0_1 = Vector128<float>.Zero;
+            c0_2 = Vector128<float>.Zero;
+            c1_0 = Vector128<float>.Zero;
+            c1_1 = Vector128<float>.Zero;
+            c1_2 = Vector128<float>.Zero;
+            c2_0 = Vector128<float>.Zero;
+            c2_1 = Vector128<float>.Zero;
+            c2_2 = Vector128<float>.Zero;
+            c3_0 = Vector128<float>.Zero;
+            c3_1 = Vector128<float>.Zero;
+            c3_2 = Vector128<float>.Zero;
+            c4_0 = Vector128<float>.Zero;
+            c4_1 = Vector128<float>.Zero;
+            c4_2 = Vector128<float>.Zero;
+            c5_0 = Vector128<float>.Zero;
+            c5_1 = Vector128<float>.Zero;
+            c5_2 = Vector128<float>.Zero;
+            c6_0 = Vector128<float>.Zero;
+            c6_1 = Vector128<float>.Zero;
+            c6_2 = Vector128<float>.Zero;
+            c7_0 = Vector128<float>.Zero;
+            c7_1 = Vector128<float>.Zero;
+            c7_2 = Vector128<float>.Zero;
+        }
+        for (int kk = 0; kk < k; kk++)
+        {
+            float* bk = b + offsets[kk];
+            var b0 = Vector128.Load(bk);
+            var b1 = Vector128.Load(bk + 4);
+            var b2 = Vector128.Load(bk + 8);
+            var a0 = Vector128.Create(a[0]);
+            c0_0 = AdvSimd.FusedMultiplyAdd(c0_0, a0, b0);
+            c0_1 = AdvSimd.FusedMultiplyAdd(c0_1, a0, b1);
+            c0_2 = AdvSimd.FusedMultiplyAdd(c0_2, a0, b2);
+            var a1 = Vector128.Create(a[1]);
+            c1_0 = AdvSimd.FusedMultiplyAdd(c1_0, a1, b0);
+            c1_1 = AdvSimd.FusedMultiplyAdd(c1_1, a1, b1);
+            c1_2 = AdvSimd.FusedMultiplyAdd(c1_2, a1, b2);
+            var a2 = Vector128.Create(a[2]);
+            c2_0 = AdvSimd.FusedMultiplyAdd(c2_0, a2, b0);
+            c2_1 = AdvSimd.FusedMultiplyAdd(c2_1, a2, b1);
+            c2_2 = AdvSimd.FusedMultiplyAdd(c2_2, a2, b2);
+            var a3 = Vector128.Create(a[3]);
+            c3_0 = AdvSimd.FusedMultiplyAdd(c3_0, a3, b0);
+            c3_1 = AdvSimd.FusedMultiplyAdd(c3_1, a3, b1);
+            c3_2 = AdvSimd.FusedMultiplyAdd(c3_2, a3, b2);
+            var a4 = Vector128.Create(a[4]);
+            c4_0 = AdvSimd.FusedMultiplyAdd(c4_0, a4, b0);
+            c4_1 = AdvSimd.FusedMultiplyAdd(c4_1, a4, b1);
+            c4_2 = AdvSimd.FusedMultiplyAdd(c4_2, a4, b2);
+            var a5 = Vector128.Create(a[5]);
+            c5_0 = AdvSimd.FusedMultiplyAdd(c5_0, a5, b0);
+            c5_1 = AdvSimd.FusedMultiplyAdd(c5_1, a5, b1);
+            c5_2 = AdvSimd.FusedMultiplyAdd(c5_2, a5, b2);
+            var a6 = Vector128.Create(a[6]);
+            c6_0 = AdvSimd.FusedMultiplyAdd(c6_0, a6, b0);
+            c6_1 = AdvSimd.FusedMultiplyAdd(c6_1, a6, b1);
+            c6_2 = AdvSimd.FusedMultiplyAdd(c6_2, a6, b2);
+            var a7 = Vector128.Create(a[7]);
+            c7_0 = AdvSimd.FusedMultiplyAdd(c7_0, a7, b0);
+            c7_1 = AdvSimd.FusedMultiplyAdd(c7_1, a7, b1);
+            c7_2 = AdvSimd.FusedMultiplyAdd(c7_2, a7, b2);
+            a += 8;
+        }
+        Vector128.Store(c0_0, c);
+        Vector128.Store(c0_1, c + 4);
+        Vector128.Store(c0_2, c + 8);
+        Vector128.Store(c1_0, c + ldc);
+        Vector128.Store(c1_1, c + ldc + 4);
+        Vector128.Store(c1_2, c + ldc + 8);
+        Vector128.Store(c2_0, c + 2 * ldc);
+        Vector128.Store(c2_1, c + 2 * ldc + 4);
+        Vector128.Store(c2_2, c + 2 * ldc + 8);
+        Vector128.Store(c3_0, c + 3 * ldc);
+        Vector128.Store(c3_1, c + 3 * ldc + 4);
+        Vector128.Store(c3_2, c + 3 * ldc + 8);
+        Vector128.Store(c4_0, c + 4 * ldc);
+        Vector128.Store(c4_1, c + 4 * ldc + 4);
+        Vector128.Store(c4_2, c + 4 * ldc + 8);
+        Vector128.Store(c5_0, c + 5 * ldc);
+        Vector128.Store(c5_1, c + 5 * ldc + 4);
+        Vector128.Store(c5_2, c + 5 * ldc + 8);
+        Vector128.Store(c6_0, c + 6 * ldc);
+        Vector128.Store(c6_1, c + 6 * ldc + 4);
+        Vector128.Store(c6_2, c + 6 * ldc + 8);
+        Vector128.Store(c7_0, c + 7 * ldc);
+        Vector128.Store(c7_1, c + 7 * ldc + 4);
+        Vector128.Store(c7_2, c + 7 * ldc + 8);
     }
 }
 

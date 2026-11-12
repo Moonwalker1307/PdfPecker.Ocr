@@ -22,7 +22,7 @@ internal sealed class EngineWorker : IDisposable
     private OcrPipeline? _pipeline;
 
     public EngineWorker(int threads)
-        : this(threads, null)
+        : this(threads, (OcrAccelerator?)null)
     {
     }
 
@@ -31,6 +31,20 @@ internal sealed class EngineWorker : IDisposable
     /// models otherwise. The context still lends its threads to the work between the networks.
     /// </summary>
     public EngineWorker(int threads, OcrAccelerator? accelerator)
+        : this(threads, accelerator, null)
+    {
+    }
+
+    /// <summary>
+    /// A worker that runs <paramref name="models"/> instead of the shared bundled models, such as the models loaded
+    /// with another matrix kernel (<see cref="ModelStore.LoadWith"/>), for tests. It is not for the pool.
+    /// </summary>
+    internal EngineWorker(int threads, WorkerModels models)
+        : this(threads, null, models)
+    {
+    }
+
+    private EngineWorker(int threads, OcrAccelerator? accelerator, WorkerModels? models)
     {
         Threads = threads;
         Accelerator = accelerator;
@@ -38,12 +52,12 @@ internal sealed class EngineWorker : IDisposable
         try
         {
             INetwork? detection = Accelerate(accelerator, OcrNetworkKind.Detection);
-            _detection = detection ?? new ModelNetwork(ModelStore.Detection, _context);
+            _detection = detection ?? new ModelNetwork(models?.Detection ?? ModelStore.Detection, _context);
 
             // The gray variant is the bundled detector's own trick; an accelerated detector reads the plane three times.
-            _detectionGray = detection is null ? new ModelNetwork(ModelStore.DetectionGray, _context) : null;
-            _recognition = (INetwork?)Accelerate(accelerator, OcrNetworkKind.Recognition) ?? new ModelNetwork(ModelStore.RecognitionArgMax, _context);
-            _orientation = (INetwork?)Accelerate(accelerator, OcrNetworkKind.Orientation) ?? new ModelNetwork(ModelStore.Classifier, _context);
+            _detectionGray = detection is null ? new ModelNetwork(models?.DetectionGray ?? ModelStore.DetectionGray, _context) : null;
+            _recognition = (INetwork?)Accelerate(accelerator, OcrNetworkKind.Recognition) ?? new ModelNetwork(models?.RecognitionArgMax ?? ModelStore.RecognitionArgMax, _context);
+            _orientation = (INetwork?)Accelerate(accelerator, OcrNetworkKind.Orientation) ?? new ModelNetwork(models?.Classifier ?? ModelStore.Classifier, _context);
         }
         catch
         {
