@@ -97,7 +97,7 @@ static class Stages
             Console.WriteLine(string.Create(inv, $"  {stage,-34} {Median(times),8:F1} ms"));
         Console.WriteLine();
         Console.WriteLine(string.Create(inv, $"Model load alone: det {load["det"]:F0} ms, rec {load["rec"]:F0} ms, cls {load["cls"]:F0} ms"));
-        Console.WriteLine(string.Create(inv, $"Peak resident memory: {rssStart:F0} MB before the first call, {rssCold:F0} MB after it, {rssWarm:F0} MB peak over the warm calls{(reset ? " (peak reset after the cold call)" : " (running peak: reset refused)")}"));
+        Console.WriteLine(string.Create(inv, $"Peak resident memory: {rssStart:F0} MB before the first call, {rssCold:F0} MB after it, {rssWarm:F0} MB peak over the warm calls{(reset ? " (peak reset after the cold call)" : $" (running peak: {NoResetReason})")}"));
         Console.WriteLine(string.Create(inv, $"Managed heap after the warm calls: {gc.HeapSizeBytes / 1048576.0:F0} MB in use, {gc.TotalCommittedBytes / 1048576.0:F0} MB committed; after the last GC, large objects {gc.GenerationInfo[3].SizeAfterBytes / 1048576.0:F0} MB and pinned ones (arenas, outputs) {gc.GenerationInfo[4].SizeAfterBytes / 1048576.0:F0} MB"));
         Console.WriteLine(string.Create(inv, $"Engine worker arena: {arena / 1048576.0:F0} MB"));
     }
@@ -130,7 +130,7 @@ static class Stages
         var inv = CultureInfo.InvariantCulture;
         Console.WriteLine($"PdfPecker.Ocr {OcrInfo.Version}, .NET {Environment.Version}, MaxDegreeOfParallelism {threads}, GC gen0 budget {Environment.GetEnvironmentVariable("DOTNET_GCgen0size") ?? "default"}");
         Console.WriteLine(string.Create(inv, $"OCR alone on a {width} x {height} gray page (held by the caller, {gray.Length / 1048576.0:F1} MB):"));
-        Console.WriteLine(string.Create(inv, $"  resident before the first call {before:F0} MB{(reset ? "" : " (peak reset refused: running peak)")}"));
+        Console.WriteLine(string.Create(inv, $"  resident before the first call {before:F0} MB{(reset ? "" : $" (running peak: {NoResetReason})")}"));
         Console.WriteLine(string.Create(inv, $"  peak during the cold call {cold:F0} MB (it allocated {coldAlloc:F0} MB: models, plans, buffers)"));
         Console.WriteLine(string.Create(inv, $"  peak over {runs} warm calls {warm:F0} MB"));
         Console.WriteLine(string.Create(inv, $"  managed heap {gc.HeapSizeBytes / 1048576.0:F0} MB, committed {gc.TotalCommittedBytes / 1048576.0:F0} MB, pinned (arenas, outputs) {gc.GenerationInfo[4].SizeAfterBytes / 1048576.0:F0} MB, worker arena {PeekArena(threads) / 1048576.0:F0} MB"));
@@ -204,9 +204,15 @@ static class Stages
         return sorted.Count % 2 == 1 ? sorted[sorted.Count / 2] : (sorted[sorted.Count / 2 - 1] + sorted[sorted.Count / 2]) / 2;
     }
 
+    /// <summary>Why the peaks are running peaks when <see cref="ResetPeak"/> could not reset them.</summary>
+    static string NoResetReason => OperatingSystem.IsMacOS()
+        ? "macOS cannot reset the resident peak, so each figure includes everything before it"
+        : "reset refused";
+
     /// <summary>Resets the kernel's resident peak (VmHWM) of this process, so the next reading is the peak from here on.</summary>
     static bool ResetPeak()
     {
+        if (OperatingSystem.IsMacOS()) return false;
         try
         {
             File.WriteAllText("/proc/self/clear_refs", "5");
