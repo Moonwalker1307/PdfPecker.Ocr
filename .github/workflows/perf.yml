@@ -4,7 +4,8 @@ name: Performance
 # runs can be compared over time. It is on demand for now; a nightly schedule and an automatic comparison with earlier
 # runs come once bench/PdfPecker.Ocr.Benchmarks has settled, as in PdfPecker's perf.yml. Hosted runners come in several
 # processor models, so only runs on the same processor are comparable, and a change of your own is measured with
-# bench/compare-versions.sh on one machine instead.
+# bench/compare-versions.sh on one machine instead, or with the compare input, which times another version in turns
+# with this one in the same job.
 on:
   workflow_dispatch:
     inputs:
@@ -15,6 +16,10 @@ on:
           - ubuntu-latest
           - macos-latest
         default: ubuntu-latest
+      compare:
+        description: A branch, tag or commit to time in turns with this one, layer by layer and by stage (optional)
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -83,6 +88,38 @@ jobs:
             dotnet layers-bin/PdfPecker.Ocr.Benchmarks.dll stages; } | tee layers.txt
           { echo; echo "## Layers and stages"; echo; echo '```'; cat layers.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
+      # A change of the networks' code is timed against the version before it on the same runner, in turns, since two
+      # runs on hosted runners are comparable only on one machine. The other version is built with this version's
+      # benchmark program, as bench/compare-versions.sh does, so only the library differs. Each command runs in a fresh
+      # process, and the order of the two alternates from round to round.
+      - name: Time against another version in turns
+        if: steps.bench.outputs.present == 'true' && inputs.compare != ''
+        env:
+          DOTNET_GCgen0size: "0x4000000"
+          COMPARE: ${{ inputs.compare }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$COMPARE"
+          git worktree add --detach ../other FETCH_HEAD
+          rm -rf ../other/bench/PdfPecker.Ocr.Benchmarks
+          mkdir -p ../other/bench/TesseractComparison
+          cp -r bench/PdfPecker.Ocr.Benchmarks ../other/bench/PdfPecker.Ocr.Benchmarks
+          cp bench/TesseractComparison/CorpusData.cs ../other/bench/TesseractComparison/CorpusData.cs
+          rm -rf ../other/bench/PdfPecker.Ocr.Benchmarks/bin ../other/bench/PdfPecker.Ocr.Benchmarks/obj
+          dotnet build -c Release -p:OcrInternals=true -o other-bin ../other/bench/PdfPecker.Ocr.Benchmarks
+          echo "this = $(git rev-parse --short HEAD), other = $COMPARE ($(git -C ../other rev-parse --short HEAD))" | tee compare.txt
+          for round in 1 2 3; do
+            if [ $((round % 2)) -eq 1 ]; then order="this other"; else order="other this"; fi
+            for command in "layers --threads 1 --runs 3 --top 12" "layers --runs 3 --top 12" "stages --threads 1" "stages"; do
+              for side in $order; do
+                if [ "$side" = this ]; then bin=layers-bin; else bin=other-bin; fi
+                echo "== round $round, $side: $command"
+                # shellcheck disable=SC2086
+                dotnet "$bin/PdfPecker.Ocr.Benchmarks.dll" $command
+              done
+            done
+          done | tee -a compare.txt
+          { echo; echo "## Against $COMPARE"; echo; echo '```'; cat compare.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.bench.outputs.present == 'true'
         with:
@@ -91,4 +128,5 @@ jobs:
             perf.json
             perf-summary.md
             layers.txt
+            compare.txt
           retention-days: 90

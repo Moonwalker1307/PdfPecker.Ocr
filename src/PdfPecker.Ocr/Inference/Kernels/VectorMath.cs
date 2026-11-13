@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
 using PdfPecker.Ocr.Models;
 
@@ -417,6 +418,20 @@ internal static unsafe partial class VectorMath
             float* last = src + (2 * (count - 8)) - 1;
             var odd = Avx.Shuffle(Avx.LoadVector256(last), Avx.LoadVector256(last + 8), 0b11_01_11_01);
             Avx.Store(dst + count - 8, Avx2.Permute4x64(odd.AsDouble(), 0b11_01_10_00).AsSingle());
+            return;
+        }
+
+        if (AdvSimd.Arm64.IsSupported && count > 4)
+        {
+            // UZP1 takes the even elements of a pair of vectors and UZP2 the odd ones.
+            for (; i + 4 < count; i += 4)
+            {
+                float* s = src + (2 * i);
+                AdvSimd.Store(dst + i, AdvSimd.Arm64.UnzipEven(AdvSimd.LoadVector128(s), AdvSimd.LoadVector128(s + 4)));
+            }
+
+            float* last = src + (2 * (count - 4)) - 1;
+            AdvSimd.Store(dst + count - 4, AdvSimd.Arm64.UnzipOdd(AdvSimd.LoadVector128(last), AdvSimd.LoadVector128(last + 4)));
             return;
         }
 

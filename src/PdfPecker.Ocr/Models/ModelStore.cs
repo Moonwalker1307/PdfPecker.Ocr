@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using PdfPecker.Ocr.Inference;
+using PdfPecker.Ocr.Inference.Kernels;
 
 namespace PdfPecker.Ocr.Models;
 
@@ -55,15 +56,27 @@ internal static class ModelStore
     /// </summary>
     public static string[] Characters => Recognition.Characters;
 
-    /// <summary>Loads a bundled model by its short name (det, rec or cls).</summary>
-    internal static OcrModel Load(string name)
+    /// <summary>Loads a bundled model by its short name (det, rec or cls), with <see cref="GemmKernel.Best"/> unless gemm is given.</summary>
+    internal static OcrModel Load(string name, GemmKernel? gemm = null)
     {
         using var data = Inflate(name);
-        return OcrModel.Load(data.GetBuffer().AsSpan(0, (int)data.Length));
+        return OcrModel.Load(data.GetBuffer().AsSpan(0, (int)data.Length), gemm);
+    }
+
+    /// <summary>
+    /// The networks an engine worker runs, each built as the shared ones are but loaded anew with
+    /// <paramref name="gemm"/>, so that tests can read whole pages with one matrix kernel against another. The package
+    /// itself always uses the shared models.
+    /// </summary>
+    internal static WorkerModels LoadWith(GemmKernel gemm)
+    {
+        var detection = Load("det", gemm);
+        return new WorkerModels(detection.WithFusedStem(), detection.WithGrayInput().WithFusedStem(),
+            LoadRecognition(gemm).WithFusedStem().WithArgMaxOutput(), Load("cls", gemm));
     }
 
     /// <summary>The bundled recogniser with the retrained output weights of <see cref="HeadPatch"/> in its last layer.</summary>
-    internal static OcrModel LoadRecognition()
+    internal static OcrModel LoadRecognition(GemmKernel? gemm = null)
     {
         ModelDefinition definition;
         using (var data = Inflate("rec"))
@@ -72,7 +85,7 @@ internal static class ModelStore
         }
 
         RecognitionHeadPatch.ApplyTo(definition);
-        return OcrModel.FromDefinition(definition);
+        return OcrModel.FromDefinition(definition, gemm);
     }
 
     /// <summary>The retrained output weights the recogniser loads with, read from the assembly's resources.</summary>
@@ -106,3 +119,6 @@ internal static class ModelStore
         return data;
     }
 }
+
+/// <summary>The four networks of an engine worker, as <see cref="ModelStore.LoadWith"/> loads them.</summary>
+internal sealed record WorkerModels(OcrModel Detection, OcrModel DetectionGray, OcrModel RecognitionArgMax, OcrModel Classifier);

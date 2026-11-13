@@ -38,14 +38,17 @@ internal sealed unsafe class GemmKernel
     /// <summary>6 x 16 with AVX2 and FMA.</summary>
     public static GemmKernel Avx2 { get; } = new("avx2", 6, 16, &Kernel6x16Avx2, &Direct6x16Avx2, Avx.IsSupported && Fma.IsSupported);
 
+    /// <summary>8 x 12 with Arm64's NEON, giving the same bits as <see cref="Portable"/> does there.</summary>
+    public static GemmKernel Neon { get; } = new("neon", 8, 12, &Kernel8x12Neon, &Direct8x12Neon, AdvSimd.Arm64.IsSupported);
+
     /// <summary>6 x 8 with Vector128, which every platform runs (in software where it has no SIMD).</summary>
     public static GemmKernel Portable { get; } = new("portable", 6, 8, &Kernel6x8Vector128, &Direct6x8Vector128, true);
 
     /// <summary>The fastest kernel the processor supports.</summary>
-    public static GemmKernel Best { get; } = Avx512.IsSupported ? Avx512 : Avx2.IsSupported ? Avx2 : Portable;
+    public static GemmKernel Best { get; } = Avx512.IsSupported ? Avx512 : Avx2.IsSupported ? Avx2 : Neon.IsSupported ? Neon : Portable;
 
     /// <summary>All kernels this processor can run, for tests.</summary>
-    public static IEnumerable<GemmKernel> Supported => new[] { Avx512, Avx2, Portable }.Where(k => k.IsSupported);
+    public static IEnumerable<GemmKernel> Supported => new[] { Avx512, Avx2, Neon, Portable }.Where(k => k.IsSupported);
 
     public string Name { get; }
 
@@ -907,6 +910,260 @@ internal sealed unsafe class GemmKernel
         Vector128.Store(c4_1, c + 4 * ldc + 4);
         Vector128.Store(c5_0, c + 5 * ldc);
         Vector128.Store(c5_1, c + 5 * ldc + 4);
+    }
+
+    /// <summary>
+    /// Arm64 NEON kernel: 8 rows by 12 columns in 24 of the 32 vector registers, each holding one column of four rows,
+    /// with two registers for the 8 values of A at a step of k and three for the 12 of B. Each multiply-add multiplies a
+    /// vector of A by one lane of B (FMLA by element), so a step is 5 loads and 24 multiply-adds, where broadcasting
+    /// each A value took 8 more loads that the multiply-adds then waited on; the block is transposed into rows once, when
+    /// it is stored. Each value of C is the same chain of fused multiply-adds as in <see cref="Kernel6x8Vector128"/> on
+    /// Arm64: the same A and B values, A as the first factor and B as the second, in the same order over k and from the
+    /// same seed. The two give the same bits, NaN payloads included, and only the tiling differs.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Kernel8x12Neon(int k, float* a, float* b, float* c, nint ldc, float* rowBias, float* colBias)
+    {
+        // c{g}_{j} holds column j of rows 4 g to 4 g + 3.
+        Vector128<float> c0_0, c0_1, c0_2, c0_3, c0_4, c0_5, c0_6, c0_7, c0_8, c0_9, c0_10, c0_11, c1_0, c1_1, c1_2, c1_3, c1_4, c1_5, c1_6, c1_7, c1_8, c1_9, c1_10, c1_11;
+        if (rowBias != null)
+        {
+            c0_0 = Vector128.Load(rowBias);
+            c1_0 = Vector128.Load(rowBias + 4);
+            c0_1 = c0_0;
+            c0_2 = c0_0;
+            c0_3 = c0_0;
+            c0_4 = c0_0;
+            c0_5 = c0_0;
+            c0_6 = c0_0;
+            c0_7 = c0_0;
+            c0_8 = c0_0;
+            c0_9 = c0_0;
+            c0_10 = c0_0;
+            c0_11 = c0_0;
+            c1_1 = c1_0;
+            c1_2 = c1_0;
+            c1_3 = c1_0;
+            c1_4 = c1_0;
+            c1_5 = c1_0;
+            c1_6 = c1_0;
+            c1_7 = c1_0;
+            c1_8 = c1_0;
+            c1_9 = c1_0;
+            c1_10 = c1_0;
+            c1_11 = c1_0;
+        }
+        else if (colBias != null)
+        {
+            c0_0 = Vector128.Create(colBias[0]);
+            c1_0 = c0_0;
+            c0_1 = Vector128.Create(colBias[1]);
+            c1_1 = c0_1;
+            c0_2 = Vector128.Create(colBias[2]);
+            c1_2 = c0_2;
+            c0_3 = Vector128.Create(colBias[3]);
+            c1_3 = c0_3;
+            c0_4 = Vector128.Create(colBias[4]);
+            c1_4 = c0_4;
+            c0_5 = Vector128.Create(colBias[5]);
+            c1_5 = c0_5;
+            c0_6 = Vector128.Create(colBias[6]);
+            c1_6 = c0_6;
+            c0_7 = Vector128.Create(colBias[7]);
+            c1_7 = c0_7;
+            c0_8 = Vector128.Create(colBias[8]);
+            c1_8 = c0_8;
+            c0_9 = Vector128.Create(colBias[9]);
+            c1_9 = c0_9;
+            c0_10 = Vector128.Create(colBias[10]);
+            c1_10 = c0_10;
+            c0_11 = Vector128.Create(colBias[11]);
+            c1_11 = c0_11;
+        }
+        else
+        {
+            c0_0 = Vector128<float>.Zero;
+            c0_1 = Vector128<float>.Zero;
+            c0_2 = Vector128<float>.Zero;
+            c0_3 = Vector128<float>.Zero;
+            c0_4 = Vector128<float>.Zero;
+            c0_5 = Vector128<float>.Zero;
+            c0_6 = Vector128<float>.Zero;
+            c0_7 = Vector128<float>.Zero;
+            c0_8 = Vector128<float>.Zero;
+            c0_9 = Vector128<float>.Zero;
+            c0_10 = Vector128<float>.Zero;
+            c0_11 = Vector128<float>.Zero;
+            c1_0 = Vector128<float>.Zero;
+            c1_1 = Vector128<float>.Zero;
+            c1_2 = Vector128<float>.Zero;
+            c1_3 = Vector128<float>.Zero;
+            c1_4 = Vector128<float>.Zero;
+            c1_5 = Vector128<float>.Zero;
+            c1_6 = Vector128<float>.Zero;
+            c1_7 = Vector128<float>.Zero;
+            c1_8 = Vector128<float>.Zero;
+            c1_9 = Vector128<float>.Zero;
+            c1_10 = Vector128<float>.Zero;
+            c1_11 = Vector128<float>.Zero;
+        }
+        for (; k > 0; k--)
+        {
+            var a0 = Vector128.Load(a);
+            var a1 = Vector128.Load(a + 4);
+            var b0 = Vector128.Load(b);
+            var b1 = Vector128.Load(b + 4);
+            var b2 = Vector128.Load(b + 8);
+            c0_0 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_0, a0, b0, 0);
+            c1_0 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_0, a1, b0, 0);
+            c0_1 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_1, a0, b0, 1);
+            c1_1 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_1, a1, b0, 1);
+            c0_2 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_2, a0, b0, 2);
+            c1_2 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_2, a1, b0, 2);
+            c0_3 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_3, a0, b0, 3);
+            c1_3 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_3, a1, b0, 3);
+            c0_4 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_4, a0, b1, 0);
+            c1_4 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_4, a1, b1, 0);
+            c0_5 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_5, a0, b1, 1);
+            c1_5 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_5, a1, b1, 1);
+            c0_6 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_6, a0, b1, 2);
+            c1_6 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_6, a1, b1, 2);
+            c0_7 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_7, a0, b1, 3);
+            c1_7 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_7, a1, b1, 3);
+            c0_8 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_8, a0, b2, 0);
+            c1_8 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_8, a1, b2, 0);
+            c0_9 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_9, a0, b2, 1);
+            c1_9 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_9, a1, b2, 1);
+            c0_10 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_10, a0, b2, 2);
+            c1_10 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_10, a1, b2, 2);
+            c0_11 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_11, a0, b2, 3);
+            c1_11 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_11, a1, b2, 3);
+            a += 8;
+            b += 12;
+        }
+        StoreTransposed(c0_0, c0_1, c0_2, c0_3, c, ldc);
+        StoreTransposed(c0_4, c0_5, c0_6, c0_7, c + 4, ldc);
+        StoreTransposed(c0_8, c0_9, c0_10, c0_11, c + 8, ldc);
+        StoreTransposed(c1_0, c1_1, c1_2, c1_3, c + (4 * ldc), ldc);
+        StoreTransposed(c1_4, c1_5, c1_6, c1_7, c + (4 * ldc) + 4, ldc);
+        StoreTransposed(c1_8, c1_9, c1_10, c1_11, c + (4 * ldc) + 8, ldc);
+    }
+
+    /// <summary>Kernel8x12Neon with B read in place: step kk of k reads the 12 values at b + offsets[kk].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Direct8x12Neon(int k, float* a, float* b, int* offsets, float* c, nint ldc, float* rowBias)
+    {
+        // c{g}_{j} holds column j of rows 4 g to 4 g + 3.
+        Vector128<float> c0_0, c0_1, c0_2, c0_3, c0_4, c0_5, c0_6, c0_7, c0_8, c0_9, c0_10, c0_11, c1_0, c1_1, c1_2, c1_3, c1_4, c1_5, c1_6, c1_7, c1_8, c1_9, c1_10, c1_11;
+        if (rowBias != null)
+        {
+            c0_0 = Vector128.Load(rowBias);
+            c1_0 = Vector128.Load(rowBias + 4);
+            c0_1 = c0_0;
+            c0_2 = c0_0;
+            c0_3 = c0_0;
+            c0_4 = c0_0;
+            c0_5 = c0_0;
+            c0_6 = c0_0;
+            c0_7 = c0_0;
+            c0_8 = c0_0;
+            c0_9 = c0_0;
+            c0_10 = c0_0;
+            c0_11 = c0_0;
+            c1_1 = c1_0;
+            c1_2 = c1_0;
+            c1_3 = c1_0;
+            c1_4 = c1_0;
+            c1_5 = c1_0;
+            c1_6 = c1_0;
+            c1_7 = c1_0;
+            c1_8 = c1_0;
+            c1_9 = c1_0;
+            c1_10 = c1_0;
+            c1_11 = c1_0;
+        }
+        else
+        {
+            c0_0 = Vector128<float>.Zero;
+            c0_1 = Vector128<float>.Zero;
+            c0_2 = Vector128<float>.Zero;
+            c0_3 = Vector128<float>.Zero;
+            c0_4 = Vector128<float>.Zero;
+            c0_5 = Vector128<float>.Zero;
+            c0_6 = Vector128<float>.Zero;
+            c0_7 = Vector128<float>.Zero;
+            c0_8 = Vector128<float>.Zero;
+            c0_9 = Vector128<float>.Zero;
+            c0_10 = Vector128<float>.Zero;
+            c0_11 = Vector128<float>.Zero;
+            c1_0 = Vector128<float>.Zero;
+            c1_1 = Vector128<float>.Zero;
+            c1_2 = Vector128<float>.Zero;
+            c1_3 = Vector128<float>.Zero;
+            c1_4 = Vector128<float>.Zero;
+            c1_5 = Vector128<float>.Zero;
+            c1_6 = Vector128<float>.Zero;
+            c1_7 = Vector128<float>.Zero;
+            c1_8 = Vector128<float>.Zero;
+            c1_9 = Vector128<float>.Zero;
+            c1_10 = Vector128<float>.Zero;
+            c1_11 = Vector128<float>.Zero;
+        }
+        for (int kk = 0; kk < k; kk++)
+        {
+            float* bk = b + offsets[kk];
+            var a0 = Vector128.Load(a);
+            var a1 = Vector128.Load(a + 4);
+            var b0 = Vector128.Load(bk);
+            var b1 = Vector128.Load(bk + 4);
+            var b2 = Vector128.Load(bk + 8);
+            c0_0 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_0, a0, b0, 0);
+            c1_0 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_0, a1, b0, 0);
+            c0_1 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_1, a0, b0, 1);
+            c1_1 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_1, a1, b0, 1);
+            c0_2 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_2, a0, b0, 2);
+            c1_2 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_2, a1, b0, 2);
+            c0_3 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_3, a0, b0, 3);
+            c1_3 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_3, a1, b0, 3);
+            c0_4 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_4, a0, b1, 0);
+            c1_4 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_4, a1, b1, 0);
+            c0_5 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_5, a0, b1, 1);
+            c1_5 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_5, a1, b1, 1);
+            c0_6 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_6, a0, b1, 2);
+            c1_6 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_6, a1, b1, 2);
+            c0_7 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_7, a0, b1, 3);
+            c1_7 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_7, a1, b1, 3);
+            c0_8 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_8, a0, b2, 0);
+            c1_8 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_8, a1, b2, 0);
+            c0_9 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_9, a0, b2, 1);
+            c1_9 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_9, a1, b2, 1);
+            c0_10 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_10, a0, b2, 2);
+            c1_10 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_10, a1, b2, 2);
+            c0_11 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c0_11, a0, b2, 3);
+            c1_11 = AdvSimd.Arm64.FusedMultiplyAddBySelectedScalar(c1_11, a1, b2, 3);
+            a += 8;
+        }
+        StoreTransposed(c0_0, c0_1, c0_2, c0_3, c, ldc);
+        StoreTransposed(c0_4, c0_5, c0_6, c0_7, c + 4, ldc);
+        StoreTransposed(c0_8, c0_9, c0_10, c0_11, c + 8, ldc);
+        StoreTransposed(c1_0, c1_1, c1_2, c1_3, c + (4 * ldc), ldc);
+        StoreTransposed(c1_4, c1_5, c1_6, c1_7, c + (4 * ldc) + 4, ldc);
+        StoreTransposed(c1_8, c1_9, c1_10, c1_11, c + (4 * ldc) + 8, ldc);
+    }
+
+    /// <summary>Stores four columns of four rows, one vector per column, as four rows of C.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void StoreTransposed(Vector128<float> c0, Vector128<float> c1, Vector128<float> c2, Vector128<float> c3, float* c, nint ldc)
+    {
+        // TRN1 and TRN2 pair up the columns' rows two by two, and the 64-bit zips put the pairs together.
+        var t0 = AdvSimd.Arm64.TransposeEven(c0, c1).AsUInt64();
+        var t1 = AdvSimd.Arm64.TransposeOdd(c0, c1).AsUInt64();
+        var t2 = AdvSimd.Arm64.TransposeEven(c2, c3).AsUInt64();
+        var t3 = AdvSimd.Arm64.TransposeOdd(c2, c3).AsUInt64();
+        Vector128.Store(AdvSimd.Arm64.ZipLow(t0, t2).AsSingle(), c);
+        Vector128.Store(AdvSimd.Arm64.ZipLow(t1, t3).AsSingle(), c + ldc);
+        Vector128.Store(AdvSimd.Arm64.ZipHigh(t0, t2).AsSingle(), c + (2 * ldc));
+        Vector128.Store(AdvSimd.Arm64.ZipHigh(t1, t3).AsSingle(), c + (3 * ldc));
     }
 }
 

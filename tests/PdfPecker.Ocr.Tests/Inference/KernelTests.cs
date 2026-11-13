@@ -226,6 +226,22 @@ public sealed class KernelTests
     }
 
     [Fact]
+    public unsafe void CopyEvenTakesEveryOtherValue()
+    {
+        // Every count around the 4, 8 and 16 values of the NEON, AVX2 and AVX-512 blocks, whose last block starts one
+        // value early; the values after dst[count - 1] must stay as they were.
+        for (int count = 0; count <= 70; count++)
+        {
+            float[] src = Random(Math.Max(1, (2 * count) - 1), count);
+            var dst = new float[count + 4];
+            dst.AsSpan().Fill(-7f);
+            fixed (float* s = src, d = dst) VectorMath.CopyEven(s, d, count);
+            for (int i = 0; i < count; i++) Assert.True(BitConverter.SingleToUInt32Bits(src[2 * i]) == BitConverter.SingleToUInt32Bits(dst[i]), $"count {count}, value {i}");
+            Assert.All(dst[count..], v => Assert.Equal(-7f, v));
+        }
+    }
+
+    [Fact]
     public void ErfIsAccurate()
     {
         double worst = 0;

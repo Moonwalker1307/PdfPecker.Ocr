@@ -104,6 +104,11 @@ which ignores the older name (setting both covers every runtime). For the 128-bi
 without a word: for the AVX2 path `Avx512F.IsSupported` and `Vector512.IsHardwareAccelerated` must both be false, and
 for the 128-bit paths `Avx.IsSupported`, `Fma.IsSupported` and `Vector256.IsHardwareAccelerated` as well.
 
+The matrix kernels go further than the goldens: `KernelAgreementTests` and `KernelPageTests` hold every kernel the
+processor runs to the bits of the portable one, product by product, layer by layer, for the bundled models and for whole
+pages, since each value is one chain of fused multiply-adds over k in the same order whatever the tile. On x64 that
+checks the AVX-512 and AVX2 kernels; the Arm64 NEON kernel is checked on the macOS job of `nuget.yml`.
+
 ## Hostile input
 
 `HostileInputTests` (collection `HostileInputCollection`) run each case through a `Bounded` helper that fails the test
@@ -151,7 +156,10 @@ bench/compare-versions.sh main        # the working tree against a branch, tag o
 ```
 
 Cloud VMs differ too much to compare a run with the README table, or with a run on another machine. `perf.yml` runs the
-benchmark on demand on main and keeps the results.
+benchmark on demand on the branch it is started on and keeps the results. Its `compare` input names another branch, tag
+or commit, which the job builds with the same benchmark program and times in turns with this one, layer by layer and by
+stage at one thread and on all cores; that is how a kernel change for Apple Silicon is measured on the `macos-latest`
+runner.
 
 ## Tesseract comparison
 
