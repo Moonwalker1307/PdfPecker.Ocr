@@ -23,7 +23,7 @@ cannot do, the change goes to [PdfPecker](https://github.com/Moonwalker1307/PdfP
 
 ## Building and testing
 
-You need the .NET 10 SDK. The package and tests target `net8.0`, `net9.0` and `net10.0`, and CI runs all three.
+You need the .NET 10 SDK. The package and tests target `net10.0`.
 
 ```
 dotnet build -c Release

@@ -51,12 +51,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # the release tags give preview builds their version
 
-      # The package targets net8.0, net9.0 and net10.0, and the tests run on each runtime.
+      # The package and tests target net10.0.
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: |
-            8.0.x
-            9.0.x
             10.0.x
           # Keeps ~/.nuget/packages between runs. A release builds without it: the package it publishes comes from a
           # fresh restore from nuget.org, not from a cache that an earlier run on main saved and could have altered.
