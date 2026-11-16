@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <RootNamespace>PdfPecker.Ocr</RootNamespace>
@@ -28,6 +28,13 @@
     <EnablePackageValidation>true</EnablePackageValidation>
     <PackageValidationBaselineVersion>1.24.0</PackageValidationBaselineVersion>
   </PropertyGroup>
+
+  <!-- 1.25.0 was the last release for .NET 8 and 9, and the package now targets net10.0 only. The baseline still has
+       net8.0 and net9.0 folders, which package validation leaves out on purpose; remove this once the baseline is a
+       release without them. -->
+  <ItemGroup>
+    <PackageValidationBaselineFrameworkToIgnore Include="net8.0;net9.0" />
+  </ItemGroup>
 
   <!-- Reproducible paths in the PDBs of packages built by CI. -->
   <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">

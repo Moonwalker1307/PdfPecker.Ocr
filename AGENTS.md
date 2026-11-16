@@ -122,8 +122,8 @@ dotnet publish samples/PdfPecker.Ocr.Sample -c Release -p:PublishAot=true -o aot
 ```
 
 Before pushing, the build must be warning-free (warnings are errors), the tests must pass, and the golden baselines
-must be unchanged unless the output change is intended. If only one runtime is installed, pass `-f net10.0`; CI runs
-`net8.0`, `net9.0` and `net10.0` on Linux and `net10.0` on Windows. A change to the public API also needs
+must be unchanged unless the output change is intended. CI runs `net10.0` on Linux and
+Windows. A change to the public API also needs
 `dotnet pack src/PdfPecker.Ocr -c Release -o ./nupkg`. Details are in `BUILD.md` and `TESTING.md`.
 
 ## Change-specific guidance
@@ -146,9 +146,8 @@ must be unchanged unless the output change is intended. If only one runtime is i
   file overloads, a `CancellationToken` last).
 - **Something PdfPecker cannot do**: don't work around it here with fragile code; fix PdfPecker in its own PR first,
   and use it here after its release.
-- **Newer .NET APIs**: the package also targets .NET 8, which lacks some APIs (`Vector512` is there; some span and
-  dictionary APIs are not). Guard them with `#if NET9_0_OR_GREATER` and keep a .NET 8 path. 1.25.0 is the last release for
-  .NET 8 and 9 (`README.md`), as in PdfPecker; the release after it drops them.
+- **Target framework**: the package targets .NET 10. 1.25.0 was the last release for .NET 8 and 9 (`README.md`), as in
+  PdfPecker, so no code needs a .NET 8 path.
 - **Untrusted input** (images, PDFs, pixel buffers, sizes): add resource limits, a fuzz target in
   `fuzz/PdfPecker.Ocr.Fuzz` (see `fuzz/README.md`), and for each bug fix a regression test in `HostileInputTests`.
 - **Generated data**: change the generator, never its output.

@@ -25,7 +25,7 @@ configure the package itself (`OcrOptions`) is in the XML doc comments and the R
 
 | Workflow | When | What |
 | --- | --- | --- |
-| `nuget.yml` | Every PR, pushes to main, published releases | Builds and tests net8.0, net9.0 and net10.0 on Linux and net10.0 on Windows, publishes the sample with Native AOT and runs it, reports coverage (main only) and packs PdfPecker.Ocr, checking that it depends on PdfPecker alone and carries the notices. On a release it attaches the package to the release and publishes it to nuget.org. |
+| `nuget.yml` | Every PR, pushes to main, published releases | Builds and tests net10.0 on Linux and Windows, publishes the sample with Native AOT and runs it, reports coverage (main only) and packs PdfPecker.Ocr, checking that it depends on PdfPecker alone and carries the notices. On a release it attaches the package to the release and publishes it to nuget.org. |
 | `codeql.yml` | PRs, pushes to main touching `src`, and a weekly schedule | CodeQL analysis of the package. |
 | `fuzz.yml` | Nightly, and on demand with `minutes` and `target` inputs | Fuzzes every target, one job per target, one worker per core; findings fail the job and are uploaded. |
 | `perf.yml` | On demand, with `runner` and `compare` inputs | Runs `bench/PdfPecker.Ocr.Benchmarks` on the branch it is started on and keeps the results for 90 days; with `compare`, it also times that branch, tag or commit in turns with this one, layer by layer and by stage. A nightly schedule and a comparison with earlier runs, as in PdfPecker, come once the benchmark has settled. |
